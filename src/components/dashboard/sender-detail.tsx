@@ -1,5 +1,6 @@
 "use client"
 
+import { toast } from "sonner"
 import { useState, useEffect } from "react"
 import {
   X, Phone, MessageCircle, Package, Clock,
@@ -188,6 +189,7 @@ export function SenderDetail({ senderId, onClose }: SenderDetailProps) {
       })
       const result = await res.json()
       if (result.success) {
+        toast.success(result.message || "Action completed")
         setConfirmAction(null)
         if (action === "hard_delete") {
           onClose()
@@ -198,10 +200,10 @@ export function SenderDetail({ senderId, onClose }: SenderDetailProps) {
           setData(updated)
         }
       } else {
-        alert(result.error || "Action failed")
+        toast.error(result.error || "Action failed")
       }
     } catch {
-      alert("Action failed")
+      toast.error("Action failed")
     } finally {
       setActionLoading(null)
     }
@@ -209,7 +211,7 @@ export function SenderDetail({ senderId, onClose }: SenderDetailProps) {
 
   const handleCredit = async () => {
     const amt = parseFloat(creditAmount)
-    if (!amt || amt <= 0) return alert("Enter a valid amount")
+    if (!amt || amt <= 0) return toast.error("Enter a valid amount")
     setActionLoading("credit")
     try {
       const res = await fetch(`/api/dashboard/senders/${senderId}/actions`, {
@@ -219,6 +221,7 @@ export function SenderDetail({ senderId, onClose }: SenderDetailProps) {
       })
       const result = await res.json()
       if (result.success) {
+        toast.success("Wallet credited successfully")
         setShowCreditModal(false)
         setCreditAmount("")
         setCreditNote("")
@@ -227,10 +230,10 @@ export function SenderDetail({ senderId, onClose }: SenderDetailProps) {
         const updated = await r.json()
         setData(updated)
       } else {
-        alert(result.error || "Credit failed")
+        toast.error(result.error || "Credit failed")
       }
     } catch {
-      alert("Credit failed")
+      toast.error("Credit failed")
     } finally {
       setActionLoading(null)
     }

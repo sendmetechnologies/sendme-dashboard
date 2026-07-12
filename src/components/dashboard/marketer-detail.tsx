@@ -1,5 +1,6 @@
 "use client"
 
+import { toast } from "sonner"
 import { useState, useEffect } from "react"
 import {
   X, Phone, Mail, MapPin, Briefcase, Target, Star,
@@ -79,6 +80,7 @@ export function MarketerDetail({ marketerId, onClose }: MarketerDetailProps) {
       })
       const result = await res.json()
       if (result.success) {
+        toast.success(result.message || "Action completed")
         setConfirmAction(null)
         setShowRejectModal(false)
         setRejectReason("")
@@ -90,10 +92,10 @@ export function MarketerDetail({ marketerId, onClose }: MarketerDetailProps) {
           setData(updated)
         }
       } else {
-        alert(result.error || "Action failed")
+        toast.error(result.error || "Action failed")
       }
     } catch {
-      alert("Action failed")
+      toast.error("Action failed")
     } finally {
       setActionLoading(null)
     }

@@ -1,5 +1,6 @@
 "use client"
 
+import { toast } from "sonner"
 import { useState, useEffect } from "react"
 import { X, MapPin, Phone, Loader2, Trash2, Ban, AlertTriangle } from "lucide-react"
 
@@ -424,6 +425,7 @@ export function OrderDetail({ orderId, onClose }: OrderDetailProps) {
       })
       const result = await res.json()
       if (result.success) {
+        toast.success(result.message || "Action completed")
         setConfirmAction(null)
         if (action === "delete_order") {
           onClose()
@@ -433,10 +435,10 @@ export function OrderDetail({ orderId, onClose }: OrderDetailProps) {
           setData(updated)
         }
       } else {
-        alert(result.error || "Action failed")
+        toast.error(result.error || "Action failed")
       }
     } catch {
-      alert("Action failed")
+      toast.error("Action failed")
     } finally {
       setActionLoading(null)
     }

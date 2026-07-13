@@ -8,7 +8,7 @@ export async function POST(
   try {
     const { id } = await params
     const body = await req.json()
-    const { action, amount, note, reason } = body
+    const { action, amount, note, reason, driver_user_id } = body
 
     // Verify organization
     if (action === "verify") {
@@ -211,6 +211,28 @@ export async function POST(
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })
       if (result && !result.success) return NextResponse.json({ error: result.error }, { status: 500 })
       return NextResponse.json({ success: true, message: "Organization permanently deleted" })
+    }
+
+    // Unlink a rider from this organization
+    if (action === "unlink_driver") {
+      if (!driver_user_id) return NextResponse.json({ error: "driver_user_id required" }, { status: 400 })
+
+      // Clear linked_org_id on the rider's users row
+      const { error: userErr } = await supabaseAdmin
+        .from("users")
+        .update({ linked_org_id: null })
+        .eq("id", driver_user_id)
+      if (userErr) return NextResponse.json({ error: userErr.message }, { status: 500 })
+
+      // Clear user_id on organization_drivers
+      const { error: odErr } = await supabaseAdmin
+        .from("organization_drivers")
+        .update({ user_id: null })
+        .eq("organization_id", id)
+        .eq("user_id", driver_user_id)
+      if (odErr) console.error("[Org Actions] org_drivers unlink warning:", odErr)
+
+      return NextResponse.json({ success: true, message: "Rider unlinked from organization" })
     }
 
     return NextResponse.json({ error: "Unknown action" }, { status: 400 })

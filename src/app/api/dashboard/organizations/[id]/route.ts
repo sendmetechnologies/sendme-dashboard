@@ -56,27 +56,17 @@ export async function GET(
 
     const totalSpend = (spendData || []).reduce((sum, o) => sum + (Number(o.final_price) || 0), 0)
 
-    // Wallet balance
+    // Wallet balance (organizations use organization_wallets table)
     let wallet = null
     try {
-      const { data: orgWallet } = await supabaseAdmin
+      const { data: w } = await supabaseAdmin
         .from("organization_wallets")
-        .select("balance, outstanding_balance")
+        .select("balance")
         .eq("organization_id", id)
         .single()
-      if (orgWallet) {
-        wallet = orgWallet
-      }
+      wallet = w
     } catch {
       // organization_wallets table may not exist yet
-    }
-    if (!wallet) {
-      const { data: w } = await supabaseAdmin
-        .from("wallets")
-        .select("balance, outstanding_balance")
-        .eq("user_id", id)
-        .single()
-      wallet = w
     }
 
     // Drivers in this org

@@ -120,14 +120,15 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // ── Get wallet balances ──
+    // ── Get wallet balances from organization_wallets ──
     let totalBalance = 0
     try {
-      const { data: orgWallets } = await supabaseAdmin
+      const { data: allWallets } = await supabaseAdmin
         .from("organization_wallets")
         .select("balance")
-      if (orgWallets && orgWallets.length > 0) {
-        totalBalance = orgWallets.reduce((sum, w) => sum + (Number(w.balance) || 0), 0)
+        .in("organization_id", orgIds)
+      if (allWallets && allWallets.length > 0) {
+        totalBalance = allWallets.reduce((sum, w) => sum + (Number(w.balance) || 0), 0)
       }
     } catch {
       // organization_wallets table may not exist yet

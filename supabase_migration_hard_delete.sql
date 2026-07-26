@@ -1,6 +1,6 @@
 -- ============================================================
--- ADMIN HARD DELETE FUNCTION
--- Handles all FK dependencies before deleting a user
+-- ADMIN HARD DELETE FUNCTION (v2)
+-- Handles ALL FK dependencies before deleting a user
 -- Run in Supabase SQL Editor
 -- ============================================================
 
@@ -12,9 +12,7 @@ AS $$
 DECLARE
   v_user_role TEXT;
   v_table TEXT;
-  v_has_col BOOLEAN;
 BEGIN
-  -- Get the user's role
   SELECT role INTO v_user_role FROM public.users WHERE id = p_user_id;
 
   IF v_user_role IS NULL THEN
@@ -22,84 +20,91 @@ BEGIN
   END IF;
 
   -- ══════════════════════════════════════════════
-  -- DRIVER-specific cleanup
+  -- SHARED cross-role cleanup (tables with FKs to users.id used by all roles)
   -- ══════════════════════════════════════════════
+
+  -- Nullify self-referencing FKs first
+  UPDATE public.users SET referred_by = NULL WHERE referred_by = p_user_id;
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='users' AND column_name='linked_org_id') THEN
+    UPDATE public.users SET linked_org_id = NULL WHERE linked_org_id = p_user_id;
+  END IF;
+
+  -- Delete shared child rows (order matters for FK chains)
+  FOREACH v_table IN ARRAY ARRAY[
+    'order_tracking', 'bids', 'driver_return_interests',
+    'return_load_plans', 'online_sessions',
+    'complaints', 'ratings', 'referrals',
+    'return_load_negotiations', 'virtual_accounts', 'wallet_funding_tracking',
+    'user_points', 'user_tasks', 'points_transactions', 'user_achievements',
+    'saved_places', 'email_verifications', 'phone_verifications',
+    'notification_preferences', 'email_rate_limits', 'email_logs',
+    'messages', 'chat_messages', 'notification_logs',
+    'wallets', 'payment_methods', 'transactions'
+  ] LOOP
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name=v_table) THEN
+      -- Try user_id column
+      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name=v_table AND column_name='user_id') THEN
+        EXECUTE format('DELETE FROM public.%I WHERE user_id = $1', v_table) USING p_user_id;
+      END IF;
+      -- Try driver_id column
+      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name=v_table AND column_name='driver_id') THEN
+        EXECUTE format('DELETE FROM public.%I WHERE driver_id = $1', v_table) USING p_user_id;
+      END IF;
+      -- Try sender_id column (chat_messages)
+      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name=v_table AND column_name='sender_id') THEN
+        EXECUTE format('DELETE FROM public.%I WHERE sender_id = $1', v_table) USING p_user_id;
+      END IF;
+      -- Try rater_id column (ratings)
+      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name=v_table AND column_name='rater_id') THEN
+        EXECUTE format('DELETE FROM public.%I WHERE rater_id = $1', v_table) USING p_user_id;
+      END IF;
+      -- Try rated_user_id column (ratings)
+      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name=v_table AND column_name='rated_user_id') THEN
+        EXECUTE format('DELETE FROM public.%I WHERE rated_user_id = $1', v_table) USING p_user_id;
+      END IF;
+      -- Try referrer_id column (referrals)
+      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name=v_table AND column_name='referrer_id') THEN
+        EXECUTE format('DELETE FROM public.%I WHERE referrer_id = $1', v_table) USING p_user_id;
+      END IF;
+      -- Try referred_user_id column (referrals)
+      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name=v_table AND column_name='referred_user_id') THEN
+        EXECUTE format('DELETE FROM public.%I WHERE referred_user_id = $1', v_table) USING p_user_id;
+      END IF;
+      -- Try from_user_id column (return_load_negotiations)
+      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name=v_table AND column_name='from_user_id') THEN
+        EXECUTE format('DELETE FROM public.%I WHERE from_user_id = $1', v_table) USING p_user_id;
+      END IF;
+    END IF;
+  END LOOP;
+
+  -- ══════════════════════════════════════════════
+  -- ROLE-SPECIFIC cleanup
+  -- ══════════════════════════════════════════════
+
   IF v_user_role = 'driver' THEN
-    -- Nullify nullable FK references first
+    -- Nullify orders referencing this driver
     UPDATE public.orders SET accepted_driver_id = NULL WHERE accepted_driver_id = p_user_id;
 
+    -- Nullify vehicle assignments
     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='organization_vehicles') THEN
       IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='organization_vehicles' AND column_name='assigned_driver_id') THEN
         UPDATE public.organization_vehicles SET assigned_driver_id = NULL WHERE assigned_driver_id = p_user_id;
       END IF;
     END IF;
 
-    -- Delete driver-specific child rows (order matters for FK chains)
-    FOREACH v_table IN ARRAY ARRAY[
-      'order_tracking', 'bids', 'driver_return_interests',
-      'return_load_plans', 'online_sessions'
-    ] LOOP
-      IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name=v_table) THEN
-        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name=v_table AND column_name='driver_id') THEN
-          EXECUTE format('DELETE FROM public.%I WHERE driver_id = $1', v_table) USING p_user_id;
-        END IF;
-      END IF;
-    END LOOP;
-
-    -- Junction tables referencing driver_id
+    -- Remove from organization_drivers junction
     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='organization_drivers') THEN
-      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='organization_drivers' AND column_name='driver_id') THEN
-        DELETE FROM public.organization_drivers WHERE driver_id = p_user_id;
-      END IF;
+      DELETE FROM public.organization_drivers WHERE driver_id = p_user_id;
     END IF;
 
-    -- driver_profiles (PK = id, references users.id)
+    -- Delete driver profile
     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='driver_profiles') THEN
       DELETE FROM public.driver_profiles WHERE id = p_user_id;
     END IF;
 
-    -- Shared user-level tables (check both user_id and driver_id columns)
-    FOREACH v_table IN ARRAY ARRAY[
-      'user_points', 'user_tasks', 'points_transactions', 'user_achievements',
-      'saved_places', 'email_verifications', 'phone_verifications',
-      'notification_preferences', 'email_rate_limits', 'email_logs',
-      'messages', 'chat_messages', 'notification_logs',
-      'wallets', 'payment_methods', 'transactions'
-    ] LOOP
-      IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name=v_table) THEN
-        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name=v_table AND column_name='user_id') THEN
-          EXECUTE format('DELETE FROM public.%I WHERE user_id = $1', v_table) USING p_user_id;
-        ELSIF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name=v_table AND column_name='driver_id') THEN
-          EXECUTE format('DELETE FROM public.%I WHERE driver_id = $1', v_table) USING p_user_id;
-        END IF;
-      END IF;
-    END LOOP;
-
-  -- ══════════════════════════════════════════════
-  -- CUSTOMER-specific cleanup
-  -- ══════════════════════════════════════════════
   ELSIF v_user_role = 'customer' THEN
-    -- Delete orders (bids cascade via order_id ON DELETE CASCADE)
     DELETE FROM public.orders WHERE customer_id = p_user_id;
 
-    -- Shared user-level tables
-    FOREACH v_table IN ARRAY ARRAY[
-      'user_points', 'user_tasks', 'points_transactions', 'user_achievements',
-      'saved_places', 'email_verifications', 'phone_verifications',
-      'notification_preferences', 'email_rate_limits', 'email_logs',
-      'messages', 'chat_messages', 'notification_logs',
-      'wallets', 'payment_methods', 'transactions'
-    ] LOOP
-      IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name=v_table) THEN
-        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name=v_table AND column_name='user_id') THEN
-          EXECUTE format('DELETE FROM public.%I WHERE user_id = $1', v_table) USING p_user_id;
-        END IF;
-      END IF;
-    END LOOP;
-
-  -- ══════════════════════════════════════════════
-  -- ORGANIZATION-specific cleanup
-  -- ══════════════════════════════════════════════
   ELSIF v_user_role = 'organization' THEN
     -- Delete orders (bids cascade via order_id ON DELETE CASCADE)
     DELETE FROM public.orders WHERE customer_id = p_user_id;
@@ -121,28 +126,16 @@ BEGIN
       END IF;
     END LOOP;
 
-    -- Shared user-level tables
-    FOREACH v_table IN ARRAY ARRAY[
-      'user_points', 'user_tasks', 'points_transactions', 'user_achievements',
-      'saved_places', 'email_verifications', 'phone_verifications',
-      'notification_preferences', 'email_rate_limits', 'email_logs',
-      'messages', 'chat_messages', 'notification_logs',
-      'wallets', 'payment_methods', 'transactions'
-    ] LOOP
-      IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name=v_table) THEN
-        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name=v_table AND column_name='user_id') THEN
-          EXECUTE format('DELETE FROM public.%I WHERE user_id = $1', v_table) USING p_user_id;
-        END IF;
-      END IF;
-    END LOOP;
+  ELSIF v_user_role = 'marketer' THEN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='marketer_profiles') THEN
+      DELETE FROM public.marketer_profiles WHERE user_id = p_user_id;
+    END IF;
+
   END IF;
 
   -- ══════════════════════════════════════════════
   -- Finally delete the user row itself
   -- ══════════════════════════════════════════════
-  -- Nullify self-referencing FK (users.referred_by -> users.id)
-  UPDATE public.users SET referred_by = NULL WHERE referred_by = p_user_id;
-
   DELETE FROM public.users WHERE id = p_user_id;
 
   RETURN jsonb_build_object('success', true, 'message', 'User permanently deleted');

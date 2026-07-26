@@ -1,6 +1,24 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 
+async function sendUserNotification(userId: string, title: string, body: string, type: string = "PAYMENT") {
+  await supabaseAdmin.from("messages").insert({
+    user_id: userId, title, body, type, status: "UNREAD",
+    data: { event: "WALLET_CREDIT" }, created_at: new Date().toISOString(),
+  })
+  try {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+    if (supabaseUrl && serviceKey) {
+      await fetch(`${supabaseUrl}/functions/v1/send-message`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${serviceKey}` },
+        body: JSON.stringify({ userId, title, body, type, channels: { inApp: true, push: true, email: false } }),
+      })
+    }
+  } catch {}
+}
+
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -151,7 +169,6 @@ export async function POST(
     if (action === "credit") {
       if (!amount || amount <= 0) return NextResponse.json({ error: "Invalid amount" }, { status: 400 })
 
-      // Try organization_wallets first
       const { data: wallet } = await supabaseAdmin
         .from("organization_wallets")
         .select("id, balance")
@@ -166,25 +183,10 @@ export async function POST(
           .eq("id", wallet.id)
         if (error) return NextResponse.json({ error: error.message }, { status: 500 })
       } else {
-        // Fallback to wallets table
-        const { data: w } = await supabaseAdmin
-          .from("wallets")
-          .select("id, balance")
-          .eq("user_id", id)
-          .single()
-        if (w) {
-          const newBalance = Number(w.balance) + Number(amount)
-          const { error } = await supabaseAdmin
-            .from("wallets")
-            .update({ balance: newBalance, updated_at: new Date().toISOString() })
-            .eq("id", w.id)
-          if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-        } else {
-          const { error } = await supabaseAdmin
-            .from("wallets")
-            .insert({ user_id: id, balance: amount })
-          if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-        }
+        const { error } = await supabaseAdmin
+          .from("organization_wallets")
+          .insert({ organization_id: id, balance: amount })
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
       }
 
       await supabaseAdmin.from("transactions").insert({
@@ -192,6 +194,8 @@ export async function POST(
         type: "deposit",
         amount: amount,
       })
+
+      await sendUserNotification(id, "Wallet Credited", `₦${Number(amount).toLocaleString()} has been added to your wallet by admin.`, "PAYMENT")
 
       return NextResponse.json({ success: true, message: `₦${Number(amount).toLocaleString()} credited to wallet` })
     }

@@ -46,6 +46,53 @@ export async function POST(
         .eq("user_id", id)
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
+      // Create the canonical marketer record + wallet so the marketer's public
+      // dashboard (marketers / marketer_wallets tables) has data to read.
+      try {
+        const { data: user } = await supabaseAdmin
+          .from("users")
+          .select("id, full_name, email, phone")
+          .eq("id", id)
+          .single()
+        const { data: profile } = await supabaseAdmin
+          .from("marketer_profiles")
+          .select("phone")
+          .eq("user_id", id)
+          .single()
+
+        const { data: rateSetting } = await supabaseAdmin
+          .from("platform_settings")
+          .select("value")
+          .eq("key", "marketer_commission_rate")
+          .single()
+        const commissionRate = rateSetting?.value != null ? Number(rateSetting.value) : 0.02
+
+        const { data: marketerRow, error: mkError } = await supabaseAdmin
+          .from("marketers")
+          .insert({
+            ref_id: marketerId,
+            name: user?.full_name || null,
+            email: user?.email || null,
+            phone: profile?.phone || user?.phone || null,
+            commission_rate: commissionRate,
+            is_active: true,
+            total_referrals: 0,
+            total_earnings: 0,
+          })
+          .select("id")
+          .single()
+
+        if (mkError) {
+          console.error("[Marketer Actions] Failed to create marketers row:", mkError)
+        } else if (marketerRow) {
+          await supabaseAdmin
+            .from("marketer_wallets")
+            .insert({ marketer_id: marketerRow.id, balance: 0 })
+        }
+      } catch (e) {
+        console.error("[Marketer Actions] Failed to sync canonical marketer row:", e)
+      }
+
       // Send in-app notification
       try {
         await supabaseAdmin.from("messages").insert({
@@ -97,6 +144,12 @@ export async function POST(
 
     // ── Suspend marketer ──
     if (action === "suspend") {
+      const { data: profile } = await supabaseAdmin
+        .from("marketer_profiles")
+        .select("marketer_id")
+        .eq("user_id", id)
+        .single()
+
       const { error } = await supabaseAdmin
         .from("marketer_profiles")
         .update({
@@ -107,11 +160,25 @@ export async function POST(
         .eq("user_id", id)
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
+      // Deactivate the marketer code so referrals stop being accepted
+      if (profile?.marketer_id) {
+        await supabaseAdmin
+          .from("marketers")
+          .update({ is_active: false })
+          .eq("ref_id", profile.marketer_id)
+      }
+
       return NextResponse.json({ success: true, message: "Marketer suspended" })
     }
 
     // ── Reinstate marketer (from suspended) ──
     if (action === "reinstate") {
+      const { data: profile } = await supabaseAdmin
+        .from("marketer_profiles")
+        .select("marketer_id")
+        .eq("user_id", id)
+        .single()
+
       const { error } = await supabaseAdmin
         .from("marketer_profiles")
         .update({
@@ -122,24 +189,59 @@ export async function POST(
         .eq("user_id", id)
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
+      // Re-activate the marketer code
+      if (profile?.marketer_id) {
+        await supabaseAdmin
+          .from("marketers")
+          .update({ is_active: true })
+          .eq("ref_id", profile.marketer_id)
+      }
+
       return NextResponse.json({ success: true, message: "Marketer reinstated" })
     }
 
     // ── Soft delete (deactivate) ──
     if (action === "soft_delete") {
+      const { data: profile } = await supabaseAdmin
+        .from("marketer_profiles")
+        .select("marketer_id")
+        .eq("user_id", id)
+        .single()
+
       const { error } = await supabaseAdmin
         .from("users")
         .update({ is_deleted: true })
         .eq("id", id)
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+      // Deactivate the marketer code too
+      if (profile?.marketer_id) {
+        await supabaseAdmin
+          .from("marketers")
+          .update({ is_active: false })
+          .eq("ref_id", profile.marketer_id)
+      }
+
       return NextResponse.json({ success: true, message: "Marketer deactivated" })
     }
 
     // ── Hard delete ──
     if (action === "hard_delete") {
+      const { data: profile } = await supabaseAdmin
+        .from("marketer_profiles")
+        .select("marketer_id")
+        .eq("user_id", id)
+        .single()
+
       const { data: result, error } = await supabaseAdmin.rpc("admin_hard_delete_user", { p_user_id: id })
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })
       if (result && !result.success) return NextResponse.json({ error: result.error }, { status: 500 })
+
+      // Remove the canonical marketer record so it doesn't linger as an orphan
+      if (profile?.marketer_id) {
+        await supabaseAdmin.from("marketers").delete().eq("ref_id", profile.marketer_id)
+      }
+
       return NextResponse.json({ success: true, message: "Marketer permanently deleted" })
     }
 

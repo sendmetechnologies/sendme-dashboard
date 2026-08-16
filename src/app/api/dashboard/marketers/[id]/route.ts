@@ -20,19 +20,62 @@ export async function GET(
 
     const user = (profile as any).users
 
-    // Referral stats
+    // Referral stats (from the canonical referrals table)
     let referralCount = 0
     let referrals: any[] = []
+    let totalEarnings = 0
+    let walletBalance = 0
     if (profile.marketer_id) {
-      const { data: refData } = await supabaseAdmin
-        .from("users")
-        .select("id, full_name, email, phone, role, created_at")
-        .eq("marketer_id", profile.marketer_id)
-        .order("created_at", { ascending: false })
-        .limit(20)
+      const { data: mk } = await supabaseAdmin
+        .from("marketers")
+        .select("id, total_earnings")
+        .eq("ref_id", profile.marketer_id)
+        .single()
 
-      referrals = refData || []
-      referralCount = referrals.length
+      if (mk) {
+        totalEarnings = Number(mk.total_earnings) || 0
+
+        const { data: wallet } = await supabaseAdmin
+          .from("marketer_wallets")
+          .select("balance")
+          .eq("marketer_id", mk.id)
+          .single()
+        walletBalance = Number(wallet?.balance) || 0
+
+        const { data: refData } = await supabaseAdmin
+          .from("referrals")
+          .select("id, referred_user_id, referred_user_role, status, created_at")
+          .eq("marketer_id", mk.id)
+          .order("created_at", { ascending: false })
+          .limit(20)
+
+        const refs = refData || []
+        referralCount = refs.length
+
+        // Enrich referrals with referred user details
+        const userIds = refs.map((r: any) => r.referred_user_id).filter(Boolean)
+        const userById: Record<string, any> = {}
+        if (userIds.length > 0) {
+          const { data: users } = await supabaseAdmin
+            .from("users")
+            .select("id, full_name, email, phone, role")
+            .in("id", userIds)
+          for (const u of users || []) userById[u.id] = u
+        }
+
+        referrals = refs.map((r: any) => {
+          const u = userById[r.referred_user_id]
+          return {
+            id: r.id,
+            name: u?.full_name || "—",
+            email: u?.email || "—",
+            phone: u?.phone || "—",
+            role: r.referred_user_role || u?.role || "—",
+            status: r.status,
+            joined: new Date(r.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
+          }
+        })
+      }
     }
 
     const created = new Date(profile.created_at)
@@ -70,8 +113,10 @@ export async function GET(
         statusColor: statusColors[profile.status] || "bg-gray-100 text-gray-600",
         reviewReason: profile.review_reason,
         totalReferrals: referralCount,
-        totalEarnings: Number(profile.total_earnings) || 0,
-        totalEarningsFormatted: `₦${(Number(profile.total_earnings) || 0).toLocaleString()}`,
+        totalEarnings,
+        totalEarningsFormatted: `₦${totalEarnings.toLocaleString()}`,
+        walletBalance,
+        walletBalanceFormatted: `₦${walletBalance.toLocaleString()}`,
         memberSince,
         memberDuration,
         created_at: profile.created_at,

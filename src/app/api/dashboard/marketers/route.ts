@@ -57,21 +57,38 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: queryError.message }, { status: 500 })
     }
 
-    // ── Get referral counts for each marketer ──
+    // ── Get referral/earnings data for each marketer (canonical tables) ──
     const marketerIds = (profiles || []).map((p: any) => p.marketer_id).filter(Boolean)
     const referralCounts: Record<string, number> = {}
+    const earningsByRef: Record<string, number> = {}
+    const walletByRef: Record<string, number> = {}
 
     if (marketerIds.length > 0) {
-      const { data: users } = await supabaseAdmin
-        .from("users")
-        .select("marketer_id")
-        .in("marketer_id", marketerIds)
+      const { data: mkRows } = await supabaseAdmin
+        .from("marketers")
+        .select("id, ref_id, total_earnings")
+        .in("ref_id", marketerIds)
 
-      if (users) {
-        for (const u of users) {
-          if (u.marketer_id) {
-            referralCounts[u.marketer_id] = (referralCounts[u.marketer_id] || 0) + 1
-          }
+      const ids = (mkRows || []).map((m: any) => m.id)
+      const refById: Record<string, string> = {}
+      for (const m of mkRows || []) {
+        refById[m.id] = m.ref_id
+        earningsByRef[m.ref_id] = Number(m.total_earnings) || 0
+      }
+
+      if (ids.length > 0) {
+        const [{ data: walletRows }, { data: referralRows }] = await Promise.all([
+          supabaseAdmin.from("marketer_wallets").select("marketer_id, balance").in("marketer_id", ids),
+          supabaseAdmin.from("referrals").select("marketer_id").in("marketer_id", ids),
+        ])
+
+        for (const w of walletRows || []) {
+          const refId = refById[w.marketer_id]
+          if (refId) walletByRef[refId] = Number(w.balance) || 0
+        }
+        for (const r of referralRows || []) {
+          const refId = refById[r.marketer_id]
+          if (refId) referralCounts[refId] = (referralCounts[refId] || 0) + 1
         }
       }
     }
@@ -107,8 +124,10 @@ export async function GET(req: NextRequest) {
         statusLabel: p.status.charAt(0).toUpperCase() + p.status.slice(1),
         statusColor: statusColors[p.status] || "bg-gray-100 text-gray-600",
         referrals: referralCounts[p.marketer_id] || 0,
-        totalEarnings: Number(p.total_earnings) || 0,
-        totalEarningsFormatted: `₦${(Number(p.total_earnings) || 0).toLocaleString()}`,
+        totalEarnings: earningsByRef[p.marketer_id] || 0,
+        totalEarningsFormatted: `₦${(earningsByRef[p.marketer_id] || 0).toLocaleString()}`,
+        walletBalance: walletByRef[p.marketer_id] || 0,
+        walletBalanceFormatted: `₦${(walletByRef[p.marketer_id] || 0).toLocaleString()}`,
         joined: created.toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" }),
         joinedNote,
       }

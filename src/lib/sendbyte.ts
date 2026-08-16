@@ -147,3 +147,91 @@ export function buildReviewNotificationEmail(
     ),
   };
 }
+
+export function buildWithdrawalRequestEmail(data: {
+  userName: string;
+  amount: number;
+  bankName: string;
+  accountNumber: string;
+  accountName: string;
+  fee?: number;
+}): { subject: string; html: string } {
+  const feeNote = data.fee && data.fee > 0
+    ? `<tr><td style="padding: 8px 12px; background: #f9f9f9; font-weight: 600;">Fee</td><td style="padding: 8px 12px;">₦${data.fee.toLocaleString()}</td></tr>`
+    : "";
+  const total = data.amount + (data.fee || 0);
+
+  return {
+    subject: `Withdrawal Request - ₦${data.amount.toLocaleString()}`,
+    html: buildEmailTemplate("Withdrawal Request Received", `
+      <p>Hi ${data.userName},</p>
+      <p>We have received your withdrawal request. Here are the details:</p>
+      <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
+        <tr><td style="padding: 8px 12px; background: #f9f9f9; font-weight: 600;">Amount</td><td style="padding: 8px 12px;">₦${data.amount.toLocaleString()}</td></tr>
+        ${feeNote}
+        <tr><td style="padding: 8px 12px; background: #f9f9f9; font-weight: 600;">Total Deducted</td><td style="padding: 8px 12px; font-weight: 600;">₦${total.toLocaleString()}</td></tr>
+        <tr><td style="padding: 8px 12px; background: #f9f9f9; font-weight: 600;">Bank</td><td style="padding: 8px 12px;">${data.bankName}</td></tr>
+        <tr><td style="padding: 8px 12px; background: #f9f9f9; font-weight: 600;">Account Number</td><td style="padding: 8px 12px;">${data.accountNumber}</td></tr>
+        <tr><td style="padding: 8px 12px; background: #f9f9f9; font-weight: 600;">Account Name</td><td style="padding: 8px 12px;">${data.accountName}</td></tr>
+      </table>
+      <p>Your withdrawal is being processed. This may take up to 2 business days.</p>
+    `),
+  };
+}
+
+export function buildPayoutApprovedEmail(data: {
+  userName: string;
+  amount: number;
+  bankName: string;
+}): { subject: string; html: string } {
+  return {
+    subject: `Payout Approved - ₦${data.amount.toLocaleString()}`,
+    html: buildEmailTemplate("Payout Approved", `
+      <p>Hi ${data.userName},</p>
+      <p>Your payout has been approved and is on its way!</p>
+      <div style="text-align: center; margin: 24px 0;">
+        <span class="badge-success">Approved</span>
+      </div>
+      <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
+        <tr><td style="padding: 8px 12px; background: #f9f9f9; font-weight: 600;">Amount</td><td style="padding: 8px 12px;">₦${data.amount.toLocaleString()}</td></tr>
+        <tr><td style="padding: 8px 12px; background: #f9f9f9; font-weight: 600;">Bank</td><td style="padding: 8px 12px;">${data.bankName}</td></tr>
+      </table>
+      <p>The funds will be credited to your bank account shortly.</p>
+    `),
+  };
+}
+
+export function buildPayoutRejectedEmail(data: {
+  userName: string;
+  amount: number;
+  reason?: string;
+  feeRefunded?: number;
+}): { subject: string; html: string } {
+  const reasonBlock = data.reason
+    ? `<div style="background: #f9f9f9; padding: 16px; border-radius: 8px; margin: 16px 0;">
+        <p style="margin: 0; font-weight: 600; color: #333;">Reason:</p>
+        <p style="margin: 8px 0 0 0; color: #666;">${data.reason}</p>
+      </div>`
+    : "";
+  const refundNote = data.feeRefunded && data.feeRefunded > 0
+    ? `<p>Your withdrawal fee of ₦${data.feeRefunded.toLocaleString()} has been refunded to your wallet.</p>`
+    : "";
+
+  return {
+    subject: `Payout Not Approved - ₦${data.amount.toLocaleString()}`,
+    html: buildEmailTemplate("Payout Not Approved", `
+      <p>Hi ${data.userName},</p>
+      <p>Your payout request could not be approved at this time.</p>
+      <div style="text-align: center; margin: 24px 0;">
+        <span class="badge-error">Not Approved</span>
+      </div>
+      <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
+        <tr><td style="padding: 8px 12px; background: #f9f9f9; font-weight: 600;">Amount</td><td style="padding: 8px 12px;">₦${data.amount.toLocaleString()}</td></tr>
+      </table>
+      ${reasonBlock}
+      <p>Your wallet has been refunded${data.feeRefunded && data.feeRefunded > 0 ? ` (including ₦${data.feeRefunded.toLocaleString()} fee)` : ""}.</p>
+      ${refundNote}
+      <p>Please try again or contact support if you need assistance.</p>
+    `),
+  };
+}

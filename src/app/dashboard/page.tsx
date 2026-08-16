@@ -20,13 +20,13 @@ interface Delta {
 }
 
 interface Comparison {
-  deliveries: Delta; revenue: Delta; newSenders: Delta; newRiders: Delta; payouts: Delta
+  deliveries: Delta; revenue: Delta; newSenders: Delta; newRiders: Delta; newOrgs: Delta; newMarketers: Delta; payouts: Delta
 }
 
 interface ChartData {
   deliveries: { label: string; value: number; prevValue: number }[]
   revenue: { label: string; value: number; prevValue: number }[]
-  userGrowth: { label: string; senders: number; riders: number; prevSenders: number; prevRiders: number }[]
+  userGrowth: { label: string; senders: number; riders: number; orgs: number; marketers: number; prevSenders: number; prevRiders: number; prevOrgs: number; prevMarketers: number }[]
   payoutTrend: { label: string; amount: number; prevAmount: number }[]
 }
 
@@ -261,12 +261,14 @@ export default function DashboardOverview() {
 
       {/* ── Comparison Summary ── */}
       {comparison && (
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3">
           {([
             { key: "deliveries" as const, label: "Deliveries", value: comparison.deliveries.current, fmt: (v: number) => v.toLocaleString() },
             { key: "revenue" as const, label: "Revenue", value: comparison.revenue.current, fmt: fmtAmt },
             { key: "newSenders" as const, label: "New Senders", value: comparison.newSenders.current, fmt: (v: number) => v.toLocaleString() },
             { key: "newRiders" as const, label: "New Riders", value: comparison.newRiders.current, fmt: (v: number) => v.toLocaleString() },
+            { key: "newOrgs" as const, label: "New Orgs", value: comparison.newOrgs.current, fmt: (v: number) => v.toLocaleString() },
+            { key: "newMarketers" as const, label: "New Marketers", value: comparison.newMarketers.current, fmt: (v: number) => v.toLocaleString() },
             { key: "payouts" as const, label: "Payouts", value: comparison.payouts.current, fmt: fmtAmt },
           ]).map((item) => {
             const d = comparison[item.key]
@@ -416,24 +418,32 @@ export default function DashboardOverview() {
           <div className="flex items-center justify-between mb-5">
             <div>
               <p className="text-sm font-semibold text-text-primary">User Growth</p>
-              <p className="text-xs text-text-muted mt-0.5">New senders vs riders</p>
+              <p className="text-xs text-text-muted mt-0.5">Senders / Riders / Orgs / Marketers</p>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-wrap">
               <div className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-sendme" /><span className="text-[10px] text-text-muted">Senders</span></div>
               <div className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-info" /><span className="text-[10px] text-text-muted">Riders</span></div>
+              <div className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-danger" /><span className="text-[10px] text-text-muted">Orgs</span></div>
+              <div className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-warning" /><span className="text-[10px] text-text-muted">Marketers</span></div>
             </div>
           </div>
-          <div className="flex items-end gap-3 h-44">
+          <div className="flex items-end gap-2 h-44">
             {charts.userGrowth.map((m) => {
-              const maxVal = Math.max(...charts.userGrowth.map((x) => Math.max(x.senders, x.riders)), 1)
+              const maxVal = Math.max(...charts.userGrowth.map((x) => Math.max(x.senders, x.riders, x.orgs, x.marketers)), 1)
               return (
                 <div key={m.label} className="flex-1 flex flex-col items-center gap-2 min-w-0">
-                  <div className="flex items-end gap-0.5 w-full" style={{ height: "120px" }}>
+                  <div className="flex items-end gap-[2px] w-full" style={{ height: "120px" }}>
                     <div className="flex-1 rounded-t-lg bg-sendme/20 relative" style={{ height: `${Math.max((m.senders / maxVal) * 100, 4)}%` }}>
                       <div className="absolute bottom-0 left-0 right-0 rounded-t-lg bg-sendme transition-all duration-500" style={{ height: "100%" }} />
                     </div>
                     <div className="flex-1 rounded-t-lg bg-info/20 relative" style={{ height: `${Math.max((m.riders / maxVal) * 100, 4)}%` }}>
                       <div className="absolute bottom-0 left-0 right-0 rounded-t-lg bg-info transition-all duration-500" style={{ height: "100%" }} />
+                    </div>
+                    <div className="flex-1 rounded-t-lg bg-danger/20 relative" style={{ height: `${Math.max((m.orgs / maxVal) * 100, 4)}%` }}>
+                      <div className="absolute bottom-0 left-0 right-0 rounded-t-lg bg-danger transition-all duration-500" style={{ height: "100%" }} />
+                    </div>
+                    <div className="flex-1 rounded-t-lg bg-warning/20 relative" style={{ height: `${Math.max((m.marketers / maxVal) * 100, 4)}%` }}>
+                      <div className="absolute bottom-0 left-0 right-0 rounded-t-lg bg-warning transition-all duration-500" style={{ height: "100%" }} />
                     </div>
                   </div>
                   <span className="text-[9px] font-medium text-text-muted truncate w-full text-center">{m.label}</span>

@@ -123,6 +123,7 @@ export async function GET(req: NextRequest) {
       allOrders, allPayouts, wallets,
       rv, rp, rs, ov, op,
       rOrders, rRiders, rSenders, rOrgs,
+      curOrgs, prevOrgs, curMarketers, prevMarketers,
     ] = await Promise.all([
       supabaseAdmin.from("orders").select("id, status, final_price, created_at, pickup_address, dropoff_address, customer_id, accepted_driver_id").gte("created_at", cSI).lte("created_at", cEI),
       supabaseAdmin.from("orders").select("id, status, final_price, created_at").gte("created_at", pSI).lte("created_at", pEI),
@@ -142,6 +143,10 @@ export async function GET(req: NextRequest) {
       supabaseAdmin.from("users").select("id, full_name, phone, created_at, driver_profiles(verification_status, rating, vehicle_info)").eq("role", "driver").order("created_at", { ascending: false }).limit(5),
       supabaseAdmin.from("users").select("id, full_name, phone, created_at").eq("role", "customer").order("created_at", { ascending: false }).limit(5),
       supabaseAdmin.from("organization_profiles").select("id, business_name, business_email, contact_person_name, is_verified, created_at").order("created_at", { ascending: false }).limit(5),
+      supabaseAdmin.from("organization_profiles").select("id, created_at").gte("created_at", cSI).lte("created_at", cEI),
+      supabaseAdmin.from("organization_profiles").select("id, created_at").gte("created_at", pSI).lte("created_at", pEI),
+      supabaseAdmin.from("marketers").select("id, created_at").gte("created_at", cSI).lte("created_at", cEI),
+      supabaseAdmin.from("marketers").select("id, created_at").gte("created_at", pSI).lte("created_at", pEI),
     ])
 
     const cO = curOrders.data || [], pO = prevOrders.data || []
@@ -169,6 +174,10 @@ export async function GET(req: NextRequest) {
     const pSend = cnt(pU.filter(u => u.role === "customer"), u => u.created_at, g, pSl)
     const cRid = cnt(cU.filter(u => u.role === "driver"), u => u.created_at, g, cSl)
     const pRid = cnt(pU.filter(u => u.role === "driver"), u => u.created_at, g, pSl)
+    const cOrg = cnt(curOrgs.data || [], (o: any) => o.created_at, g, cSl)
+    const pOrg = cnt(prevOrgs.data || [], (o: any) => o.created_at, g, pSl)
+    const cMkt = cnt(curMarketers.data || [], (m: any) => m.created_at, g, cSl)
+    const pMkt = cnt(prevMarketers.data || [], (m: any) => m.created_at, g, pSl)
     const cPay = sum(cT, t => ({ val: Number(t.amount) || 0, date: t.created_at }), g, cSl)
     const pPay = sum(pT, t => ({ val: Number(t.amount) || 0, date: t.created_at }), g, pSl)
 
@@ -179,6 +188,10 @@ export async function GET(req: NextRequest) {
     const prevSendTotal = pU.filter(u => u.role === "customer").length
     const curRidTotal = cU.filter(u => u.role === "driver").length
     const prevRidTotal = pU.filter(u => u.role === "driver").length
+    const curOrgTotal = (curOrgs.data || []).length
+    const prevOrgTotal = (prevOrgs.data || []).length
+    const curMktTotal = (curMarketers.data || []).length
+    const prevMktTotal = (prevMarketers.data || []).length
     const curPayTotal = cT.reduce((s, t) => s + (Number(t.amount) || 0), 0)
     const prevPayTotal = pT.reduce((s, t) => s + (Number(t.amount) || 0), 0)
 
@@ -187,6 +200,8 @@ export async function GET(req: NextRequest) {
       revenue: delta(curRevTotal, prevRevTotal),
       newSenders: delta(curSendTotal, prevSendTotal),
       newRiders: delta(curRidTotal, prevRidTotal),
+      newOrgs: delta(curOrgTotal, prevOrgTotal),
+      newMarketers: delta(curMktTotal, prevMktTotal),
       payouts: delta(curPayTotal, prevPayTotal),
     }
 
@@ -225,7 +240,7 @@ export async function GET(req: NextRequest) {
       charts: {
         deliveries: cSl.map((k, i) => ({ label: fmtSlot(k), value: cDel[k] ?? 0, prevValue: i < pSl.length ? (pDel[pSl[i]] ?? 0) : 0 })),
         revenue: cSl.map((k, i) => ({ label: fmtSlot(k), value: cRev[k] ?? 0, prevValue: i < pSl.length ? (pRev[pSl[i]] ?? 0) : 0 })),
-        userGrowth: cSl.map((k, i) => ({ label: fmtSlot(k), senders: cSend[k] ?? 0, riders: cRid[k] ?? 0, prevSenders: i < pSl.length ? (pSend[pSl[i]] ?? 0) : 0, prevRiders: i < pSl.length ? (pRid[pSl[i]] ?? 0) : 0 })),
+        userGrowth: cSl.map((k, i) => ({ label: fmtSlot(k), senders: cSend[k] ?? 0, riders: cRid[k] ?? 0, orgs: cOrg[k] ?? 0, marketers: cMkt[k] ?? 0, prevSenders: i < pSl.length ? (pSend[pSl[i]] ?? 0) : 0, prevRiders: i < pSl.length ? (pRid[pSl[i]] ?? 0) : 0, prevOrgs: i < pSl.length ? (pOrg[pSl[i]] ?? 0) : 0, prevMarketers: i < pSl.length ? (pMkt[pSl[i]] ?? 0) : 0 })),
         payoutTrend: cSl.map((k, i) => ({ label: fmtSlot(k), amount: cPay[k] ?? 0, prevAmount: i < pSl.length ? (pPay[pSl[i]] ?? 0) : 0 })),
       },
       recent: {

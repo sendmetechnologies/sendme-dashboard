@@ -1,231 +1,238 @@
-import { NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase";
+import { NextRequest, NextResponse } from "next/server"
+import { supabaseAdmin } from "@/lib/supabase"
 
-export async function GET() {
+type GU = "h" | "d" | "m"
+
+function parsePeriod(req: NextRequest) {
+  const sp = new URL(req.url).searchParams
+  const id = sp.get("period") || "this_week"
+  const from = sp.get("from"), to = sp.get("to")
+  const now = new Date()
+  const t = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const ms = 864e5
+  let cs: Date, ce: Date, ps: Date, pe: Date, g: GU = "d"
+  let pl = "", ppl = ""
+  const dow = now.getDay(), monOff = dow === 0 ? 6 : dow - 1
+
+  switch (id) {
+    case "today":
+      cs = t; ce = now; ps = new Date(t.getTime() - ms); pe = new Date(t.getTime() - 1); g = "h"
+      pl = "Today"; ppl = "Yesterday"; break
+    case "yesterday":
+      cs = new Date(t.getTime() - ms); ce = new Date(t.getTime() - 1)
+      ps = new Date(t.getTime() - 2 * ms); pe = new Date(t.getTime() - ms - 1); g = "h"
+      pl = "Yesterday"; ppl = "Day Before"; break
+    case "this_week": {
+      const m = new Date(t.getTime() - monOff * ms)
+      cs = m; ce = now; ps = new Date(m.getTime() - 7 * ms); pe = new Date(m.getTime() - 1)
+      pl = "This Week"; ppl = "Last Week"; break
+    }
+    case "last_week": {
+      const m = new Date(t.getTime() - monOff * ms)
+      cs = new Date(m.getTime() - 7 * ms); ce = new Date(m.getTime() - 1)
+      ps = new Date(cs.getTime() - 7 * ms); pe = new Date(cs.getTime() - 1)
+      pl = "Last Week"; ppl = "Week Before"; break
+    }
+    case "this_month": {
+      cs = new Date(now.getFullYear(), now.getMonth(), 1); ce = now
+      const e = new Date(cs.getTime() - ms)
+      ps = new Date(e.getFullYear(), e.getMonth(), 1); pe = e
+      pl = "This Month"; ppl = "Last Month"; break
+    }
+    case "last_month":
+      cs = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+      ce = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59)
+      ps = new Date(now.getFullYear(), now.getMonth() - 2, 1)
+      pe = new Date(now.getFullYear(), now.getMonth() - 1, 0, 23, 59, 59)
+      pl = "Last Month"; ppl = "Month Before"; break
+    case "this_year":
+      cs = new Date(now.getFullYear(), 0, 1); ce = now
+      ps = new Date(now.getFullYear() - 1, 0, 1)
+      pe = new Date(now.getFullYear() - 1, 11, 31, 23, 59, 59)
+      g = "m"; pl = "This Year"; ppl = "Last Year"; break
+    default:
+      if (id === "custom" && from && to) {
+        cs = new Date(from + "T00:00:00"); ce = new Date(to + "T23:59:59")
+        const dur = ce.getTime() - cs.getTime()
+        ps = new Date(cs.getTime() - dur); pe = new Date(cs.getTime() - 1)
+        pl = "Custom Range"; ppl = "Previous Range"
+      } else {
+        const m = new Date(t.getTime() - monOff * ms)
+        cs = m; ce = now; ps = new Date(m.getTime() - 7 * ms); pe = new Date(m.getTime() - 1)
+        pl = "This Week"; ppl = "Last Week"
+      }
+  }
+  return { cs: cs!, ce: ce!, ps: ps!, pe: pe!, g, pl, ppl }
+}
+
+function gk(d: Date, u: GU): string {
+  if (u === "h") return String(d.getHours())
+  if (u === "d") return d.toISOString().split("T")[0]
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
+}
+
+function lb(k: string, u: GU): string {
+  if (u === "h") { const h = +k; return h === 0 ? "12a" : h < 12 ? `${h}a` : h === 12 ? "12p" : `${h - 12}p` }
+  if (u === "d") return new Date(k + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })
+  const [y, m] = k.split("-")
+  return new Date(+y, +m - 1).toLocaleDateString("en-US", { month: "short" })
+}
+
+function slots(s: Date, e: Date, u: GU): string[] {
+  const r: string[] = []
+  if (u === "h") { const sh = s.getHours(), eh = e.getHours(); for (let h = sh; h <= eh; h++) r.push(String(h)) }
+  else if (u === "d") { const c = new Date(s); while (c <= e) { r.push(gk(c, "d")); c.setDate(c.getDate() + 1) } }
+  else { const c = new Date(s.getFullYear(), s.getMonth(), 1); const em = new Date(e.getFullYear(), e.getMonth(), 1); while (c <= em) { r.push(gk(c, "m")); c.setMonth(c.getMonth() + 1) } }
+  return r
+}
+
+function cnt<T>(items: T[], pick: (t: T) => string | null, u: GU, sl: string[]): Record<string, number> {
+  const m: Record<string, number> = {}; for (const s of sl) m[s] = 0
+  for (const i of items) { const ds = pick(i); if (!ds) continue; const k = gk(new Date(ds), u); if (k in m) m[k]++ }
+  return m
+}
+
+function sum<T>(items: T[], pick: (t: T) => { val: number; date: string | null }, u: GU, sl: string[]): Record<string, number> {
+  const m: Record<string, number> = {}; for (const s of sl) m[s] = 0
+  for (const i of items) { const { val, date } = pick(i); if (!date) continue; const k = gk(new Date(date), u); if (k in m) m[k] += val }
+  return m
+}
+
+function delta(c: number, p: number) {
+  const d = c - p
+  const pct = p > 0 ? Math.round((d / p) * 1000) / 10 : c > 0 ? 100 : 0
+  return { current: c, previous: p, delta: d, deltaPercent: pct, direction: (d > 0 ? "up" : d < 0 ? "down" : "flat") as "up" | "down" | "flat" }
+}
+
+function fmtAmt(v: number) {
+  if (v >= 1e9) return `₦${(v / 1e9).toFixed(1)}B`
+  if (v >= 1e6) return `₦${(v / 1e6).toFixed(1)}M`
+  if (v >= 1e3) return `₦${(v / 1e3).toFixed(1)}K`
+  return `₦${v.toLocaleString()}`
+}
+
+export async function GET(req: NextRequest) {
   try {
-    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
-    const sixMonthsAgo = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString()
+    const { cs, ce, ps, pe, g, pl, ppl } = parsePeriod(req)
+    const cSI = cs.toISOString(), cEI = ce.toISOString()
+    const pSI = ps.toISOString(), pEI = pe.toISOString()
+    const cSl = slots(cs, ce, g), pSl = slots(ps, pe, g)
 
-    // ── Run all counts in parallel ──
     const [
-      sendersResult,
-      ridersResult,
-      orgsResult,
-      ordersResult,
-      payoutRequestsResult,
-      walletsResult,
-      recentOrdersResult,
-      recentRidersResult,
-      recentSendersResult,
-      recentOrgsResult,
+      curOrders, prevOrders, curUsers, prevUsers, curTx, prevTx,
+      allOrders, allPayouts, wallets,
+      rv, rp, rs, ov, op,
+      rOrders, rRiders, rSenders, rOrgs,
     ] = await Promise.all([
-      // Total senders (customers)
-      supabaseAdmin.from("users").select("id", { count: "exact", head: true }).eq("role", "customer"),
-
-      // Total riders (drivers)
-      supabaseAdmin.from("users").select("id", { count: "exact", head: true }).eq("role", "driver"),
-
-      // Total organizations
-      supabaseAdmin.from("organization_profiles").select("id", { count: "exact", head: true }),
-
-      // Order counts by status
-      supabaseAdmin.from("orders").select("status, created_at, final_price"),
-
-      // Payout requests
+      supabaseAdmin.from("orders").select("id, status, final_price, created_at, pickup_address, dropoff_address, customer_id, accepted_driver_id").gte("created_at", cSI).lte("created_at", cEI),
+      supabaseAdmin.from("orders").select("id, status, final_price, created_at").gte("created_at", pSI).lte("created_at", pEI),
+      supabaseAdmin.from("users").select("id, role, created_at").gte("created_at", cSI).lte("created_at", cEI),
+      supabaseAdmin.from("users").select("id, role, created_at").gte("created_at", pSI).lte("created_at", pEI),
+      supabaseAdmin.from("transactions").select("amount, created_at").eq("type", "payout").gte("created_at", cSI).lte("created_at", cEI),
+      supabaseAdmin.from("transactions").select("amount, created_at").eq("type", "payout").gte("created_at", pSI).lte("created_at", pEI),
+      supabaseAdmin.from("orders").select("id, status, final_price, created_at, pickup_address, dropoff_address, customer_id, accepted_driver_id").order("created_at", { ascending: false }),
       supabaseAdmin.from("payout_requests").select("id, amount, status"),
-
-      // Wallets total balance
       supabaseAdmin.from("wallets").select("balance"),
-
-      // Recent 5 orders
-      supabaseAdmin
-        .from("orders")
-        .select("id, status, final_price, pickup_address, dropoff_address, created_at, customer_id, accepted_driver_id")
-        .order("created_at", { ascending: false })
-        .limit(5),
-
-      // Recent 5 riders
-      supabaseAdmin
-        .from("users")
-        .select("id, full_name, phone, created_at, driver_profiles(verification_status, rating, vehicle_info)")
-        .eq("role", "driver")
-        .order("created_at", { ascending: false })
-        .limit(5),
-
-      // Recent 5 senders
-      supabaseAdmin
-        .from("users")
-        .select("id, full_name, phone, created_at")
-        .eq("role", "customer")
-        .order("created_at", { ascending: false })
-        .limit(5),
-
-      // Recent 5 organizations
-      supabaseAdmin
-        .from("organization_profiles")
-        .select("id, business_name, business_email, contact_person_name, is_verified, created_at")
-        .order("created_at", { ascending: false })
-        .limit(5),
-    ])
-
-    // ── Compute stats ──
-    const totalSenders = sendersResult.count || 0
-    const totalRiders = ridersResult.count || 0
-    const totalOrgs = orgsResult.count || 0
-
-    // Orders breakdown
-    const orders = ordersResult.data || []
-    const totalDeliveries = orders.length
-    const completedDeliveries = orders.filter((o) => o.status === "delivered").length
-    const searchingDeliveries = orders.filter((o) => o.status === "searching").length
-    const inTransitDeliveries = orders.filter((o) => ["accepted", "picked_up", "bidding"].includes(o.status)).length
-    const failedDeliveries = orders.filter((o) => o.status === "canceled").length
-
-    // Rider status breakdown
-    const riders = (recentRidersResult.data || [])
-    const riderStatusCounts = { verified: 0, pending: 0, suspended: 0 }
-    // We need full rider count by status — do a separate query
-    const [riderVerified, riderPending, riderSuspended] = await Promise.all([
       supabaseAdmin.from("driver_profiles").select("id", { count: "exact", head: true }).eq("verification_status", "verified"),
       supabaseAdmin.from("driver_profiles").select("id", { count: "exact", head: true }).eq("verification_status", "pending"),
       supabaseAdmin.from("driver_profiles").select("id", { count: "exact", head: true }).eq("verification_status", "rejected"),
-    ])
-    riderStatusCounts.verified = riderVerified.count || 0
-    riderStatusCounts.pending = riderPending.count || 0
-    riderStatusCounts.suspended = riderSuspended.count || 0
-
-    // Sender status breakdown (active = has logged in recently, verified = has completed at least 1 order, suspended = blocked)
-    const [senderActive, senderVerified] = await Promise.all([
-      supabaseAdmin.from("users").select("id", { count: "exact", head: true }).eq("role", "customer"),
-      supabaseAdmin.from("orders").select("customer_id", { count: "exact", head: true }).eq("status", "delivered"),
-    ])
-    // For now, use total - verified as active approximation
-    const totalSenderOrders = senderVerified.count || 0
-
-    // Org status breakdown
-    const [orgVerified, orgPending] = await Promise.all([
       supabaseAdmin.from("organization_profiles").select("id", { count: "exact", head: true }).eq("is_verified", true),
       supabaseAdmin.from("organization_profiles").select("id", { count: "exact", head: true }).eq("is_verified", false),
+      supabaseAdmin.from("orders").select("id, status, final_price, pickup_address, dropoff_address, created_at, customer_id, accepted_driver_id").order("created_at", { ascending: false }).limit(5),
+      supabaseAdmin.from("users").select("id, full_name, phone, created_at, driver_profiles(verification_status, rating, vehicle_info)").eq("role", "driver").order("created_at", { ascending: false }).limit(5),
+      supabaseAdmin.from("users").select("id, full_name, phone, created_at").eq("role", "customer").order("created_at", { ascending: false }).limit(5),
+      supabaseAdmin.from("organization_profiles").select("id, business_name, business_email, contact_person_name, is_verified, created_at").order("created_at", { ascending: false }).limit(5),
     ])
-    const orgVerifiedCount = orgVerified.count || 0
-    const orgPendingCount = orgPending.count || 0
 
-    // Payout stats
-    const payoutRequests = payoutRequestsResult.data || []
-    const totalPayoutRequests = payoutRequests.length
-    const totalRequestAmount = payoutRequests.reduce((sum, p) => sum + (Number(p.amount) || 0), 0)
-    const pendingPayouts = payoutRequests.filter((p) => p.status === "pending").length
-    const recentPayouts = payoutRequests.filter((p) => {
-      // recent = last 7 days (approximate via created_at if available, or just count non-pending)
-      return p.status === "completed" || p.status === "paid"
-    }).length
+    const cO = curOrders.data || [], pO = prevOrders.data || []
+    const cU = curUsers.data || [], pU = prevUsers.data || []
+    const cT = curTx.data || [], pT = prevTx.data || []
+    const aO = allOrders.data || []
 
-    // Total rider funds (sum of wallet balances)
-    const wallets = walletsResult.data || []
-    const totalRiderFunds = wallets.reduce((sum, w) => sum + (Number(w.balance) || 0), 0)
+    const totalSenders = (await supabaseAdmin.from("users").select("id", { count: "exact", head: true }).eq("role", "customer")).count || 0
+    const totalRiders = (await supabaseAdmin.from("users").select("id", { count: "exact", head: true }).eq("role", "driver")).count || 0
+    const totalOrgs = (await supabaseAdmin.from("organization_profiles").select("id", { count: "exact", head: true })).count || 0
 
-    // ── Chart data ──
-
-    // Weekly deliveries (last 7 days)
-    const weeklyDeliveries: { day: string; value: number }[] = []
     const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
-    for (let i = 6; i >= 0; i--) {
-      const d = new Date(Date.now() - i * 24 * 60 * 60 * 1000)
-      const dayName = dayNames[d.getDay()]
-      const dayStr = d.toISOString().split("T")[0]
-      const count = orders.filter((o) => o.created_at && o.created_at.startsWith(dayStr)).length
-      weeklyDeliveries.push({ day: dayName, value: count })
+    function fmtSlot(k: string): string {
+      if (g === "h") return lb(k, "h")
+      if (g === "m") return lb(k, "m")
+      const d = new Date(k + "T12:00:00")
+      return `${dayNames[d.getDay()]} ${d.getDate()}`
     }
 
-    // Weekly revenue (last 7 days)
-    const weeklyRevenue: { day: string; value: number }[] = []
-    for (let i = 6; i >= 0; i--) {
-      const d = new Date(Date.now() - i * 24 * 60 * 60 * 1000)
-      const dayName = dayNames[d.getDay()]
-      const dayStr = d.toISOString().split("T")[0]
-      const dayRevenue = orders
-        .filter((o) => o.created_at && o.created_at.startsWith(dayStr))
-        .reduce((sum, o) => sum + (Number(o.final_price) || 0), 0)
-      weeklyRevenue.push({ day: dayName, value: Math.round(dayRevenue / 1000000 * 10) / 10 })
+    const cDel = cnt(cO, o => o.created_at, g, cSl)
+    const pDel = cnt(pO, o => o.created_at, g, pSl)
+    const cRev = sum(cO, o => ({ val: Number(o.final_price) || 0, date: o.created_at }), g, cSl)
+    const pRev = sum(pO, o => ({ val: Number(o.final_price) || 0, date: o.created_at }), g, pSl)
+    const cSend = cnt(cU.filter(u => u.role === "customer"), u => u.created_at, g, cSl)
+    const pSend = cnt(pU.filter(u => u.role === "customer"), u => u.created_at, g, pSl)
+    const cRid = cnt(cU.filter(u => u.role === "driver"), u => u.created_at, g, cSl)
+    const pRid = cnt(pU.filter(u => u.role === "driver"), u => u.created_at, g, pSl)
+    const cPay = sum(cT, t => ({ val: Number(t.amount) || 0, date: t.created_at }), g, cSl)
+    const pPay = sum(pT, t => ({ val: Number(t.amount) || 0, date: t.created_at }), g, pSl)
+
+    const curDelTotal = cO.length, prevDelTotal = pO.length
+    const curRevTotal = cO.reduce((s, o) => s + (Number(o.final_price) || 0), 0)
+    const prevRevTotal = pO.reduce((s, o) => s + (Number(o.final_price) || 0), 0)
+    const curSendTotal = cU.filter(u => u.role === "customer").length
+    const prevSendTotal = pU.filter(u => u.role === "customer").length
+    const curRidTotal = cU.filter(u => u.role === "driver").length
+    const prevRidTotal = pU.filter(u => u.role === "driver").length
+    const curPayTotal = cT.reduce((s, t) => s + (Number(t.amount) || 0), 0)
+    const prevPayTotal = pT.reduce((s, t) => s + (Number(t.amount) || 0), 0)
+
+    const comp = {
+      deliveries: delta(curDelTotal, prevDelTotal),
+      revenue: delta(curRevTotal, prevRevTotal),
+      newSenders: delta(curSendTotal, prevSendTotal),
+      newRiders: delta(curRidTotal, prevRidTotal),
+      payouts: delta(curPayTotal, prevPayTotal),
     }
 
-    // Monthly user growth (last 6 months)
-    const monthlyUsers: { month: string; senders: number; riders: number }[] = []
-    const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-    for (let i = 5; i >= 0; i--) {
-      const d = new Date()
-      d.setMonth(d.getMonth() - i)
-      const monthStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
-      const monthLabel = monthNames[d.getMonth()]
-      monthlyUsers.push({ month: monthLabel, senders: 0, riders: 0 })
-    }
-
-    // Payout trend (last 7 days)
-    const payoutTrend: { day: string; amount: number }[] = []
-    // Use transactions table for payout trend
-    const { data: recentTransactions } = await supabaseAdmin
-      .from("transactions")
-      .select("amount, created_at")
-      .eq("type", "payout")
-      .gte("created_at", sevenDaysAgo)
-
-    for (let i = 6; i >= 0; i--) {
-      const d = new Date(Date.now() - i * 24 * 60 * 60 * 1000)
-      const dayName = dayNames[d.getDay()]
-      const dayStr = d.toISOString().split("T")[0]
-      const dayAmount = (recentTransactions || [])
-        .filter((t) => t.created_at && t.created_at.startsWith(dayStr))
-        .reduce((sum, t) => sum + (Number(t.amount) || 0), 0)
-      payoutTrend.push({ day: dayName, amount: Math.round(dayAmount / 1000000 * 10) / 10 })
-    }
+    const allPayoutsData = allPayouts.data || []
+    const walletsData = wallets.data || []
+    const riders = (rRiders.data || [])
+    const orgVerified = ov.count || 0, orgPending = op.count || 0
 
     return NextResponse.json({
+      period: { current: pl, previous: ppl, groupBy: g },
       stats: {
-        senders: { total: totalSenders, active: totalSenders, verified: totalSenderOrders > 0 ? Math.min(totalSenderOrders, totalSenders) : 0, suspended: 0 },
-        riders: { total: totalRiders, verified: riderStatusCounts.verified, pending: riderStatusCounts.pending, suspended: riderStatusCounts.suspended },
-        organizations: { total: totalOrgs, verified: orgVerifiedCount, pending: orgPendingCount, suspended: totalOrgs - orgVerifiedCount - orgPendingCount },
-        payouts: { total: totalPayoutRequests, totalFunds: totalRiderFunds, totalRequests: totalRequestAmount, recent: recentPayouts, pending: pendingPayouts },
-        deliveries: { total: totalDeliveries, completed: completedDeliveries, searching: searchingDeliveries, inTransit: inTransitDeliveries, failed: failedDeliveries },
+        senders: {
+          total: totalSenders,
+          active: totalSenders,
+          verified: aO.filter(o => o.status === "delivered").length > 0 ? Math.min(aO.filter(o => o.status === "delivered").length, totalSenders) : 0,
+          suspended: 0,
+        },
+        riders: { total: totalRiders, verified: rv.count || 0, pending: rp.count || 0, suspended: rs.count || 0 },
+        organizations: { total: totalOrgs, verified: orgVerified, pending: orgPending, suspended: totalOrgs - orgVerified - orgPending },
+        payouts: {
+          total: allPayoutsData.length,
+          totalFunds: walletsData.reduce((s, w) => s + (Number(w.balance) || 0), 0),
+          totalRequests: allPayoutsData.reduce((s, p) => s + (Number(p.amount) || 0), 0),
+          recent: allPayoutsData.filter(p => p.status === "completed" || p.status === "paid").length,
+          pending: allPayoutsData.filter(p => p.status === "pending").length,
+        },
+        deliveries: {
+          total: aO.length,
+          completed: aO.filter(o => o.status === "delivered").length,
+          searching: aO.filter(o => o.status === "searching").length,
+          inTransit: aO.filter(o => ["accepted", "picked_up", "bidding"].includes(o.status)).length,
+          failed: aO.filter(o => o.status === "canceled").length,
+        },
       },
+      comparison: comp,
       charts: {
-        weeklyDeliveries,
-        weeklyRevenue,
-        monthlyUsers,
-        payoutTrend,
+        deliveries: cSl.map((k, i) => ({ label: fmtSlot(k), value: cDel[k] ?? 0, prevValue: i < pSl.length ? (pDel[pSl[i]] ?? 0) : 0 })),
+        revenue: cSl.map((k, i) => ({ label: fmtSlot(k), value: cRev[k] ?? 0, prevValue: i < pSl.length ? (pRev[pSl[i]] ?? 0) : 0 })),
+        userGrowth: cSl.map((k, i) => ({ label: fmtSlot(k), senders: cSend[k] ?? 0, riders: cRid[k] ?? 0, prevSenders: i < pSl.length ? (pSend[pSl[i]] ?? 0) : 0, prevRiders: i < pSl.length ? (pRid[pSl[i]] ?? 0) : 0 })),
+        payoutTrend: cSl.map((k, i) => ({ label: fmtSlot(k), amount: cPay[k] ?? 0, prevAmount: i < pSl.length ? (pPay[pSl[i]] ?? 0) : 0 })),
       },
       recent: {
-        deliveries: (recentOrdersResult.data || []).map((o) => ({
-          id: o.id.slice(0, 8).toUpperCase(),
-          status: o.status,
-          from: o.pickup_address || "—",
-          to: o.dropoff_address || "—",
-          price: o.final_price,
-          created_at: o.created_at,
-        })),
-        riders: riders.map((r) => ({
-          id: r.id,
-          name: r.full_name || "—",
-          phone: r.phone || "—",
-          status: (r.driver_profiles as any)?.verification_status || "pending",
-          rating: (r.driver_profiles as any)?.rating || 0,
-          vehicle: (r.driver_profiles as any)?.vehicle_info?.type || "—",
-          created_at: r.created_at,
-        })),
-        senders: (recentSendersResult.data || []).map((s) => ({
-          id: s.id,
-          name: s.full_name || "—",
-          email: "—",
-          phone: s.phone || "—",
-          created_at: s.created_at,
-        })),
-        organizations: (recentOrgsResult.data || []).map((o) => ({
-          id: o.id,
-          name: o.business_name || "—",
-          contact: o.contact_person_name || "—",
-          email: o.business_email || "—",
-          verified: o.is_verified,
-          created_at: o.created_at,
-        })),
+        deliveries: (rOrders.data || []).map(o => ({ id: o.id.slice(0, 8).toUpperCase(), status: o.status, from: o.pickup_address || "—", to: o.dropoff_address || "—", price: o.final_price, created_at: o.created_at })),
+        riders: riders.map((r: any) => ({ id: r.id, name: r.full_name || "—", phone: r.phone || "—", status: r.driver_profiles?.verification_status || "pending", rating: r.driver_profiles?.rating || 0, vehicle: r.driver_profiles?.vehicle_info?.type || "—", created_at: r.created_at })),
+        senders: (rSenders.data || []).map(s => ({ id: s.id, name: s.full_name || "—", email: "—", phone: s.phone || "—", created_at: s.created_at })),
+        organizations: (rOrgs.data || []).map(o => ({ id: o.id, name: o.business_name || "—", contact: o.contact_person_name || "—", email: o.business_email || "—", verified: o.is_verified, created_at: o.created_at })),
       },
     })
   } catch (err) {

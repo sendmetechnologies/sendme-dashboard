@@ -94,7 +94,7 @@ BEGIN
 
     -- Remove from organization_drivers junction
     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='organization_drivers') THEN
-      DELETE FROM public.organization_drivers WHERE driver_id = p_user_id;
+      DELETE FROM public.organization_drivers WHERE user_id = p_user_id;
     END IF;
 
     -- Delete driver profile

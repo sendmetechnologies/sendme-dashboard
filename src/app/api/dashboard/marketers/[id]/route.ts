@@ -10,7 +10,7 @@ export async function GET(
 
     const { data: profile, error: profileError } = await supabaseAdmin
       .from("marketer_profiles")
-      .select("*, users!inner(id, full_name, email, phone, state, created_at, is_deleted, is_suspended)")
+      .select("*, users!inner(id, full_name, email, phone, state, role, created_at, is_deleted, is_suspended)")
       .eq("user_id", id)
       .single()
 
@@ -101,6 +101,7 @@ export async function GET(
         name: user?.full_name || "—",
         phone: profile.phone || user?.phone || "—",
         email: user?.email || "—",
+        role: user?.role || "—",
         state: profile.state || "—",
         city: profile.city || "—",
         occupation: profile.occupation || "—",

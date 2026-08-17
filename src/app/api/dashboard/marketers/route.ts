@@ -33,7 +33,7 @@ export async function GET(req: NextRequest) {
     // ── Build query ──
     let query = supabaseAdmin
       .from("marketer_profiles")
-      .select("*, users!inner(id, full_name, email, phone, state, created_at)")
+      .select("*, users!inner(id, full_name, email, phone, state, role, created_at)")
       .order("created_at", { ascending: false })
 
     if (statusFilter) {
@@ -116,6 +116,7 @@ export async function GET(req: NextRequest) {
         name: user?.full_name || "—",
         phone: p.phone || user?.phone || "—",
         email: user?.email || "—",
+        role: user?.role || "—",
         state: p.state || "—",
         city: p.city || "—",
         occupation: p.occupation || "—",

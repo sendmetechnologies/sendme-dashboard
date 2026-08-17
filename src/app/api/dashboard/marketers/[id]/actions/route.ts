@@ -17,7 +17,7 @@ export async function POST(
   try {
     const { id } = await params
     const body = await req.json()
-    const { action, reason } = body
+    const { action, reason, target_role } = body
 
     // ── Approve marketer ──
     if (action === "approve") {
@@ -243,6 +243,33 @@ export async function POST(
       }
 
       return NextResponse.json({ success: true, message: "Marketer permanently deleted" })
+    }
+
+    // ── Assign base role to a marketer-only user ──
+    if (action === "assign_role") {
+      const validRoles = ["customer", "driver", "organization"]
+      if (!target_role || !validRoles.includes(target_role)) {
+        return NextResponse.json({ error: `target_role must be one of: ${validRoles.join(", ")}` }, { status: 400 })
+      }
+
+      const { data: user, error: fetchErr } = await supabaseAdmin
+        .from("users")
+        .select("role")
+        .eq("id", id)
+        .single()
+      if (fetchErr || !user) return NextResponse.json({ error: "User not found" }, { status: 404 })
+
+      if (user.role !== "marketer") {
+        return NextResponse.json({ error: `User already has base role "${user.role}". Only marketer-only users (role=marketer) can be assigned a base role.` }, { status: 400 })
+      }
+
+      const { error: updateErr } = await supabaseAdmin
+        .from("users")
+        .update({ role: target_role })
+        .eq("id", id)
+      if (updateErr) return NextResponse.json({ error: updateErr.message }, { status: 500 })
+
+      return NextResponse.json({ success: true, message: `Marketer assigned base role: ${target_role}` })
     }
 
     return NextResponse.json({ error: "Unknown action" }, { status: 400 })

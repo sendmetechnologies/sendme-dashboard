@@ -15,16 +15,19 @@ export async function GET(req: NextRequest) {
       .select("id", { count: "exact", head: true })
       .eq("role", "customer")
 
-    // ── Senders who have placed at least one order ──
-    const { count: activeSenders } = await supabaseAdmin
-      .from("orders")
-      .select("customer_id", { count: "exact", head: true })
-
-    // ── Unique active senders ──
+    // ── Active senders: customers who have placed at least one order ──
     const { data: activeCustomerIds } = await supabaseAdmin
       .from("orders")
       .select("customer_id")
-    const uniqueActive = new Set((activeCustomerIds || []).map((o) => o.customer_id)).size
+    const uniqueActiveOrderCustomerIds = new Set((activeCustomerIds || []).map((o) => o.customer_id))
+
+    // Cross-reference: only count active customers who exist in users table as customer
+    const { data: allCustomers } = await supabaseAdmin
+      .from("users")
+      .select("id")
+      .eq("role", "customer")
+    const customerIds = new Set((allCustomers || []).map((c) => c.id))
+    const uniqueActive = [...uniqueActiveOrderCustomerIds].filter((id) => customerIds.has(id)).length
 
     // ── Build query (try with new columns, fallback without) ──
     let senders: any[] | null = null
@@ -43,10 +46,10 @@ export async function GET(req: NextRequest) {
     }
 
     // Try with is_deleted and is_suspended columns first
-    const full = await tryQuery("id, full_name, phone, created_at, is_deleted, is_suspended")
+    const full = await tryQuery("id, full_name, phone, email, created_at, is_deleted, is_suspended")
     if (full.error) {
       // Columns don't exist yet, fall back
-      const fallback = await tryQuery("id, full_name, phone, created_at")
+      const fallback = await tryQuery("id, full_name, phone, email, created_at")
       senders = fallback.data
       queryError = fallback.error
     } else {
@@ -97,7 +100,7 @@ export async function GET(req: NextRequest) {
         id: s.id,
         name: s.full_name || "—",
         phone: s.phone || "—",
-        email: "—",
+        email: s.email || "—",
         avatar: (s.full_name || "?")[0],
         orders: orderCounts[s.id] || 0,
         totalSpent: totalSpent[s.id] || 0,

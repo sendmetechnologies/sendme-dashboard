@@ -40,7 +40,7 @@ export async function GET(req: NextRequest) {
     let query = supabaseAdmin
       .from("users")
       .select(`
-        id, full_name, phone, state, created_at,
+        id, full_name, phone, email, state, created_at,
         driver_profiles(verification_status, rating, vehicle_info, is_online, review_reason, trips_count)
       `)
       .eq("role", "driver")

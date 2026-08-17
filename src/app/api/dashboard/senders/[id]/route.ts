@@ -12,14 +12,14 @@ export async function GET(
     let sender: any = null
     const full = await supabaseAdmin
       .from("users")
-      .select("id, full_name, phone, state, created_at, is_deleted, is_suspended")
+      .select("id, full_name, phone, email, state, created_at, is_deleted, is_suspended")
       .eq("id", id)
       .single()
 
     if (full.error) {
       const fallback = await supabaseAdmin
         .from("users")
-        .select("id, full_name, phone, state, created_at")
+        .select("id, full_name, phone, email, state, created_at")
         .eq("id", id)
         .single()
       sender = fallback.data
@@ -76,6 +76,7 @@ export async function GET(
         id: sender.id,
         name: sender.full_name || "—",
         phone: sender.phone || "—",
+        email: sender.email || "—",
         avatar: (sender.full_name || "?")[0],
         status: (sender as any).is_suspended ? "Suspended" : "Active",
         statusColor: (sender as any).is_suspended ? "bg-warning-light text-warning" : "bg-sendme-50 text-sendme",

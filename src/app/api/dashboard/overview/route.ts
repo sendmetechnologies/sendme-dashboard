@@ -140,8 +140,8 @@ export async function GET(req: NextRequest) {
       supabaseAdmin.from("organization_profiles").select("id", { count: "exact", head: true }).eq("is_verified", true),
       supabaseAdmin.from("organization_profiles").select("id", { count: "exact", head: true }).eq("is_verified", false),
       supabaseAdmin.from("orders").select("id, status, final_price, pickup_address, dropoff_address, created_at, customer_id, accepted_driver_id").order("created_at", { ascending: false }).limit(5),
-      supabaseAdmin.from("users").select("id, full_name, phone, created_at, driver_profiles(verification_status, rating, vehicle_info)").eq("role", "driver").order("created_at", { ascending: false }).limit(5),
-      supabaseAdmin.from("users").select("id, full_name, phone, created_at").eq("role", "customer").order("created_at", { ascending: false }).limit(5),
+      supabaseAdmin.from("users").select("id, full_name, phone, email, created_at, driver_profiles(verification_status, rating, vehicle_info)").eq("role", "driver").order("created_at", { ascending: false }).limit(5),
+      supabaseAdmin.from("users").select("id, full_name, phone, email, created_at").eq("role", "customer").order("created_at", { ascending: false }).limit(5),
       supabaseAdmin.from("organization_profiles").select("id, business_name, business_email, contact_person_name, is_verified, created_at").order("created_at", { ascending: false }).limit(5),
       supabaseAdmin.from("organization_profiles").select("id, created_at").gte("created_at", cSI).lte("created_at", cEI),
       supabaseAdmin.from("organization_profiles").select("id, created_at").gte("created_at", pSI).lte("created_at", pEI),
@@ -246,7 +246,7 @@ export async function GET(req: NextRequest) {
       recent: {
         deliveries: (rOrders.data || []).map(o => ({ id: o.id.slice(0, 8).toUpperCase(), status: o.status, from: o.pickup_address || "—", to: o.dropoff_address || "—", price: o.final_price, created_at: o.created_at })),
         riders: riders.map((r: any) => ({ id: r.id, name: r.full_name || "—", phone: r.phone || "—", status: r.driver_profiles?.verification_status || "pending", rating: r.driver_profiles?.rating || 0, vehicle: r.driver_profiles?.vehicle_info?.type || "—", created_at: r.created_at })),
-        senders: (rSenders.data || []).map(s => ({ id: s.id, name: s.full_name || "—", email: "—", phone: s.phone || "—", created_at: s.created_at })),
+        senders: (rSenders.data || []).map(s => ({ id: s.id, name: s.full_name || "—", email: s.email || "—", phone: s.phone || "—", created_at: s.created_at })),
         organizations: (rOrgs.data || []).map(o => ({ id: o.id, name: o.business_name || "—", contact: o.contact_person_name || "—", email: o.business_email || "—", verified: o.is_verified, created_at: o.created_at })),
       },
     })

@@ -11,7 +11,7 @@ export async function GET(
     const { data: driver, error } = await supabaseAdmin
       .from("users")
       .select(`
-        id, full_name, phone, state, created_at,
+        id, full_name, phone, email, state, created_at,
         driver_profiles(verification_status, rating, vehicle_info, is_online, id_details, review_reason, trips_count)
       `)
       .eq("id", id)
@@ -93,6 +93,7 @@ export async function GET(
         id: driver.id,
         name: driver.full_name || "—",
         phone: driver.phone || "—",
+        email: driver.email || "—",
         avatar: (driver.full_name || "?")[0],
         status: statusLabel,
         statusColor,

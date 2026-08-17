@@ -103,9 +103,20 @@ BEGIN
     END IF;
 
   ELSIF v_user_role = 'customer' THEN
+    -- Delete transactions referencing this user's orders (e.g. driver payouts with order_id FK)
+    DELETE FROM public.transactions WHERE order_id IN (SELECT id FROM public.orders WHERE customer_id = p_user_id);
+    -- Also clean wallet_funding_tracking by order_id if it has that column
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='wallet_funding_tracking' AND column_name='order_id') THEN
+      DELETE FROM public.wallet_funding_tracking WHERE order_id IN (SELECT id FROM public.orders WHERE customer_id = p_user_id);
+    END IF;
     DELETE FROM public.orders WHERE customer_id = p_user_id;
 
   ELSIF v_user_role = 'organization' THEN
+    -- Delete transactions referencing this user's orders first
+    DELETE FROM public.transactions WHERE order_id IN (SELECT id FROM public.orders WHERE customer_id = p_user_id);
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='wallet_funding_tracking' AND column_name='order_id') THEN
+      DELETE FROM public.wallet_funding_tracking WHERE order_id IN (SELECT id FROM public.orders WHERE customer_id = p_user_id);
+    END IF;
     -- Delete orders (bids cascade via order_id ON DELETE CASCADE)
     DELETE FROM public.orders WHERE customer_id = p_user_id;
 

@@ -1,42 +1,141 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { Card } from "@/components/ui/card"
-import { WalletDetail } from "@/components/dashboard/wallet-detail"
+import { PayoutDetail } from "@/components/dashboard/payout-detail"
 import {
-  DollarSign, TrendingUp, TrendingDown, Search, Download, ChevronDown, ChevronLeft, ChevronRight, MoreHorizontal, Filter, Eye
+  DollarSign, TrendingUp, TrendingDown, Search, ChevronDown, ChevronLeft, ChevronRight,
+  MoreHorizontal, Filter, Loader2, CheckCircle, XCircle, Clock, Building2, User
 } from "lucide-react"
 
-const stats = [
-  { label: "Total Balance", value: "₦4,562,300.50", change: "↑ 14% vs last 30 days", up: true, icon: DollarSign, color: "text-sendme", bg: "bg-sendme-50" },
-  { label: "Available Balance", value: "₦3,892,100.20", change: "↑ 11% vs last 30 days", up: true, icon: DollarSign, color: "text-sendme", bg: "bg-sendme-50" },
-  { label: "On Hold", value: "₦420,500.00", change: "↓ 8% vs last 30 days", up: false, icon: DollarSign, color: "text-warning", bg: "bg-warning-light" },
-  { label: "Pending Payouts", value: "₦249,700.00", change: "↑ 16% vs last 30 days", up: true, icon: TrendingUp, color: "text-sendme", bg: "bg-sendme-50" },
-  { label: "Total Payouts (30d)", value: "₦2,185,400.00", change: "↑ 21% vs last 30 days", up: true, icon: TrendingDown, color: "text-sendme", bg: "bg-sendme-50" },
-]
+interface PayoutRow {
+  id: string
+  type: "driver" | "organization"
+  user_id: string
+  user_name: string
+  user_phone: string
+  amount: number
+  status: string
+  bank_name: string
+  account_number: string
+  account_name: string
+  note: string
+  created_at: string
+  updated_at?: string
+  processed_at?: string
+}
 
-const statusTabs = [
-  { name: "All Transactions", count: 1248, active: true },
-  { name: "Credits", count: 682 },
-  { name: "Debits", count: 466 },
-  { name: "Payouts", count: 100 },
-  { name: "Refunds", count: 32 },
-]
+interface PayoutStats {
+  total: number
+  totalAmount: number
+  pending: number
+  pendingAmount: number
+  completed: number
+  completedAmount: number
+  failed: number
+}
 
-const transactions = [
-  { id: "TRX-250520-001", type: "Credit", typeColor: "bg-sendme-50 text-sendme", typeIcon: "↓", desc: "Payment received", sub: "From Collins Bassie", amount: "₦6,800.00", amountColor: "text-sendme", status: "Completed", statusColor: "bg-sendme-50 text-sendme", wallet: "Main Wallet", date: "May 20, 2025", time: "10:24 AM" },
-  { id: "PAYOUT-250520-045", type: "Debit", typeColor: "bg-danger-light text-danger", typeIcon: "↑", desc: "Payout to driver", sub: "To Damilare Adegbite", amount: "-₦6,800.00", amountColor: "text-danger", status: "Completed", statusColor: "bg-sendme-50 text-sendme", wallet: "Main Wallet", date: "May 20, 2025", time: "9:15 AM" },
-  { id: "TRX-250520-002", type: "Credit", typeColor: "bg-sendme-50 text-sendme", typeIcon: "↓", desc: "Payment received", sub: "From Peace Stores", amount: "₦4,500.00", amountColor: "text-sendme", status: "Completed", statusColor: "bg-sendme-50 text-sendme", wallet: "Main Wallet", date: "May 20, 2025", time: "8:40 AM" },
-  { id: "PAYOUT-250520-046", type: "Payout", typeColor: "bg-info-light text-info", typeIcon: "↗", desc: "Payout requested", sub: "To Bank Account • 1234", amount: "-₦25,000.00", amountColor: "text-danger", status: "Pending", statusColor: "bg-warning-light text-warning", wallet: "Main Wallet", date: "May 19, 2025", time: "6:30 PM" },
-  { id: "REF-250519-003", type: "Refund", typeColor: "bg-warning-light text-warning", typeIcon: "↩", desc: "Refund issued", sub: "To QuickStore Ltd.", amount: "-₦2,200.00", amountColor: "text-danger", status: "Completed", statusColor: "bg-sendme-50 text-sendme", wallet: "Main Wallet", date: "May 19, 2025", time: "3:22 PM" },
-  { id: "TRX-250519-004", type: "Credit", typeColor: "bg-sendme-50 text-sendme", typeIcon: "↓", desc: "Payment received", sub: "From Starlight Logistics", amount: "₦52,000.00", amountColor: "text-sendme", status: "Completed", statusColor: "bg-sendme-50 text-sendme", wallet: "Main Wallet", date: "May 19, 2025", time: "12:10 PM" },
-  { id: "FEE-250519-005", type: "Debit", typeColor: "bg-danger-light text-danger", typeIcon: "↑", desc: "Platform fee", sub: "Service charge", amount: "-₦520.00", amountColor: "text-danger", status: "Completed", statusColor: "bg-sendme-50 text-sendme", wallet: "Main Wallet", date: "May 19, 2025", time: "12:10 PM" },
-  { id: "PAYOUT-250519-047", type: "Payout", typeColor: "bg-info-light text-info", typeIcon: "↗", desc: "Payout requested", sub: "To Opay • 8765", amount: "-₦15,000.00", amountColor: "text-danger", status: "Processing", statusColor: "bg-info-light text-info", wallet: "Main Wallet", date: "May 18, 2025", time: "9:05 AM" },
-]
+interface WalletStats {
+  totalBalance: number
+  driverBalance: number
+  orgBalance: number
+  totalUsers: number
+}
+
+const statusTabs = ["All", "Pending", "Processing", "Paid", "Failed"]
+const typeFilters = ["All Types", "Drivers", "Organizations"]
 
 export default function WalletsPaymentsPage() {
-  const [activeTab, setActiveTab] = useState("All Transactions")
-  const [showWallet, setShowWallet] = useState(true)
+  const [selectedPayout, setSelectedPayout] = useState<PayoutRow | null>(null)
+  const [activeTab, setActiveTab] = useState("All")
+  const [activeType, setActiveType] = useState("All Types")
+  const [loading, setLoading] = useState(true)
+  const [payouts, setPayouts] = useState<PayoutRow[]>([])
+  const [stats, setStats] = useState<PayoutStats>({ total: 0, totalAmount: 0, pending: 0, pendingAmount: 0, completed: 0, completedAmount: 0, failed: 0 })
+  const [walletStats, setWalletStats] = useState<WalletStats>({ totalBalance: 0, driverBalance: 0, orgBalance: 0, totalUsers: 0 })
+  const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, totalPages: 1 })
+  const [searchQuery, setSearchQuery] = useState("")
+
+  const fetchData = useCallback(async (page: number = 1, search: string = "", status: string = "", type: string = "") => {
+    setLoading(true)
+    try {
+      const params = new URLSearchParams()
+      params.set("page", String(page))
+      params.set("limit", "20")
+      if (search) params.set("search", search)
+      if (status && status !== "All") params.set("status", status.toLowerCase())
+      if (type === "Drivers") params.set("type", "driver")
+      else if (type === "Organizations") params.set("type", "org")
+
+      const res = await fetch(`/api/dashboard/payouts?${params.toString()}`)
+      const data = await res.json()
+
+      setPayouts(data.payouts || [])
+      setStats(data.stats || { total: 0, totalAmount: 0, pending: 0, pendingAmount: 0, completed: 0, completedAmount: 0, failed: 0 })
+      setWalletStats(data.wallets || { totalBalance: 0, driverBalance: 0, orgBalance: 0, totalUsers: 0 })
+      setPagination(data.pagination || { page: 1, limit: 20, total: 0, totalPages: 1 })
+    } catch (err) {
+      console.error("Failed to fetch payouts:", err)
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { fetchData() }, [fetchData])
+
+  const handleSearch = (q: string) => {
+    setSearchQuery(q)
+    fetchData(1, q, activeTab, activeType)
+  }
+
+  const handleTabChange = (tab: string) => {
+    setActiveTab(tab)
+    fetchData(1, searchQuery, tab, activeType)
+  }
+
+  const handleTypeChange = (type: string) => {
+    setActiveType(type)
+    fetchData(1, searchQuery, activeTab, type)
+  }
+
+  const handlePageChange = (page: number) => {
+    fetchData(page, searchQuery, activeTab, activeType)
+  }
+
+  const handleActionComplete = () => {
+    fetchData(pagination.page, searchQuery, activeTab, activeType)
+  }
+
+  const statCards = [
+    { label: "Total Wallet Balance", value: `₦${walletStats.totalBalance.toLocaleString()}`, icon: DollarSign, color: "text-sendme", bg: "bg-sendme-50", sub: `${walletStats.totalUsers} wallet accounts` },
+    { label: "Pending Payouts", value: stats.pending, icon: Clock, color: "text-warning", bg: "bg-warning-light", sub: `₦${stats.pendingAmount.toLocaleString()}` },
+    { label: "Completed Payouts", value: stats.completed, icon: CheckCircle, color: "text-sendme", bg: "bg-sendme-50", sub: `₦${stats.completedAmount.toLocaleString()}` },
+    { label: "Failed Payouts", value: stats.failed, icon: XCircle, color: "text-danger", bg: "bg-danger-light" },
+    { label: "Total Payout Amount", value: `₦${stats.totalAmount.toLocaleString()}`, icon: TrendingUp, color: "text-sendme", bg: "bg-sendme-50" },
+  ]
+
+  const statusBadge = (status: string) => {
+    const map: Record<string, { color: string; bg: string; label: string }> = {
+      pending: { color: "text-warning", bg: "bg-warning-light", label: "Pending" },
+      processing: { color: "text-info", bg: "bg-info-light", label: "Processing" },
+      paid: { color: "text-sendme", bg: "bg-sendme-50", label: "Paid" },
+      completed: { color: "text-sendme", bg: "bg-sendme-50", label: "Completed" },
+      failed: { color: "text-danger", bg: "bg-danger-light", label: "Failed" },
+    }
+    const s = map[status] || map.pending
+    return (
+      <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${s.color} ${s.bg}`}>
+        {s.label}
+      </span>
+    )
+  }
+
+  const formatDate = (d: string) => {
+    try {
+      const date = new Date(d)
+      return { date: date.toLocaleDateString("en-NG", { month: "short", day: "numeric", year: "numeric" }), time: date.toLocaleTimeString("en-NG", { hour: "2-digit", minute: "2-digit" }) }
+    } catch { return { date: "—", time: "" } }
+  }
 
   return (
     <div className="flex h-full">
@@ -46,73 +145,219 @@ export default function WalletsPaymentsPage() {
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-xl font-bold text-text-primary">Wallets & Payments</h1>
-              <p className="text-sm text-text-muted mt-0.5">Manage your wallets, balances, transactions and payouts.</p>
-            </div>
-            <div className="flex items-center gap-3">
-              <div className="flex items-center gap-1.5 bg-white border border-border-default rounded-lg px-3 py-2 text-xs font-medium"><span className="text-sendme">📍</span> Lagos, Nigeria</div>
+              <p className="text-sm text-text-muted mt-0.5">Review and process payout requests from all users. Total wallet balance across all accounts shown below.</p>
             </div>
           </div>
 
           {/* Stats */}
           <div className="grid grid-cols-3 lg:grid-cols-5 gap-3">
-            {stats.map(s => { const I = s.icon; return (
-              <Card key={s.label} className="p-3 min-w-0 overflow-hidden">
-                <div className="flex items-start justify-between mb-1.5"><p className="text-[10px] text-text-muted truncate">{s.label}</p><div className={`p-1 rounded-lg ${s.bg} ${s.color} shrink-0`}><I size={14}/></div></div>
-                <p className="text-base lg:text-lg font-bold text-text-primary truncate">{s.value}</p>
-                <p className={`text-[9px] font-medium truncate ${s.up?"text-sendme":"text-danger"}`}>{s.change}</p>
-              </Card>
-            )})}
+            {statCards.map((s) => {
+              const I = s.icon
+              return (
+                <Card key={s.label} className="p-3 min-w-0 overflow-hidden">
+                  <div className="flex items-start justify-between mb-1.5">
+                    <p className="text-[10px] text-text-muted truncate">{s.label}</p>
+                    <div className={`p-1 rounded-lg ${s.bg} ${s.color} shrink-0`}><I size={14} /></div>
+                  </div>
+                  <p className="text-base lg:text-lg font-bold text-text-primary truncate">{typeof s.value === "number" ? s.value.toLocaleString() : s.value}</p>
+                  {"sub" in s && s.sub && <p className="text-[9px] font-medium text-text-muted truncate">{s.sub}</p>}
+                </Card>
+              )
+            })}
           </div>
 
           {/* Search & Filters */}
           <div className="flex items-center gap-2 flex-wrap">
-            <div className="flex-1 min-w-[180px] flex items-center gap-2 bg-white border border-border-default rounded-lg px-3 py-1.5"><Search size={12} className="text-text-muted"/><input placeholder="Search by reference, type or description..." className="flex-1 text-[11px] placeholder:text-text-muted focus:outline-none bg-transparent"/></div>
-            <button className="flex items-center gap-1 bg-white border border-border-default rounded-lg px-2.5 py-1.5 text-[11px] font-medium">May 1 – May 20, 2025 📅</button>
-            <button className="flex items-center gap-1 bg-white border border-border-default rounded-lg px-2.5 py-1.5 text-[11px] font-medium">All Types <ChevronDown size={12}/></button>
-            <button className="flex items-center gap-1 bg-white border border-border-default rounded-lg px-2.5 py-1.5 text-[11px] font-medium">All Status <ChevronDown size={12}/></button>
-            <button className="flex items-center gap-1 text-[11px] font-medium text-text-secondary"><Filter size={12}/> Filters</button>
+            <div className="flex-1 min-w-[180px] flex items-center gap-2 bg-white border border-border-default rounded-lg px-3 py-1.5">
+              <Search size={12} className="text-text-muted" />
+              <input
+                placeholder="Search by name, reference..."
+                className="flex-1 text-[11px] placeholder:text-text-muted focus:outline-none bg-transparent"
+                value={searchQuery}
+                onChange={(e) => handleSearch(e.target.value)}
+              />
+            </div>
+            <div className="relative">
+              <button
+                className="flex items-center gap-1 bg-white border border-border-default rounded-lg px-2.5 py-1.5 text-[11px] font-medium"
+                onClick={() => {
+                  const idx = typeFilters.indexOf(activeType)
+                  handleTypeChange(typeFilters[(idx + 1) % typeFilters.length])
+                }}
+              >
+                {activeType} <ChevronDown size={12} />
+              </button>
+            </div>
           </div>
 
           {/* Status Tabs */}
           <div className="flex items-center justify-between border-b border-border-light">
-            <div className="flex gap-0">{statusTabs.map(t => (
-              <button key={t.name} onClick={() => setActiveTab(t.name)} className={`flex items-center gap-1 px-3 py-2 text-[11px] font-medium border-b-2 transition-colors ${activeTab===t.name?"border-sendme text-sendme":"border-transparent text-text-muted"}`}>{t.name}<span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${activeTab===t.name?"bg-sendme-50 text-sendme":"bg-surface-secondary text-text-muted"}`}>{t.count.toLocaleString()}</span></button>
-            ))}</div>
-            <div className="flex items-center gap-2 pb-2">
-              <button className="flex items-center gap-1 bg-white border border-border-default rounded-lg px-2.5 py-1 text-[11px] font-medium"><Download size={12}/> Export</button>
-              <button className="flex items-center gap-1 bg-white border border-border-default rounded-lg px-2.5 py-1 text-[11px] font-medium">Newest First <ChevronDown size={12}/></button>
+            <div className="flex gap-0">
+              {statusTabs.map((tab) => {
+                const count = tab === "All" ? stats.total
+                  : tab === "Pending" ? stats.pending
+                   : tab === "Processing" ? stats.processing
+                  : tab === "Paid" ? stats.completed
+                  : tab === "Failed" ? stats.failed
+                  : 0
+                return (
+                  <button
+                    key={tab}
+                    onClick={() => handleTabChange(tab)}
+                    className={`flex items-center gap-1 px-3 py-2 text-[11px] font-medium border-b-2 transition-colors ${
+                      activeTab === tab ? "border-sendme text-sendme" : "border-transparent text-text-muted"
+                    }`}
+                  >
+                    {tab}
+                    <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${
+                      activeTab === tab ? "bg-sendme-50 text-sendme" : "bg-surface-secondary text-text-muted"
+                    }`}>
+                      {count}
+                    </span>
+                  </button>
+                )
+              })}
             </div>
           </div>
 
           {/* Table */}
-          <Card className="overflow-hidden"><div className="overflow-x-auto"><table className="w-full"><thead><tr className="text-left text-[9px] text-text-muted font-semibold uppercase border-b border-border-light bg-surface-secondary/50">
-            <th className="px-3 py-2">Transaction</th><th className="px-3 py-2">Type</th><th className="px-3 py-2">Amount</th><th className="px-3 py-2">Status</th><th className="px-3 py-2">Wallet</th><th className="px-3 py-2">Reference</th><th className="px-3 py-2">Date & Time</th><th className="px-3 py-2 text-right">Actions</th>
-          </tr></thead><tbody>{transactions.map(t => (
-            <tr key={t.id} className="border-b border-border-light last:border-0 hover:bg-surface-secondary/50 cursor-pointer">
-              <td className="px-3 py-2.5">
-                <div className="flex items-center gap-2.5">
-                  <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs ${t.typeColor}`}>{t.typeIcon}</div>
-                  <div>
-                    <p className="text-[11px] font-medium text-text-primary">{t.desc}</p>
-                    <p className="text-[9px] text-text-muted">{t.sub}</p>
-                  </div>
+          <Card className="overflow-hidden">
+            <div className="overflow-x-auto">
+              {loading ? (
+                <div className="h-48 flex items-center justify-center">
+                  <Loader2 size={24} className="animate-spin text-sendme" />
                 </div>
-              </td>
-              <td className="px-3 py-2.5"><span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${t.typeColor}`}>{t.type}</span></td>
-              <td className="px-3 py-2.5"><p className={`text-[11px] font-semibold ${t.amountColor}`}>{t.amount}</p></td>
-              <td className="px-3 py-2.5"><span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${t.statusColor}`}>{t.status}</span></td>
-              <td className="px-3 py-2.5"><p className="text-[10px] font-medium text-text-primary">{t.wallet}</p></td>
-              <td className="px-3 py-2.5">
-                <div className="flex items-center gap-1"><p className="text-[10px] font-mono text-text-muted">{t.id}</p><button className="text-text-muted hover:text-sendme"><Eye size={10}/></button></div>
-              </td>
-              <td className="px-3 py-2.5"><p className="text-[10px] font-medium text-text-primary">{t.date}</p><p className="text-[9px] text-text-muted">{t.time}</p></td>
-              <td className="px-3 py-2.5 text-right"><button className="p-1 text-text-muted hover:text-text-primary"><MoreHorizontal size={14}/></button></td>
-            </tr>
-          ))}</tbody></table></div>
-          <div className="flex items-center justify-between px-3 py-2 border-t border-border-light"><p className="text-[10px] text-text-muted">Showing 1 to 8 of 1,248 transactions</p><div className="flex items-center gap-1"><button className="p-1 text-text-muted"><ChevronLeft size={12}/></button>{[1,2,3].map(p=><button key={p} className={`w-6 h-6 rounded text-[10px] font-medium ${p===1?"bg-sendme text-white":"text-text-muted"}`}>{p}</button>)}<span className="text-text-muted text-[10px]">...</span><button className="w-6 h-6 rounded text-[10px] font-medium text-text-muted">156</button><button className="p-1 text-text-muted"><ChevronRight size={12}/></button></div></div></Card>
+              ) : payouts.length === 0 ? (
+                <div className="h-48 flex items-center justify-center">
+                  <p className="text-sm text-text-muted">No payout requests found</p>
+                </div>
+              ) : (
+                <table className="w-full">
+                  <thead>
+                    <tr className="text-left text-[9px] text-text-muted font-semibold uppercase border-b border-border-light bg-surface-secondary/50">
+                      <th className="px-3 py-2">Requester</th>
+                      <th className="px-3 py-2">Type</th>
+                      <th className="px-3 py-2">Amount</th>
+                      <th className="px-3 py-2">Status</th>
+                      <th className="px-3 py-2">Bank</th>
+                      <th className="px-3 py-2">Date</th>
+                      <th className="px-3 py-2 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {payouts.map((p) => {
+                      const fd = formatDate(p.created_at)
+                      return (
+                        <tr
+                          key={p.id}
+                          onClick={() => setSelectedPayout(p)}
+                          className={`border-b border-border-light last:border-0 hover:bg-surface-secondary/50 cursor-pointer transition-colors ${
+                            selectedPayout?.id === p.id ? "bg-sendme-50/30" : ""
+                          }`}
+                        >
+                          <td className="px-3 py-2.5">
+                            <div className="flex items-center gap-2.5">
+                              <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs ${p.type === "driver" ? "bg-sendme-50 text-sendme" : "bg-blue-50 text-blue-600"}`}>
+                                {p.type === "driver" ? <User size={12} /> : <Building2 size={12} />}
+                              </div>
+                              <div>
+                                <p className="text-[11px] font-medium text-text-primary">{p.user_name}</p>
+                                <p className="text-[9px] text-text-muted">{p.user_phone}</p>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-3 py-2.5">
+                            <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${
+                              p.type === "driver" ? "bg-sendme-50 text-sendme" : "bg-blue-50 text-blue-600"
+                            }`}>
+                              {p.type === "driver" ? "Driver" : "Org"}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2.5">
+                            <p className="text-[11px] font-semibold text-text-primary">₦{p.amount.toLocaleString()}</p>
+                          </td>
+                          <td className="px-3 py-2.5">{statusBadge(p.status)}</td>
+                          <td className="px-3 py-2.5">
+                            <p className="text-[10px] font-medium text-text-primary">{p.bank_name}</p>
+                            <p className="text-[9px] text-text-muted font-mono">{p.account_number}</p>
+                          </td>
+                          <td className="px-3 py-2.5">
+                            <p className="text-[10px] font-medium text-text-primary">{fd.date}</p>
+                            <p className="text-[9px] text-text-muted">{fd.time}</p>
+                          </td>
+                          <td className="px-3 py-2.5 text-right">
+                            {p.status === "pending" ? (
+                              <div className="flex items-center gap-1 justify-end">
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); setSelectedPayout(p) }}
+                                  className="p-1 text-sendme hover:bg-sendme-50 rounded transition-colors"
+                                  title="Review & Approve"
+                                >
+                                  <CheckCircle size={14} />
+                                </button>
+                              </div>
+                            ) : (
+                              <button className="p-1 text-text-muted hover:text-text-primary transition-colors">
+                                <MoreHorizontal size={14} />
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+
+            {/* Pagination */}
+            {!loading && payouts.length > 0 && (
+              <div className="flex items-center justify-between px-3 py-2 border-t border-border-light">
+                <p className="text-[10px] text-text-muted">
+                  Showing {(pagination.page - 1) * pagination.limit + 1} to {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total.toLocaleString()}
+                </p>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => handlePageChange(pagination.page - 1)}
+                    disabled={pagination.page <= 1}
+                    className="p-1 text-text-muted disabled:opacity-30"
+                  >
+                    <ChevronLeft size={12} />
+                  </button>
+                  {Array.from({ length: Math.min(5, pagination.totalPages) }, (_, i) => {
+                    const p = i + 1
+                    return (
+                      <button
+                        key={p}
+                        onClick={() => handlePageChange(p)}
+                        className={`w-6 h-6 rounded text-[10px] font-medium ${p === pagination.page ? "bg-sendme text-white" : "text-text-muted"}`}
+                      >
+                        {p}
+                      </button>
+                    )
+                  })}
+                  <button
+                    onClick={() => handlePageChange(pagination.page + 1)}
+                    disabled={pagination.page >= pagination.totalPages}
+                    className="p-1 text-text-muted disabled:opacity-30"
+                  >
+                    <ChevronRight size={12} />
+                  </button>
+                </div>
+              </div>
+            )}
+          </Card>
         </div>
       </div>
-      <WalletDetail onClose={() => {}} />
+
+      {/* Payout Detail Sidebar */}
+      {selectedPayout && (
+        <PayoutDetail
+          payout={selectedPayout}
+          onClose={() => setSelectedPayout(null)}
+          onActionComplete={handleActionComplete}
+        />
+      )}
     </div>
   )
 }

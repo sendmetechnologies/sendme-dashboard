@@ -247,20 +247,16 @@ export async function POST(
         await supabaseAdmin.from("marketers").delete().eq("ref_id", profile.marketer_id)
       }
 
-      // Remove the marketer_profiles row (applied/application record)
+      // Mark as removed instead of deleting — so lists can show "removed marketer"
       const { error } = await supabaseAdmin
         .from("marketer_profiles")
-        .delete()
+        .update({ status: "removed", updated_at: new Date().toISOString() })
         .eq("user_id", id)
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-      // Deactivate their user account instead of deleting it — their sender/org/rider account stays
-      await supabaseAdmin
-        .from("users")
-        .update({ is_deleted: true })
-        .eq("id", id)
+      // Do NOT touch the user account — their sender/org/rider account stays fully intact
 
-      return NextResponse.json({ success: true, message: "Marketer deleted. User account deactivated but preserved." })
+      return NextResponse.json({ success: true, message: "Marketer deleted. Sender/org/rider account preserved." })
     }
 
     // ── Assign base role to a marketer-only user ──

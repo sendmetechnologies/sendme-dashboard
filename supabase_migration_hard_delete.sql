@@ -65,9 +65,11 @@ BEGIN
 
   -- Cross-role cleanup: any user (customer/driver/org) may also have marketer data
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='marketer_profiles') THEN
-    -- Get the marketer ref_id before deleting the profile
+    -- Get the marketer ref_id before cleaning up
     SELECT marketer_id INTO v_marketer_ref FROM public.marketer_profiles WHERE user_id = p_user_id;
-    DELETE FROM public.marketer_profiles WHERE user_id = p_user_id;
+
+    -- Only delete active marketer data; keep 'removed' profiles so lists show "removed marketer"
+    DELETE FROM public.marketer_profiles WHERE user_id = p_user_id AND status != 'removed';
 
     -- Also clean up canonical marketer rows if they exist
     IF v_marketer_ref IS NOT NULL THEN

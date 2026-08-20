@@ -29,6 +29,13 @@ export async function GET(req: NextRequest) {
     const customerIds = new Set((allCustomers || []).map((c) => c.id))
     const uniqueActive = [...uniqueActiveOrderCustomerIds].filter((id) => customerIds.has(id)).length
 
+    // ── Get marketer profiles to check for removed status ──
+    const { data: marketerProfiles } = await supabaseAdmin
+      .from("marketer_profiles")
+      .select("user_id, status")
+      .eq("status", "removed")
+    const removedMarketerIds = new Set((marketerProfiles || []).map((p: any) => p.user_id))
+
     // ── Build query (try with new columns, fallback without) ──
     let senders: any[] | null = null
     let queryError: any = null
@@ -54,8 +61,7 @@ export async function GET(req: NextRequest) {
       queryError = fallback.error
     } else {
       senders = full.data
-      // Filter out deactivated if column exists
-      senders = (senders || []).filter((s: any) => s.is_deleted !== true)
+      // Keep all users — show deactivated ones with a status label
     }
 
     if (queryError) {
@@ -92,9 +98,21 @@ export async function GET(req: NextRequest) {
       else if (diffDays > 30) joinedNote = `${Math.floor(diffDays / 30)} month${Math.floor(diffDays / 30) > 1 ? "s" : ""} ago`
       else if (diffDays > 0) joinedNote = `${diffDays} day${diffDays > 1 ? "s" : ""} ago`
 
+      const isDeleted = s.is_deleted === true
       const isSuspended = s.is_suspended === true
-      const statusLabel = isSuspended ? "Suspended" : "Active"
-      const statusColor = isSuspended ? "bg-warning-light text-warning" : "bg-sendme-50 text-sendme"
+      const isRemovedMarketer = removedMarketerIds.has(s.id)
+      let statusLabel = "Active"
+      let statusColor = "bg-sendme-50 text-sendme"
+      if (isRemovedMarketer) {
+        statusLabel = "Removed marketer"
+        statusColor = "bg-surface-secondary text-text-muted"
+      } else if (isDeleted) {
+        statusLabel = "Deactivated"
+        statusColor = "bg-surface-secondary text-text-muted"
+      } else if (isSuspended) {
+        statusLabel = "Suspended"
+        statusColor = "bg-warning-light text-warning"
+      }
 
       return {
         id: s.id,

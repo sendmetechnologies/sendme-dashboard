@@ -43,6 +43,13 @@ export async function GET(req: NextRequest) {
       "Suspended": suspendedCount,
     }
 
+    // ── Get marketer profiles to check for removed status ──
+    const { data: marketerProfiles } = await supabaseAdmin
+      .from("marketer_profiles")
+      .select("user_id, status")
+      .eq("status", "removed")
+    const removedMarketerIds = new Set((marketerProfiles || []).map((p: any) => p.user_id))
+
     // ── Build query on users table (try with is_suspended, fallback without) ──
     const tryOrgQuery = async (profileCols: string) => {
       let q = supabaseAdmin
@@ -149,7 +156,9 @@ export async function GET(req: NextRequest) {
 
       let statusLabel = "Pending"
       let statusColor = "bg-warning-light text-warning"
-      if (isVerified && profile?.is_suspended !== true) { statusLabel = "Active"; statusColor = "bg-sendme-50 text-sendme" }
+      const isRemovedMarketer = removedMarketerIds.has(o.id)
+      if (isRemovedMarketer) { statusLabel = "Removed marketer"; statusColor = "bg-surface-secondary text-text-muted" }
+      else if (isVerified && profile?.is_suspended !== true) { statusLabel = "Active"; statusColor = "bg-sendme-50 text-sendme" }
       else if (profile?.is_suspended === true) { statusLabel = "Suspended"; statusColor = "bg-warning-light text-warning" }
 
       const created = new Date(o.created_at)

@@ -36,6 +36,13 @@ export async function GET(req: NextRequest) {
       "Organization-linked": 0,
     }
 
+    // ── Get marketer profiles to check for removed status ──
+    const { data: marketerProfiles } = await supabaseAdmin
+      .from("marketer_profiles")
+      .select("user_id, status")
+      .eq("status", "removed")
+    const removedMarketerIds = new Set((marketerProfiles || []).map((p: any) => p.user_id))
+
     // ── Build query on users table (primary) ──
     let query = supabaseAdmin
       .from("users")
@@ -109,7 +116,9 @@ export async function GET(req: NextRequest) {
 
       let statusLabel = "Pending Review"
       let statusColor = "bg-warning-light text-warning"
-      if (verificationStatus === "verified") { statusLabel = "Approved"; statusColor = "bg-sendme-50 text-sendme" }
+      const isRemovedMarketer = removedMarketerIds.has(d.id)
+      if (isRemovedMarketer) { statusLabel = "Removed marketer"; statusColor = "bg-surface-secondary text-text-muted" }
+      else if (verificationStatus === "verified") { statusLabel = "Approved"; statusColor = "bg-sendme-50 text-sendme" }
       else if (verificationStatus === "rejected") { statusLabel = "Suspended"; statusColor = "bg-danger-light text-danger" }
       else if (verificationStatus === "under_review") { statusLabel = "Under Review"; statusColor = "bg-info-light text-info" }
 

@@ -30,6 +30,8 @@ interface PayoutStats {
   totalAmount: number
   pending: number
   pendingAmount: number
+  processing: number
+  processingAmount: number
   completed: number
   completedAmount: number
   failed: number
@@ -51,7 +53,7 @@ export default function WalletsPaymentsPage() {
   const [activeType, setActiveType] = useState("All Types")
   const [loading, setLoading] = useState(true)
   const [payouts, setPayouts] = useState<PayoutRow[]>([])
-  const [stats, setStats] = useState<PayoutStats>({ total: 0, totalAmount: 0, pending: 0, pendingAmount: 0, completed: 0, completedAmount: 0, failed: 0 })
+  const [stats, setStats] = useState<PayoutStats>({ total: 0, totalAmount: 0, pending: 0, pendingAmount: 0, processing: 0, processingAmount: 0, completed: 0, completedAmount: 0, failed: 0 })
   const [walletStats, setWalletStats] = useState<WalletStats>({ totalBalance: 0, driverBalance: 0, orgBalance: 0, totalUsers: 0 })
   const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, totalPages: 1 })
   const [searchQuery, setSearchQuery] = useState("")

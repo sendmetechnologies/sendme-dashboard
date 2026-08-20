@@ -10,18 +10,18 @@ export async function GET() {
     }
 
     const { data, error } = await supabaseAdmin
-      .from("pricing_overrides")
+      .from("state_pricing")
       .select("*")
-      .order("created_at", { ascending: false });
+      .order("state");
 
     if (error) {
-      console.error("[PricingOverrides] Fetch error:", error);
+      console.error("[StatePricing] Fetch error:", error);
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    return NextResponse.json({ overrides: data || [] });
+    return NextResponse.json({ states: data || [] });
   } catch (err) {
-    console.error("[PricingOverrides] Error:", err);
+    console.error("[StatePricing] Error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
@@ -34,43 +34,34 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const {
-      override_name, state, city, vehicle_type,
-      adjustment_type, adjustment_value, applies_to,
-      start_date, end_date, is_active, reason
-    } = body;
+    const { state, label, per_km, base_fare, per_minute, minimum_fare, is_active } = body;
 
-    if (!override_name || !adjustment_type || adjustment_value === undefined) {
-      return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+    if (!state || !label) {
+      return NextResponse.json({ error: "Missing state or label" }, { status: 400 });
     }
 
     const { data, error } = await supabaseAdmin
-      .from("pricing_overrides")
-      .insert({
-        override_name,
-        state: state || null,
-        city: city || null,
-        vehicle_type: vehicle_type || null,
-        adjustment_type,
-        adjustment_value,
-        applies_to: applies_to || ["base_fare", "per_km"],
-        start_date: start_date || new Date().toISOString(),
-        end_date: end_date || null,
+      .from("state_pricing")
+      .upsert({
+        state,
+        label,
+        per_km: per_km || { bicycle: 200, motorcycle: 300, car: 500, truck: 1000 },
+        base_fare: base_fare ?? null,
+        per_minute: per_minute ?? null,
+        minimum_fare: minimum_fare ?? null,
         is_active: is_active !== false,
-        reason: reason || null,
-        created_by: session.id || null,
-      })
+      }, { onConflict: "state" })
       .select()
       .single();
 
     if (error) {
-      console.error("[PricingOverrides] Insert error:", error);
+      console.error("[StatePricing] Upsert error:", error);
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    return NextResponse.json({ override: data });
+    return NextResponse.json({ state: data });
   } catch (err) {
-    console.error("[PricingOverrides] Error:", err);
+    console.error("[StatePricing] Error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
@@ -83,29 +74,27 @@ export async function PUT(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { id, ...updates } = body;
+    const { state, ...updates } = body;
 
-    if (!id) {
-      return NextResponse.json({ error: "Missing id" }, { status: 400 });
+    if (!state) {
+      return NextResponse.json({ error: "Missing state" }, { status: 400 });
     }
 
-    updates.updated_at = new Date().toISOString();
-
     const { data, error } = await supabaseAdmin
-      .from("pricing_overrides")
+      .from("state_pricing")
       .update(updates)
-      .eq("id", id)
+      .eq("state", state)
       .select()
       .single();
 
     if (error) {
-      console.error("[PricingOverrides] Update error:", error);
+      console.error("[StatePricing] Update error:", error);
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    return NextResponse.json({ override: data });
+    return NextResponse.json({ state: data });
   } catch (err) {
-    console.error("[PricingOverrides] Error:", err);
+    console.error("[StatePricing] Error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
@@ -118,25 +107,25 @@ export async function DELETE(req: NextRequest) {
     }
 
     const { searchParams } = new URL(req.url);
-    const id = searchParams.get("id");
+    const state = searchParams.get("state");
 
-    if (!id) {
-      return NextResponse.json({ error: "Missing id" }, { status: 400 });
+    if (!state) {
+      return NextResponse.json({ error: "Missing state" }, { status: 400 });
     }
 
     const { error } = await supabaseAdmin
-      .from("pricing_overrides")
+      .from("state_pricing")
       .delete()
-      .eq("id", id);
+      .eq("state", state);
 
     if (error) {
-      console.error("[PricingOverrides] Delete error:", error);
+      console.error("[StatePricing] Delete error:", error);
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
     return NextResponse.json({ success: true });
   } catch (err) {
-    console.error("[PricingOverrides] Error:", err);
+    console.error("[StatePricing] Error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

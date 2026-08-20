@@ -6,7 +6,7 @@ import { BidsPricingDetail } from "@/components/dashboard/bids-pricing-detail"
 import {
   TrendingUp, TrendingDown, Search, Download, Plus, MoreHorizontal, Filter,
   ChevronLeft, ChevronRight, ChevronDown, Clock, AlertTriangle, CheckCircle,
-  Eye, Star, DollarSign, Users, MapPin, FileText, Activity, Loader2, Lock
+  Eye, Star, DollarSign, Users, MapPin, FileText, Activity, Loader2, Lock, Trash2
 } from "lucide-react"
 
 const topTabs = ["Bid Activity", "Price Control", "Route Pricing", "Overrides", "Pricing Logs"]
@@ -416,7 +416,7 @@ function PriceControlView({ onSelect }: { onSelect: (id: string) => void }) {
 
       {showAddModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <Card className="w-full max-w-md p-6 space-y-4">
+          <Card className="w-full max-w-lg p-6 space-y-4">
             <h3 className="text-sm font-bold text-text-primary">{editingState ? 'Edit State Pricing' : 'Add State Pricing'}</h3>
             <div className="space-y-3">
               <div className="grid grid-cols-2 gap-3">
@@ -433,62 +433,49 @@ function PriceControlView({ onSelect }: { onSelect: (id: string) => void }) {
                 <label className="text-[10px] text-text-muted font-medium">Base Fare (₦)</label>
                 <input value={form.base_fare} onChange={e => setForm(f => ({ ...f, base_fare: e.target.value }))} className="w-full mt-1 px-3 py-1.5 border border-border-default rounded-lg text-xs" placeholder="e.g. 500" type="number" />
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-[10px] text-text-muted font-medium">Bicycle /km (₦)</label>
-                  <input value={form.bicycle_per_km} onChange={e => setForm(f => ({ ...f, bicycle_per_km: e.target.value }))} className="w-full mt-1 px-3 py-1.5 border border-border-default rounded-lg text-xs" type="number" />
-                </div>
-                <div>
-                  <label className="text-[10px] text-text-muted font-medium">Motorcycle /km (₦)</label>
-                  <input value={form.motorcycle_per_km} onChange={e => setForm(f => ({ ...f, motorcycle_per_km: e.target.value }))} className="w-full mt-1 px-3 py-1.5 border border-border-default rounded-lg text-xs" type="number" />
-                </div>
-                <div>
-                  <label className="text-[10px] text-text-muted font-medium">Car /km (₦)</label>
-                  <input value={form.car_per_km} onChange={e => setForm(f => ({ ...f, car_per_km: e.target.value }))} className="w-full mt-1 px-3 py-1.5 border border-border-default rounded-lg text-xs" type="number" />
-                </div>
-                <div>
-                  <label className="text-[10px] text-text-muted font-medium">Truck /km (₦)</label>
-                  <input value={form.truck_per_km} onChange={e => setForm(f => ({ ...f, truck_per_km: e.target.value }))} className="w-full mt-1 px-3 py-1.5 border border-border-default rounded-lg text-xs" type="number" />
-                </div>
-              </div>
-              <p className="text-[10px] font-semibold text-text-muted uppercase tracking-wide pt-1">Per-Minute Rate (₦/min)</p>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-[10px] text-text-muted font-medium">Bicycle /min (₦)</label>
-                  <input value={form.bicycle_per_min} onChange={e => setForm(f => ({ ...f, bicycle_per_min: e.target.value }))} className="w-full mt-1 px-3 py-1.5 border border-border-default rounded-lg text-xs" type="number" />
-                </div>
-                <div>
-                  <label className="text-[10px] text-text-muted font-medium">Motorcycle /min (₦)</label>
-                  <input value={form.motorcycle_per_min} onChange={e => setForm(f => ({ ...f, motorcycle_per_min: e.target.value }))} className="w-full mt-1 px-3 py-1.5 border border-border-default rounded-lg text-xs" type="number" />
-                </div>
-                <div>
-                  <label className="text-[10px] text-text-muted font-medium">Car /min (₦)</label>
-                  <input value={form.car_per_min} onChange={e => setForm(f => ({ ...f, car_per_min: e.target.value }))} className="w-full mt-1 px-3 py-1.5 border border-border-default rounded-lg text-xs" type="number" />
-                </div>
-                <div>
-                  <label className="text-[10px] text-text-muted font-medium">Truck /min (₦)</label>
-                  <input value={form.truck_per_min} onChange={e => setForm(f => ({ ...f, truck_per_min: e.target.value }))} className="w-full mt-1 px-3 py-1.5 border border-border-default rounded-lg text-xs" type="number" />
+              <div>
+                <p className="text-[10px] font-semibold text-text-muted uppercase tracking-wide mb-2">Per-KM Rates (₦/km)</p>
+                <div className="grid grid-cols-4 gap-2">
+                  <div>
+                    <label className="text-[9px] text-text-muted">Bicycle</label>
+                    <input value={form.bicycle_per_km} onChange={e => setForm(f => ({ ...f, bicycle_per_km: e.target.value }))} className="w-full mt-1 px-2 py-1.5 border border-border-default rounded-lg text-xs" type="number" placeholder="200" />
+                  </div>
+                  <div>
+                    <label className="text-[9px] text-text-muted">Motorcycle</label>
+                    <input value={form.motorcycle_per_km} onChange={e => setForm(f => ({ ...f, motorcycle_per_km: e.target.value }))} className="w-full mt-1 px-2 py-1.5 border border-border-default rounded-lg text-xs" type="number" placeholder="300" />
+                  </div>
+                  <div>
+                    <label className="text-[9px] text-text-muted">Car</label>
+                    <input value={form.car_per_km} onChange={e => setForm(f => ({ ...f, car_per_km: e.target.value }))} className="w-full mt-1 px-2 py-1.5 border border-border-default rounded-lg text-xs" type="number" placeholder="500" />
+                  </div>
+                  <div>
+                    <label className="text-[9px] text-text-muted">Truck</label>
+                    <input value={form.truck_per_km} onChange={e => setForm(f => ({ ...f, truck_per_km: e.target.value }))} className="w-full mt-1 px-2 py-1.5 border border-border-default rounded-lg text-xs" type="number" placeholder="1000" />
+                  </div>
                 </div>
               </div>
-              <p className="text-[10px] font-semibold text-text-muted uppercase tracking-wide pt-1">Minimum Fare (₦)</p>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-[10px] text-text-muted font-medium">Bicycle min (₦)</label>
-                  <input value={form.bicycle_min_fare} onChange={e => setForm(f => ({ ...f, bicycle_min_fare: e.target.value }))} className="w-full mt-1 px-3 py-1.5 border border-border-default rounded-lg text-xs" type="number" />
-                </div>
-                <div>
-                  <label className="text-[10px] text-text-muted font-medium">Motorcycle min (₦)</label>
-                  <input value={form.motorcycle_min_fare} onChange={e => setForm(f => ({ ...f, motorcycle_min_fare: e.target.value }))} className="w-full mt-1 px-3 py-1.5 border border-border-default rounded-lg text-xs" type="number" />
-                </div>
-                <div>
-                  <label className="text-[10px] text-text-muted font-medium">Car min (₦)</label>
-                  <input value={form.car_min_fare} onChange={e => setForm(f => ({ ...f, car_min_fare: e.target.value }))} className="w-full mt-1 px-3 py-1.5 border border-border-default rounded-lg text-xs" type="number" />
-                </div>
-                <div>
-                  <label className="text-[10px] text-text-muted font-medium">Truck min (₦)</label>
-                  <input value={form.truck_min_fare} onChange={e => setForm(f => ({ ...f, truck_min_fare: e.target.value }))} className="w-full mt-1 px-3 py-1.5 border border-border-default rounded-lg text-xs" type="number" />
+              <div>
+                <p className="text-[10px] font-semibold text-text-muted uppercase tracking-wide mb-2">Minimum Fare (₦)</p>
+                <div className="grid grid-cols-4 gap-2">
+                  <div>
+                    <label className="text-[9px] text-text-muted">Bicycle</label>
+                    <input value={form.bicycle_min_fare} onChange={e => setForm(f => ({ ...f, bicycle_min_fare: e.target.value }))} className="w-full mt-1 px-2 py-1.5 border border-border-default rounded-lg text-xs" type="number" placeholder="Optional" />
+                  </div>
+                  <div>
+                    <label className="text-[9px] text-text-muted">Motorcycle</label>
+                    <input value={form.motorcycle_min_fare} onChange={e => setForm(f => ({ ...f, motorcycle_min_fare: e.target.value }))} className="w-full mt-1 px-2 py-1.5 border border-border-default rounded-lg text-xs" type="number" placeholder="Optional" />
+                  </div>
+                  <div>
+                    <label className="text-[9px] text-text-muted">Car</label>
+                    <input value={form.car_min_fare} onChange={e => setForm(f => ({ ...f, car_min_fare: e.target.value }))} className="w-full mt-1 px-2 py-1.5 border border-border-default rounded-lg text-xs" type="number" placeholder="Optional" />
+                  </div>
+                  <div>
+                    <label className="text-[9px] text-text-muted">Truck</label>
+                    <input value={form.truck_min_fare} onChange={e => setForm(f => ({ ...f, truck_min_fare: e.target.value }))} className="w-full mt-1 px-2 py-1.5 border border-border-default rounded-lg text-xs" type="number" placeholder="Optional" />
+                  </div>
                 </div>
               </div>
+              <p className="text-[9px] text-text-muted">Per-minute rates are configured globally. Only per-km and minimum fare are set per state.</p>
             </div>
             <div className="flex justify-end gap-2 pt-2">
               <button onClick={() => { setShowAddModal(false); setEditingState(null) }} className="px-3 py-1.5 text-[11px] font-medium border border-border-default rounded-lg">Cancel</button>
@@ -788,6 +775,13 @@ function OverridesView({ onSelect }: { onSelect: (id: string) => void }) {
   const [overrides, setOverrides] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [showCreateModal, setShowCreateModal] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [form, setForm] = useState({
+    override_name: '', state: '', city: '', vehicle_type: '',
+    adjustment_type: 'percentage', adjustment_value: '',
+    applies_to: 'base_fare,per_km', start_date: '', end_date: '', reason: '',
+  })
 
   const fetchOverrides = useCallback(async () => {
     try {
@@ -804,6 +798,50 @@ function OverridesView({ onSelect }: { onSelect: (id: string) => void }) {
   }, [])
 
   useEffect(() => { fetchOverrides() }, [fetchOverrides])
+
+  const handleCreate = async () => {
+    if (!form.override_name || !form.adjustment_value) return alert("Name and adjustment value are required")
+    try {
+      setSaving(true)
+      const res = await fetch('/api/admin/pricing-overrides', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          override_name: form.override_name,
+          state: form.state || null,
+          city: form.city || null,
+          vehicle_type: form.vehicle_type || null,
+          adjustment_type: form.adjustment_type,
+          adjustment_value: Number(form.adjustment_value),
+          applies_to: form.applies_to.split(",").map(s => s.trim()).filter(Boolean),
+          start_date: form.start_date || new Date().toISOString(),
+          end_date: form.end_date || null,
+          reason: form.reason || null,
+        }),
+      })
+      const data = await res.json()
+      if (data.error) throw new Error(data.error)
+      setShowCreateModal(false)
+      setForm({ override_name: '', state: '', city: '', vehicle_type: '', adjustment_type: 'percentage', adjustment_value: '', applies_to: 'base_fare,per_km', start_date: '', end_date: '', reason: '' })
+      fetchOverrides()
+    } catch (e: any) {
+      alert('Error: ' + e.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleDelete = async (id: string) => {
+    if (!confirm("Delete this override?")) return
+    try {
+      const res = await fetch(`/api/admin/pricing-overrides?id=${id}`, { method: 'DELETE' })
+      const data = await res.json()
+      if (data.error) throw new Error(data.error)
+      fetchOverrides()
+    } catch (e: any) {
+      alert('Error: ' + e.message)
+    }
+  }
 
   const now = new Date()
   const activeOverrides = overrides.filter(o => o.is_active && (!o.end_date || new Date(o.end_date) > now))
@@ -828,8 +866,9 @@ function OverridesView({ onSelect }: { onSelect: (id: string) => void }) {
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">{overrideStats.map(s => { const I = s.icon; return (
         <Card key={s.label} className="p-3 min-w-0 overflow-hidden"><div className="flex items-start justify-between mb-1.5"><p className="text-[10px] text-text-muted truncate">{s.label}</p><div className={`p-1 rounded-lg ${s.bg} ${s.color} shrink-0`}><I size={14}/></div></div><p className="text-base lg:text-lg font-bold text-text-primary truncate">{s.value}</p><p className={`text-[9px] font-medium truncate ${s.up?"text-sendme":"text-danger"}`}>{s.change}</p></Card>
       )})}</div>
-      <div className="flex items-center gap-2 flex-wrap">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="flex-1 min-w-[180px] flex items-center gap-2 bg-white border border-border-default rounded-lg px-3 py-1.5"><Search size={12} className="text-text-muted"/><input placeholder="Search by override name, route, state or reason..." className="flex-1 text-[11px] placeholder:text-text-muted focus:outline-none bg-transparent"/></div>
+        <button onClick={() => setShowCreateModal(true)} className="flex items-center gap-1.5 bg-sendme text-white px-3 py-1.5 rounded-lg text-[11px] font-semibold"><Plus size={14}/> Create Override</button>
       </div>
       <Card className="overflow-hidden">
         {loading ? (
@@ -853,11 +892,70 @@ function OverridesView({ onSelect }: { onSelect: (id: string) => void }) {
               <td className="px-3 py-2.5"><p className="text-[10px] font-medium text-text-primary">{o.start_date ? new Date(o.start_date).toLocaleDateString() : "—"}</p>{o.end_date && <p className="text-[9px] text-text-muted">→ {new Date(o.end_date).toLocaleDateString()}</p>}</td>
               <td className="px-3 py-2.5"><span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${isActive ? 'bg-sendme-50 text-sendme' : isScheduled ? 'bg-info-light text-info' : 'bg-surface-secondary text-text-muted'}`}>{isActive ? 'Active' : isScheduled ? 'Scheduled' : 'Expired'}</span></td>
               <td className="px-3 py-2.5"><p className="text-[10px] text-text-primary max-w-[120px] truncate">{o.reason || "—"}</p></td>
-              <td className="px-3 py-2.5 text-right"><button className="p-1 text-text-muted hover:text-text-primary"><MoreHorizontal size={14}/></button></td>
+              <td className="px-3 py-2.5 text-right"><div className="flex items-center justify-end gap-1"><button onClick={e => { e.stopPropagation(); onSelect(o.id) }} className="p-1 text-text-muted hover:text-sendme"><Eye size={12}/></button><button onClick={e => { e.stopPropagation(); handleDelete(o.id) }} className="p-1 text-text-muted hover:text-danger"><Trash2 size={12}/></button></div></td>
             </tr>
           )})}</tbody></table></div>
         )}
       </Card>
+
+      {showCreateModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <Card className="w-full max-w-md p-6 space-y-4">
+            <h3 className="text-sm font-bold text-text-primary">Create Price Override</h3>
+            <div className="space-y-3">
+              <div>
+                <label className="text-[10px] text-text-muted font-medium">Override Name *</label>
+                <input value={form.override_name} onChange={e => setForm(f => ({ ...f, override_name: e.target.value }))} className="w-full mt-1 px-3 py-1.5 border border-border-default rounded-lg text-xs" placeholder="e.g. Fuel Price Adjustment" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] text-text-muted font-medium">State (optional)</label>
+                  <input value={form.state} onChange={e => setForm(f => ({ ...f, state: e.target.value }))} className="w-full mt-1 px-3 py-1.5 border border-border-default rounded-lg text-xs" placeholder="Leave blank for all" />
+                </div>
+                <div>
+                  <label className="text-[10px] text-text-muted font-medium">City (optional)</label>
+                  <input value={form.city} onChange={e => setForm(f => ({ ...f, city: e.target.value }))} className="w-full mt-1 px-3 py-1.5 border border-border-default rounded-lg text-xs" placeholder="Leave blank for all" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] text-text-muted font-medium">Adjustment Type *</label>
+                  <select value={form.adjustment_type} onChange={e => setForm(f => ({ ...f, adjustment_type: e.target.value }))} className="w-full mt-1 px-3 py-1.5 border border-border-default rounded-lg text-xs">
+                    <option value="percentage">Percentage (%)</option>
+                    <option value="fixed">Fixed Amount (₦)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] text-text-muted font-medium">Value *</label>
+                  <input value={form.adjustment_value} onChange={e => setForm(f => ({ ...f, adjustment_value: e.target.value }))} className="w-full mt-1 px-3 py-1.5 border border-border-default rounded-lg text-xs" type="number" placeholder={form.adjustment_type === "percentage" ? "e.g. 10" : "e.g. 500"} />
+                </div>
+              </div>
+              <div>
+                <label className="text-[10px] text-text-muted font-medium">Applies To (comma-separated)</label>
+                <input value={form.applies_to} onChange={e => setForm(f => ({ ...f, applies_to: e.target.value }))} className="w-full mt-1 px-3 py-1.5 border border-border-default rounded-lg text-xs" placeholder="base_fare, per_km" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] text-text-muted font-medium">Start Date</label>
+                  <input value={form.start_date} onChange={e => setForm(f => ({ ...f, start_date: e.target.value }))} className="w-full mt-1 px-3 py-1.5 border border-border-default rounded-lg text-xs" type="date" />
+                </div>
+                <div>
+                  <label className="text-[10px] text-text-muted font-medium">End Date (optional)</label>
+                  <input value={form.end_date} onChange={e => setForm(f => ({ ...f, end_date: e.target.value }))} className="w-full mt-1 px-3 py-1.5 border border-border-default rounded-lg text-xs" type="date" />
+                </div>
+              </div>
+              <div>
+                <label className="text-[10px] text-text-muted font-medium">Reason</label>
+                <textarea value={form.reason} onChange={e => setForm(f => ({ ...f, reason: e.target.value }))} className="w-full mt-1 px-3 py-1.5 border border-border-default rounded-lg text-xs" rows={2} placeholder="Why this override?" />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <button onClick={() => setShowCreateModal(false)} className="px-3 py-1.5 text-[11px] font-medium border border-border-default rounded-lg">Cancel</button>
+              <button onClick={handleCreate} disabled={saving} className="px-3 py-1.5 text-[11px] font-semibold bg-sendme text-white rounded-lg disabled:opacity-50">{saving ? "Creating..." : "Create Override"}</button>
+            </div>
+          </Card>
+        </div>
+      )}
     </div>
   )
 }
@@ -946,7 +1044,7 @@ function PricingLogsView({ onSelect }: { onSelect: (id: string) => void }) {
 
 export default function BidsPricingPage() {
   const [activeTopTab, setActiveTopTab] = useState("Bid Activity")
-  const [selectedId, setSelectedId] = useState<string | null>("SM-20491")
+  const [selectedId, setSelectedId] = useState<string | null>(null)
 
   const detailType = activeTopTab === "Bid Activity" ? "bids" : activeTopTab === "Price Control" ? "price-control" : activeTopTab === "Route Pricing" ? "route-pricing" : activeTopTab === "Pricing Logs" ? "pricing-logs" : "overrides"
 

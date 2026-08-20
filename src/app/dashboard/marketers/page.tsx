@@ -32,7 +32,7 @@ export default function MarketersPage() {
   const [activeTab, setActiveTab] = useState("All")
   const [loading, setLoading] = useState(true)
   const [marketers, setMarketers] = useState<MarketerRow[]>([])
-  const [stats, setStats] = useState({ total: 0, pending: 0, approved: 0, rejected: 0, suspended: 0 })
+  const [stats, setStats] = useState({ total: 0, pending: 0, approved: 0, rejected: 0, suspended: 0, removed: 0 })
   const [tabCounts, setTabCounts] = useState<Record<string, number>>({})
   const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, totalPages: 1 })
   const [searchQuery, setSearchQuery] = useState("")
@@ -49,7 +49,7 @@ export default function MarketersPage() {
       .then((r) => r.json())
       .then((data) => {
         setMarketers(data.marketers || [])
-        setStats(data.stats || { total: 0, pending: 0, approved: 0, rejected: 0, suspended: 0 })
+        setStats(data.stats || { total: 0, pending: 0, approved: 0, rejected: 0, suspended: 0, removed: 0 })
         setTabCounts(data.tabCounts || {})
         setPagination(data.pagination || { page: 1, limit: 20, total: 0, totalPages: 1 })
         setLoading(false)
@@ -75,13 +75,14 @@ export default function MarketersPage() {
     fetchData(page, searchQuery, activeTab)
   }
 
-  const tabs = ["All", "Pending", "Approved", "Rejected", "Suspended"]
+  const tabs = ["All", "Pending", "Approved", "Rejected", "Suspended", "Removed"]
 
   const statCards = [
     { label: "Total Marketers", value: stats.total, icon: Megaphone, color: "text-sendme", bg: "bg-sendme-50" },
     { label: "Pending Review", value: stats.pending, icon: Clock, color: "text-warning", bg: "bg-warning-light" },
     { label: "Approved", value: stats.approved, icon: CheckCircle, color: "text-sendme", bg: "bg-sendme-50" },
     { label: "Rejected / Suspended", value: stats.rejected + stats.suspended, icon: Ban, color: "text-danger", bg: "bg-danger-light" },
+    { label: "Removed", value: stats.removed, icon: Ban, color: "text-danger", bg: "bg-danger-light" },
   ]
 
   return (

@@ -171,7 +171,7 @@ export async function POST(
       return NextResponse.json({ success: true, message: "Marketer suspended" })
     }
 
-    // ── Reinstate marketer (from suspended) ──
+    // ── Reinstate marketer (from suspended or removed) ──
     if (action === "reinstate") {
       const { data: profile } = await supabaseAdmin
         .from("marketer_profiles")
@@ -189,12 +189,60 @@ export async function POST(
         .eq("user_id", id)
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-      // Re-activate the marketer code
+      // Recreate the canonical marketer row + wallet if it was deleted during hard_delete
       if (profile?.marketer_id) {
-        await supabaseAdmin
+        const { data: existingMk } = await supabaseAdmin
           .from("marketers")
-          .update({ is_active: true })
+          .select("id, is_active")
           .eq("ref_id", profile.marketer_id)
+          .single()
+
+        if (!existingMk) {
+          // Row was deleted — recreate it
+          const { data: user } = await supabaseAdmin
+            .from("users")
+            .select("full_name, email, phone")
+            .eq("id", id)
+            .single()
+          const { data: userProfile } = await supabaseAdmin
+            .from("marketer_profiles")
+            .select("phone")
+            .eq("user_id", id)
+            .single()
+          const { data: rateSetting } = await supabaseAdmin
+            .from("platform_settings")
+            .select("value")
+            .eq("key", "marketer_commission_rate")
+            .single()
+          const commissionRate = rateSetting?.value != null ? Number(rateSetting.value) : 0.02
+
+          const { data: newMk, error: mkError } = await supabaseAdmin
+            .from("marketers")
+            .insert({
+              ref_id: profile.marketer_id,
+              name: user?.full_name || null,
+              email: user?.email || null,
+              phone: userProfile?.phone || user?.phone || null,
+              commission_rate: commissionRate,
+              is_active: true,
+              total_referrals: 0,
+              total_earnings: 0,
+            })
+            .select("id")
+            .single()
+
+          if (!mkError && newMk) {
+            await supabaseAdmin
+              .from("marketer_wallets")
+              .insert({ marketer_id: newMk.id, balance: 0 })
+          }
+        } else if (!existingMk.is_active) {
+          // Row exists but was deactivated — reactivate
+          await supabaseAdmin
+            .from("marketers")
+            .update({ is_active: true })
+            .eq("ref_id", profile.marketer_id)
+        }
       }
 
       return NextResponse.json({ success: true, message: "Marketer reinstated" })

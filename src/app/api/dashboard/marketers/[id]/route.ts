@@ -93,6 +93,7 @@ export async function GET(
       approved: "bg-sendme-50 text-sendme",
       rejected: "bg-danger-light text-danger",
       suspended: "bg-gray-100 text-gray-600",
+      removed: "bg-danger-light text-danger",
     }
 
     return NextResponse.json({

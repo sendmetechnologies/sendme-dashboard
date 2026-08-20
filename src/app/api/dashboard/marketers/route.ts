@@ -16,11 +16,12 @@ export async function GET(req: NextRequest) {
       .select("id", { count: "exact", head: true })
 
     // ── Status counts ──
-    const [pendingResult, approvedResult, rejectedResult, suspendedResult] = await Promise.all([
+    const [pendingResult, approvedResult, rejectedResult, suspendedResult, removedResult] = await Promise.all([
       supabaseAdmin.from("marketer_profiles").select("id", { count: "exact", head: true }).eq("status", "pending"),
       supabaseAdmin.from("marketer_profiles").select("id", { count: "exact", head: true }).eq("status", "approved"),
       supabaseAdmin.from("marketer_profiles").select("id", { count: "exact", head: true }).eq("status", "rejected"),
       supabaseAdmin.from("marketer_profiles").select("id", { count: "exact", head: true }).eq("status", "suspended"),
+      supabaseAdmin.from("marketer_profiles").select("id", { count: "exact", head: true }).eq("status", "removed"),
     ])
 
     const tabCounts = {
@@ -28,6 +29,7 @@ export async function GET(req: NextRequest) {
       approved: approvedResult.count || 0,
       rejected: rejectedResult.count || 0,
       suspended: suspendedResult.count || 0,
+      removed: removedResult.count || 0,
     }
 
     // ── Build query ──
@@ -109,6 +111,7 @@ export async function GET(req: NextRequest) {
         approved: "bg-sendme-50 text-sendme",
         rejected: "bg-danger-light text-danger",
         suspended: "bg-gray-100 text-gray-600",
+        removed: "bg-danger-light text-danger",
       }
 
       return {
@@ -150,6 +153,7 @@ export async function GET(req: NextRequest) {
         "Approved": tabCounts.approved,
         "Rejected": tabCounts.rejected,
         "Suspended": tabCounts.suspended,
+        "Removed": tabCounts.removed,
       },
       marketers: formatted,
       pagination: { page, limit, total: filteredCount || totalMarketers || 0, totalPages },

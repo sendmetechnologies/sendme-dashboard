@@ -11,33 +11,7 @@ import {
 
 const topTabs = ["Bid Activity", "Price Control", "Route Pricing", "Overrides", "Pricing Logs"]
 
-// ====== BID ACTIVITY ======
-const bidStats = [
-  { label: "Total Bids (Today)", value: "1,842", change: "↑ 16% vs yesterday", up: true, icon: Users, color: "text-sendme", bg: "bg-sendme-50" },
-  { label: "Orders Open for Bids", value: "246", change: "↑ 12% vs yesterday", up: true, icon: FileText, color: "text-sendme", bg: "bg-sendme-50" },
-  { label: "Avg. Winning Bid", value: "₦6,420", change: "↑ 8% vs yesterday", up: true, icon: DollarSign, color: "text-sendme", bg: "bg-sendme-50" },
-  { label: "Bid Success Rate", value: "68.4%", change: "↑ 5% vs yesterday", up: true, icon: TrendingUp, color: "text-sendme", bg: "bg-sendme-50" },
-  { label: "Manual Adjustments (Today)", value: "24", change: "↓ 11% vs yesterday", up: false, icon: Activity, color: "text-danger", bg: "bg-danger-light" },
-]
-
-const bidTabs = [
-  { name: "All Bids", count: 1842, active: true },
-  { name: "Open for Bids", count: 246 },
-  { name: "Won", count: 942 },
-  { name: "Lost", count: 638 },
-  { name: "Cancelled", count: 16 },
-]
-
-const bids = [
-  { id: "SM-20491", time: "Today, 10:24 AM", route: "Lekki → Ikeja", type: "Small Item • Motorbike", customer: "Collins Bassie", customerType: "Individual", highestBid: "₦6,800", highestBy: "Damilare A.", winningBid: "₦6,800", winner: "Damilare A.", bids: 7, status: "Won", statusNote: "Driver assigned", statusColor: "bg-sendme-50 text-sendme", timeLeft: "—" },
-  { id: "SM-20492", time: "Today, 10:18 AM", route: "Ikate → Yaba", type: "Medium Item • Car", customer: "Peace Stores", customerType: "Organization", highestBid: "₦4,500", highestBy: "Chinedu O.", winningBid: "—", winner: "—", bids: 3, status: "Open for bids", statusNote: "3 bids received", statusColor: "bg-warning-light text-warning", timeLeft: "12m 45s" },
-  { id: "SM-20493", time: "Today, 09:57 AM", route: "Surulere → Ajah", type: "Bulk • Truck (ST)", customer: "Starlight Logistics", customerType: "Organization", highestBid: "₦52,000", highestBy: "Emeka N.", winningBid: "₦52,000", winner: "Emeka N.", bids: 5, status: "Won", statusNote: "Driver assigned", statusColor: "bg-sendme-50 text-sendme", timeLeft: "—" },
-  { id: "SM-20494", time: "Today, 09:45 AM", route: "Ikeja → Ogba", type: "Electronics • Car", customer: "Ada Okon", customerType: "Individual", highestBid: "₦8,000", highestBy: "Tosin A.", winningBid: "—", winner: "—", bids: 1, status: "Open for bids", statusNote: "1 bid received", statusColor: "bg-warning-light text-warning", timeLeft: "25m 12s" },
-  { id: "SM-20495", time: "Today, 09:31 AM", route: "Victoria Island → Lekki", type: "Documents • Motorbike", customer: "QuickStore Ltd.", customerType: "Organization", highestBid: "₦2,200", highestBy: "Rashid L.", winningBid: "₦2,200", winner: "Rashid L.", bids: 4, status: "Won", statusNote: "Driver assigned", statusColor: "bg-sendme-50 text-sendme", timeLeft: "—" },
-  { id: "SM-20496", time: "Today, 09:20 AM", route: "Garki → Wuse 2", type: "Small Item • Motorbike", customer: "Mercy Johnson", customerType: "Individual", highestBid: "₦3,100", highestBy: "Chinedu O.", winningBid: "₦3,100", winner: "Chinedu O.", bids: 6, status: "Won", statusNote: "Driver assigned", statusColor: "bg-sendme-50 text-sendme", timeLeft: "—" },
-  { id: "SM-20497", time: "Today, 09:05 AM", route: "Asaba → Lagos", type: "Return Load • Truck (10T)", customer: "GreenBasket", customerType: "Organization", highestBid: "₦120,000", highestBy: "Emeka N.", winningBid: "₦120,000", winner: "Emeka N.", bids: 2, status: "Won", statusNote: "Driver assigned", statusColor: "bg-sendme-50 text-sendme", timeLeft: "—" },
-  { id: "SM-20498", time: "Today, 08:50 AM", route: "Yaba → Surulere", type: "Small Item • Motorbike", customer: "Blessing Okafor", customerType: "Individual", highestBid: "₦2,500", highestBy: "Damilare A.", winningBid: "—", winner: "—", bids: 0, status: "Cancelled", statusNote: "Cancelled by customer", statusColor: "bg-surface-secondary text-text-muted", timeLeft: "—" },
-]
+// ====== BID ACTIVITY (live from DB) ======
 
 // ====== PRICE CONTROL ======
 const priceControlStats = [
@@ -67,43 +41,114 @@ const priceRules = [
 
 function BidActivityView({ onSelect }: { onSelect: (id: string) => void }) {
   const [activeTab, setActiveTab] = useState("All Bids")
+  const [bids, setBids] = useState<any[]>([])
+  const [stats, setStats] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
+  const [search, setSearch] = useState("")
+  const [page, setPage] = useState(1)
+  const [pagination, setPagination] = useState({ total: 0, totalPages: 1 })
+
+  const tabFilterMap: Record<string, string> = {
+    "All Bids": "all",
+    "Open for Bids": "open",
+    "Won": "won",
+    "Lost": "lost",
+    "Cancelled": "cancelled",
+  }
+
+  const fetchBids = useCallback(async () => {
+    setLoading(true)
+    try {
+      const params = new URLSearchParams({ page: String(page), limit: "20" })
+      if (search) params.set("search", search)
+      const statusKey = tabFilterMap[activeTab] || "all"
+      if (statusKey !== "all") params.set("status", statusKey)
+      const res = await fetch(`/api/dashboard/bids?${params}`)
+      if (!res.ok) throw new Error("Failed to fetch")
+      const data = await res.json()
+      setBids(data.bids || [])
+      setStats(data.stats || null)
+      setPagination(data.pagination || { total: 0, totalPages: 1 })
+    } catch {
+      setBids([])
+      setStats(null)
+    } finally {
+      setLoading(false)
+    }
+  }, [page, search, activeTab])
+
+  useEffect(() => { fetchBids() }, [fetchBids])
+
+  const handleTabChange = (tab: string) => { setActiveTab(tab); setPage(1) }
+  const handleSearch = (v: string) => { setSearch(v); setPage(1) }
+
+  const displayStats = stats ? [
+    { label: "Total Bids Today", value: stats.totalBidsToday.toLocaleString(), icon: Users, color: "text-sendme", bg: "bg-sendme-50" },
+    { label: "Orders Open for Bids", value: stats.openForBids.toLocaleString(), icon: FileText, color: "text-sendme", bg: "bg-sendme-50" },
+    { label: "Avg. Winning Bid", value: `₦${stats.avgWinningBid.toLocaleString()}`, icon: DollarSign, color: "text-sendme", bg: "bg-sendme-50" },
+    { label: "Bid Success Rate", value: `${stats.bidSuccessRate}%`, icon: TrendingUp, color: "text-sendme", bg: "bg-sendme-50" },
+    { label: "Total Bids", value: stats.totalBids.toLocaleString(), icon: Activity, color: "text-sendme", bg: "bg-sendme-50" },
+  ] : []
+
+  const displayTabs = [
+    { name: "All Bids", count: stats?.tabCounts.all || 0 },
+    { name: "Open for Bids", count: stats?.tabCounts.open || 0 },
+    { name: "Won", count: stats?.tabCounts.won || 0 },
+    { name: "Lost", count: stats?.tabCounts.lost || 0 },
+    { name: "Cancelled", count: stats?.tabCounts.cancelled || 0 },
+  ]
+
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-5 gap-3">
-        {bidStats.map(s => { const I = s.icon; return (
-          <Card key={s.label} className="p-3 min-w-0 overflow-hidden"><div className="flex items-start justify-between mb-1.5"><p className="text-[10px] text-text-muted truncate">{s.label}</p><div className={`p-1 rounded-lg ${s.bg} ${s.color} shrink-0`}><I size={14}/></div></div><p className="text-base lg:text-lg font-bold text-text-primary truncate">{s.value}</p><p className={`text-[9px] font-medium truncate ${s.up?"text-sendme":"text-danger"}`}>{s.change}</p></Card>
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+        {displayStats.map(s => { const I = s.icon; return (
+          <Card key={s.label} className="p-3 min-w-0 overflow-hidden"><div className="flex items-start justify-between mb-1.5"><p className="text-[10px] text-text-muted truncate">{s.label}</p><div className={`p-1 rounded-lg ${s.bg} ${s.color} shrink-0`}><I size={14}/></div></div><p className="text-base lg:text-lg font-bold text-text-primary truncate">{s.value}</p></Card>
         )})}
       </div>
       <div className="flex items-center gap-2 flex-wrap">
-        <div className="flex-1 min-w-[180px] flex items-center gap-2 bg-white border border-border-default rounded-lg px-3 py-1.5"><Search size={12} className="text-text-muted"/><input placeholder="Search by order ID, driver, route or customer..." className="flex-1 text-[11px] placeholder:text-text-muted focus:outline-none bg-transparent"/></div>
-        <button className="flex items-center gap-1.5 bg-white border border-border-default rounded-lg px-2.5 py-1.5 text-[11px] font-medium">May 20, 2025 📅</button>
-        <button className="flex items-center gap-1.5 bg-white border border-border-default rounded-lg px-2.5 py-1.5 text-[11px] font-medium">All Cities <ChevronDown size={12}/></button>
-        <button className="flex items-center gap-1.5 bg-white border border-border-default rounded-lg px-2.5 py-1.5 text-[11px] font-medium">All Vehicle Types <ChevronDown size={12}/></button>
-        <button className="flex items-center gap-1.5 bg-white border border-border-default rounded-lg px-2.5 py-1.5 text-[11px] font-medium">All Delivery Types <ChevronDown size={12}/></button>
-        <button className="flex items-center gap-1 text-[11px] font-medium text-text-secondary"><Filter size={12}/> Filters</button>
+        <div className="flex-1 min-w-[180px] flex items-center gap-2 bg-white border border-border-default rounded-lg px-3 py-1.5"><Search size={12} className="text-text-muted"/><input value={search} onChange={e => handleSearch(e.target.value)} placeholder="Search by order ID, route or customer..." className="flex-1 text-[11px] placeholder:text-text-muted focus:outline-none bg-transparent"/></div>
       </div>
       <div className="flex items-center justify-between border-b border-border-light">
-        <div className="flex gap-0">{bidTabs.map(t => (
-          <button key={t.name} onClick={() => setActiveTab(t.name)} className={`flex items-center gap-1 px-3 py-2 text-[11px] font-medium border-b-2 transition-colors ${activeTab===t.name?"border-sendme text-sendme":"border-transparent text-text-muted"}`}>{t.name}<span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${activeTab===t.name?"bg-sendme-50 text-sendme":"bg-surface-secondary text-text-muted"}`}>{t.count.toLocaleString()}</span></button>
+        <div className="flex gap-0 overflow-x-auto">{displayTabs.map(t => (
+          <button key={t.name} onClick={() => handleTabChange(t.name)} className={`flex items-center gap-1 px-3 py-2 text-[11px] font-medium border-b-2 transition-colors whitespace-nowrap ${activeTab===t.name?"border-sendme text-sendme":"border-transparent text-text-muted"}`}>{t.name}<span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${activeTab===t.name?"bg-sendme-50 text-sendme":"bg-surface-secondary text-text-muted"}`}>{t.count.toLocaleString()}</span></button>
         ))}</div>
-        <div className="flex items-center gap-2 pb-2"><button className="flex items-center gap-1 bg-white border border-border-default rounded-lg px-2.5 py-1 text-[11px] font-medium"><Download size={12}/> Export</button><button className="flex items-center gap-1 bg-white border border-border-default rounded-lg px-2.5 py-1 text-[11px] font-medium">Newest First <ChevronDown size={12}/></button></div>
       </div>
-      <Card className="overflow-hidden"><div className="overflow-x-auto"><table className="w-full"><thead><tr className="text-left text-[9px] text-text-muted font-semibold uppercase border-b border-border-light bg-surface-secondary/50">
-        <th className="px-3 py-2">Order</th><th className="px-3 py-2">Route & Type</th><th className="px-3 py-2">Customer</th><th className="px-3 py-2">Highest Bid</th><th className="px-3 py-2">Winning Bid</th><th className="px-3 py-2">Bids</th><th className="px-3 py-2">Status</th><th className="px-3 py-2">Time Left</th><th className="px-3 py-2 text-right">Actions</th>
-      </tr></thead><tbody>{bids.map(b => (
-        <tr key={b.id} onClick={() => onSelect(b.id)} className="border-b border-border-light last:border-0 hover:bg-surface-secondary/50 cursor-pointer">
-          <td className="px-3 py-2.5"><p className="text-[11px] font-semibold text-text-primary">{b.id}</p><p className="text-[9px] text-text-muted">{b.time}</p></td>
-          <td className="px-3 py-2.5"><p className="text-[11px] font-medium text-text-primary">{b.route}</p><p className="text-[9px] text-text-muted">{b.type}</p></td>
-          <td className="px-3 py-2.5"><p className="text-[11px] font-medium text-text-primary">{b.customer}</p><p className="text-[9px] text-text-muted">{b.customerType}</p></td>
-          <td className="px-3 py-2.5"><p className="text-[11px] font-semibold text-text-primary">{b.highestBid}</p><p className="text-[9px] text-text-muted">by {b.highestBy}</p></td>
-          <td className="px-3 py-2.5"><p className={`text-[11px] font-semibold ${b.winningBid !== "—" ? "text-sendme" : "text-text-muted"}`}>{b.winningBid}</p>{b.winner !== "—" && <p className="text-[9px] text-text-muted">{b.winner}</p>}</td>
-          <td className="px-3 py-2.5"><p className="text-[11px] font-medium text-text-primary">{b.bids}</p></td>
-          <td className="px-3 py-2.5"><span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${b.statusColor}`}>{b.status}</span><p className="text-[9px] text-text-muted mt-0.5">{b.statusNote}</p></td>
-          <td className="px-3 py-2.5"><p className={`text-[11px] font-medium ${b.timeLeft !== "—" ? "text-danger" : "text-text-muted"}`}>{b.timeLeft}</p></td>
-          <td className="px-3 py-2.5 text-right"><button className="p-1 text-text-muted hover:text-text-primary"><MoreHorizontal size={14}/></button></td>
-        </tr>
-      ))}</tbody></table></div>
-      <div className="flex items-center justify-between px-3 py-2 border-t border-border-light"><p className="text-[10px] text-text-muted">Showing 1 to 8 of 1,842 bids</p><div className="flex items-center gap-1"><button className="p-1 text-text-muted"><ChevronLeft size={12}/></button>{[1,2,3].map(p=><button key={p} className={`w-6 h-6 rounded text-[10px] font-medium ${p===1?"bg-sendme text-white":"text-text-muted"}`}>{p}</button>)}<span className="text-text-muted text-[10px]">...</span><button className="w-6 h-6 rounded text-[10px] font-medium text-text-muted">231</button><button className="p-1 text-text-muted"><ChevronRight size={12}/></button></div></div></Card>
+      <Card className="overflow-hidden">
+        {loading ? (
+          <div className="flex items-center justify-center py-16"><Loader2 size={20} className="animate-spin text-sendme"/><p className="ml-2 text-[11px] text-text-muted">Loading bids...</p></div>
+        ) : bids.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-16 text-text-muted"><Users size={28} className="mb-2 opacity-40"/><p className="text-[11px]">No bids found</p></div>
+        ) : (
+          <>
+            <div className="overflow-x-auto"><table className="w-full"><thead><tr className="text-left text-[9px] text-text-muted font-semibold uppercase border-b border-border-light bg-surface-secondary/50">
+              <th className="px-3 py-2">Order</th><th className="px-3 py-2">Route & Type</th><th className="px-3 py-2">Customer</th><th className="px-3 py-2">Highest Bid</th><th className="px-3 py-2">Winning Bid</th><th className="px-3 py-2">Bids</th><th className="px-3 py-2">Status</th><th className="px-3 py-2 text-right">Actions</th>
+            </tr></thead><tbody>{bids.map((b: any) => (
+              <tr key={b.id} onClick={() => onSelect(b.id)} className="border-b border-border-light last:border-0 hover:bg-surface-secondary/50 cursor-pointer">
+                <td className="px-3 py-2.5"><p className="text-[11px] font-semibold text-text-primary">{b.shortId}</p><p className="text-[9px] text-text-muted">{b.time}</p></td>
+                <td className="px-3 py-2.5"><p className="text-[11px] font-medium text-text-primary">{b.route}</p><p className="text-[9px] text-text-muted">{b.type}</p></td>
+                <td className="px-3 py-2.5"><p className="text-[11px] font-medium text-text-primary">{b.customer}</p></td>
+                <td className="px-3 py-2.5"><p className="text-[11px] font-semibold text-text-primary">{b.highestBid ? `₦${b.highestBid.toLocaleString()}` : "—"}</p>{b.highestBy !== "—" && <p className="text-[9px] text-text-muted">by {b.highestBy}</p>}</td>
+                <td className="px-3 py-2.5"><p className={`text-[11px] font-semibold ${b.winningBid ? "text-sendme" : "text-text-muted"}`}>{b.winningBid ? `₦${b.winningBid.toLocaleString()}` : "—"}</p>{b.winner !== "—" && <p className="text-[9px] text-text-muted">{b.winner}</p>}</td>
+                <td className="px-3 py-2.5"><p className="text-[11px] font-medium text-text-primary">{b.bidsCount}</p></td>
+                <td className="px-3 py-2.5"><span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${b.statusColor}`}>{b.status}</span><p className="text-[9px] text-text-muted mt-0.5">{b.statusNote}</p></td>
+                <td className="px-3 py-2.5 text-right"><button className="p-1 text-text-muted hover:text-text-primary"><Eye size={14}/></button></td>
+              </tr>
+            ))}</tbody></table></div>
+            <div className="flex items-center justify-between px-3 py-2 border-t border-border-light">
+              <p className="text-[10px] text-text-muted">Showing {((page-1)*20)+1} to {Math.min(page*20, pagination.total)} of {pagination.total.toLocaleString()} bids</p>
+              <div className="flex items-center gap-1">
+                <button disabled={page<=1} onClick={() => setPage(p=>p-1)} className="p-1 text-text-muted disabled:opacity-30"><ChevronLeft size={12}/></button>
+                {Array.from({ length: Math.min(5, pagination.totalPages) }, (_, i) => {
+                  const p = page <= 3 ? i+1 : page + i - 2
+                  if (p < 1 || p > pagination.totalPages) return null
+                  return <button key={p} onClick={() => setPage(p)} className={`w-6 h-6 rounded text-[10px] font-medium ${p===page?"bg-sendme text-white":"text-text-muted"}`}>{p}</button>
+                })}
+                <button disabled={page>=pagination.totalPages} onClick={() => setPage(p=>p+1)} className="p-1 text-text-muted disabled:opacity-30"><ChevronRight size={12}/></button>
+              </div>
+            </div>
+          </>
+        )}
+      </Card>
     </div>
   )
 }
@@ -705,7 +750,7 @@ function RoutePricingView({ onSelect }: { onSelect: (id: string) => void }) {
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-5 gap-3">{routePricingStats.map(s => { const I = s.icon; return (
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">{routePricingStats.map(s => { const I = s.icon; return (
         <Card key={s.label} className="p-3 min-w-0 overflow-hidden"><div className="flex items-start justify-between mb-1.5"><p className="text-[10px] text-text-muted truncate">{s.label}</p><div className={`p-1 rounded-lg ${s.bg} ${s.color} shrink-0`}><I size={14}/></div></div><p className="text-base lg:text-lg font-bold text-text-primary truncate">{s.value}</p><p className={`text-[9px] font-medium truncate ${s.up?"text-sendme":"text-danger"}`}>{s.change}</p></Card>
       )})}</div>
       <div className="flex items-center gap-2 flex-wrap">
@@ -780,7 +825,7 @@ function OverridesView({ onSelect }: { onSelect: (id: string) => void }) {
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-5 gap-3">{overrideStats.map(s => { const I = s.icon; return (
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">{overrideStats.map(s => { const I = s.icon; return (
         <Card key={s.label} className="p-3 min-w-0 overflow-hidden"><div className="flex items-start justify-between mb-1.5"><p className="text-[10px] text-text-muted truncate">{s.label}</p><div className={`p-1 rounded-lg ${s.bg} ${s.color} shrink-0`}><I size={14}/></div></div><p className="text-base lg:text-lg font-bold text-text-primary truncate">{s.value}</p><p className={`text-[9px] font-medium truncate ${s.up?"text-sendme":"text-danger"}`}>{s.change}</p></Card>
       )})}</div>
       <div className="flex items-center gap-2 flex-wrap">
@@ -866,7 +911,7 @@ function PricingLogsView({ onSelect }: { onSelect: (id: string) => void }) {
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-5 gap-3">{pricingLogStats.map(s => { const I = s.icon; return (
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">{pricingLogStats.map(s => { const I = s.icon; return (
         <Card key={s.label} className="p-3 min-w-0 overflow-hidden"><div className="flex items-start justify-between mb-1.5"><p className="text-[10px] text-text-muted truncate">{s.label}</p><div className={`p-1 rounded-lg ${s.bg} ${s.color} shrink-0`}><I size={14}/></div></div><p className="text-base lg:text-lg font-bold text-text-primary truncate">{s.value}</p><p className={`text-[9px] font-medium truncate ${s.up?"text-sendme":"text-danger"}`}>{s.change}</p></Card>
       )})}</div>
       <div className="flex items-center gap-2 flex-wrap">

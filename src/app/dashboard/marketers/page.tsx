@@ -81,8 +81,8 @@ export default function MarketersPage() {
     { label: "Total Marketers", value: stats.total, icon: Megaphone, color: "text-sendme", bg: "bg-sendme-50" },
     { label: "Pending Review", value: stats.pending, icon: Clock, color: "text-warning", bg: "bg-warning-light" },
     { label: "Approved", value: stats.approved, icon: CheckCircle, color: "text-sendme", bg: "bg-sendme-50" },
-    { label: "Rejected / Suspended", value: stats.rejected + stats.suspended, icon: Ban, color: "text-danger", bg: "bg-danger-light" },
-    { label: "Removed", value: stats.removed, icon: Ban, color: "text-danger", bg: "bg-danger-light" },
+    { label: "Rejected / Suspended", value: (stats.rejected || 0) + (stats.suspended || 0), icon: Ban, color: "text-danger", bg: "bg-danger-light" },
+    { label: "Removed", value: stats.removed || 0, icon: Ban, color: "text-danger", bg: "bg-danger-light" },
   ]
 
   return (

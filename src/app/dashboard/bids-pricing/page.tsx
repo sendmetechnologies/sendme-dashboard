@@ -165,7 +165,7 @@ function BidActivityView({ onSelect }: { onSelect: (id: string) => void }) {
   )
 }
 
-function PriceControlView({ onSelect }: { onSelect: (id: string) => void }) {
+function PriceControlView({ onSelect, showCreate, onCreateHandled }: { onSelect: (id: string) => void; showCreate: boolean; onCreateHandled: () => void }) {
   const [states, setStates] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -204,6 +204,7 @@ function PriceControlView({ onSelect }: { onSelect: (id: string) => void }) {
   }, [])
 
   useEffect(() => { fetchStates() }, [fetchStates])
+  useEffect(() => { if (showCreate) { setShowAddModal(true); onCreateHandled() } }, [showCreate, onCreateHandled])
 
   const handleSave = async () => {
     try {
@@ -714,10 +715,17 @@ function PriceControlView({ onSelect }: { onSelect: (id: string) => void }) {
   )
 }
 
-function RoutePricingView({ onSelect }: { onSelect: (id: string) => void }) {
+function RoutePricingView({ onSelect, showCreate, onCreateHandled }: { onSelect: (id: string) => void; showCreate: boolean; onCreateHandled: () => void }) {
   const [routes, setRoutes] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [showModal, setShowModal] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [form, setForm] = useState({
+    origin_state: '', origin_city: '', destination_state: '', destination_city: '',
+    route_type: 'interstate', distance_km: '', estimated_duration: '', notes: '',
+    bicycle_price: '', motorcycle_price: '', car_price: '', truck_price: '',
+  })
 
   const fetchRoutes = useCallback(async () => {
     try {
@@ -734,6 +742,53 @@ function RoutePricingView({ onSelect }: { onSelect: (id: string) => void }) {
   }, [])
 
   useEffect(() => { fetchRoutes() }, [fetchRoutes])
+  useEffect(() => { if (showCreate) { setShowModal(true); onCreateHandled() } }, [showCreate, onCreateHandled])
+
+  const handleCreate = async () => {
+    if (!form.origin_state || !form.destination_state) return alert("Origin and destination states are required")
+    const vehicle_pricing: any = {}
+    if (form.bicycle_price) vehicle_pricing.bicycle = Number(form.bicycle_price)
+    if (form.motorcycle_price) vehicle_pricing.motorcycle = Number(form.motorcycle_price)
+    if (form.car_price) vehicle_pricing.car = Number(form.car_price)
+    if (form.truck_price) vehicle_pricing.truck = Number(form.truck_price)
+    if (Object.keys(vehicle_pricing).length === 0) return alert("Enter at least one vehicle price")
+    try {
+      setSaving(true)
+      const res = await fetch('/api/admin/route-pricing', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          origin_state: form.origin_state, origin_city: form.origin_city || null,
+          destination_state: form.destination_state, destination_city: form.destination_city || null,
+          route_type: form.route_type,
+          distance_km: form.distance_km ? Number(form.distance_km) : null,
+          estimated_duration: form.estimated_duration || null,
+          vehicle_pricing, notes: form.notes || null,
+        }),
+      })
+      const data = await res.json()
+      if (data.error) throw new Error(data.error)
+      setShowModal(false)
+      setForm({ origin_state: '', origin_city: '', destination_state: '', destination_city: '', route_type: 'interstate', distance_km: '', estimated_duration: '', notes: '', bicycle_price: '', motorcycle_price: '', car_price: '', truck_price: '' })
+      fetchRoutes()
+    } catch (e: any) {
+      alert('Error: ' + e.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleDelete = async (id: string) => {
+    if (!confirm("Delete this route pricing?")) return
+    try {
+      const res = await fetch(`/api/admin/route-pricing?id=${id}`, { method: 'DELETE' })
+      const data = await res.json()
+      if (data.error) throw new Error(data.error)
+      fetchRoutes()
+    } catch (e: any) {
+      alert('Error: ' + e.message)
+    }
+  }
 
   const activeRoutes = routes.filter(r => r.is_active)
   const interstateRoutes = routes.filter(r => r.route_type === 'interstate')
@@ -754,6 +809,7 @@ function RoutePricingView({ onSelect }: { onSelect: (id: string) => void }) {
       )})}</div>
       <div className="flex items-center gap-2 flex-wrap">
         <div className="flex-1 min-w-[180px] flex items-center gap-2 bg-white border border-border-default rounded-lg px-3 py-1.5"><Search size={12} className="text-text-muted"/><input placeholder="Search by route, city, state or route ID..." className="flex-1 text-[11px] placeholder:text-text-muted focus:outline-none bg-transparent"/></div>
+        <button onClick={() => setShowModal(true)} className="flex items-center gap-1.5 bg-sendme text-white px-3 py-1.5 rounded-lg text-[11px] font-semibold"><Plus size={14}/> Add Route</button>
       </div>
       <Card className="overflow-hidden">
         {loading ? (
@@ -774,16 +830,80 @@ function RoutePricingView({ onSelect }: { onSelect: (id: string) => void }) {
               <td className="px-3 py-2.5"><p className="text-[11px] font-medium text-text-primary">{r.estimated_duration || "—"}</p></td>
               <td className="px-3 py-2.5"><span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${r.is_active ? 'bg-sendme-50 text-sendme' : 'bg-surface-secondary text-text-muted'}`}>{r.is_active ? 'Active' : 'Inactive'}</span></td>
               <td className="px-3 py-2.5"><p className="text-[10px] text-text-muted">{r.updated_at ? new Date(r.updated_at).toLocaleDateString() : "—"}</p></td>
-              <td className="px-3 py-2.5 text-right"><button className="p-1 text-text-muted hover:text-text-primary"><MoreHorizontal size={14}/></button></td>
+              <td className="px-3 py-2.5 text-right"><div className="flex items-center justify-end gap-1"><button onClick={e => { e.stopPropagation(); onSelect(r.id) }} className="p-1 text-text-muted hover:text-sendme"><Eye size={12}/></button><button onClick={e => { e.stopPropagation(); handleDelete(r.id) }} className="p-1 text-text-muted hover:text-danger"><Trash2 size={12}/></button></div></td>
             </tr>
           ))}</tbody></table></div>
         )}
       </Card>
+
+      {showModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <Card className="w-full max-w-lg p-6 space-y-4">
+            <h3 className="text-sm font-bold text-text-primary">Create Route Pricing</h3>
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] text-text-muted font-medium">Origin State *</label>
+                  <input value={form.origin_state} onChange={e => setForm(f => ({ ...f, origin_state: e.target.value }))} className="w-full mt-1 px-3 py-1.5 border border-border-default rounded-lg text-xs" placeholder="e.g. Lagos" />
+                </div>
+                <div>
+                  <label className="text-[10px] text-text-muted font-medium">Origin City</label>
+                  <input value={form.origin_city} onChange={e => setForm(f => ({ ...f, origin_city: e.target.value }))} className="w-full mt-1 px-3 py-1.5 border border-border-default rounded-lg text-xs" placeholder="e.g. Ikeja" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] text-text-muted font-medium">Destination State *</label>
+                  <input value={form.destination_state} onChange={e => setForm(f => ({ ...f, destination_state: e.target.value }))} className="w-full mt-1 px-3 py-1.5 border border-border-default rounded-lg text-xs" placeholder="e.g. Oyo" />
+                </div>
+                <div>
+                  <label className="text-[10px] text-text-muted font-medium">Destination City</label>
+                  <input value={form.destination_city} onChange={e => setForm(f => ({ ...f, destination_city: e.target.value }))} className="w-full mt-1 px-3 py-1.5 border border-border-default rounded-lg text-xs" placeholder="e.g. Ibadan" />
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="text-[10px] text-text-muted font-medium">Route Type *</label>
+                  <select value={form.route_type} onChange={e => setForm(f => ({ ...f, route_type: e.target.value }))} className="w-full mt-1 px-3 py-1.5 border border-border-default rounded-lg text-xs">
+                    <option value="interstate">Interstate</option>
+                    <option value="intracity">Intracity</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] text-text-muted font-medium">Distance (km)</label>
+                  <input value={form.distance_km} onChange={e => setForm(f => ({ ...f, distance_km: e.target.value }))} className="w-full mt-1 px-3 py-1.5 border border-border-default rounded-lg text-xs" type="number" placeholder="e.g. 120" />
+                </div>
+                <div>
+                  <label className="text-[10px] text-text-muted font-medium">Duration</label>
+                  <input value={form.estimated_duration} onChange={e => setForm(f => ({ ...f, estimated_duration: e.target.value }))} className="w-full mt-1 px-3 py-1.5 border border-border-default rounded-lg text-xs" placeholder="e.g. 2h 30m" />
+                </div>
+              </div>
+              <div>
+                <p className="text-[10px] font-semibold text-text-muted uppercase tracking-wide mb-2">Vehicle Pricing (₦)</p>
+                <div className="grid grid-cols-4 gap-2">
+                  <div><label className="text-[9px] text-text-muted">Bicycle</label><input value={form.bicycle_price} onChange={e => setForm(f => ({ ...f, bicycle_price: e.target.value }))} className="w-full mt-1 px-2 py-1.5 border border-border-default rounded-lg text-xs" type="number" placeholder="Optional" /></div>
+                  <div><label className="text-[9px] text-text-muted">Motorcycle</label><input value={form.motorcycle_price} onChange={e => setForm(f => ({ ...f, motorcycle_price: e.target.value }))} className="w-full mt-1 px-2 py-1.5 border border-border-default rounded-lg text-xs" type="number" placeholder="Optional" /></div>
+                  <div><label className="text-[9px] text-text-muted">Car</label><input value={form.car_price} onChange={e => setForm(f => ({ ...f, car_price: e.target.value }))} className="w-full mt-1 px-2 py-1.5 border border-border-default rounded-lg text-xs" type="number" placeholder="Optional" /></div>
+                  <div><label className="text-[9px] text-text-muted">Truck</label><input value={form.truck_price} onChange={e => setForm(f => ({ ...f, truck_price: e.target.value }))} className="w-full mt-1 px-2 py-1.5 border border-border-default rounded-lg text-xs" type="number" placeholder="Optional" /></div>
+                </div>
+              </div>
+              <div>
+                <label className="text-[10px] text-text-muted font-medium">Notes</label>
+                <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} className="w-full mt-1 px-3 py-1.5 border border-border-default rounded-lg text-xs" rows={2} placeholder="Optional notes about this route" />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <button onClick={() => setShowModal(false)} className="px-3 py-1.5 text-[11px] font-medium border border-border-default rounded-lg">Cancel</button>
+              <button onClick={handleCreate} disabled={saving} className="px-3 py-1.5 text-[11px] font-semibold bg-sendme text-white rounded-lg disabled:opacity-50">{saving ? "Creating..." : "Create Route"}</button>
+            </div>
+          </Card>
+        </div>
+      )}
     </div>
   )
 }
 
-function OverridesView({ onSelect }: { onSelect: (id: string) => void }) {
+function OverridesView({ onSelect, showCreate, onCreateHandled }: { onSelect: (id: string) => void; showCreate: boolean; onCreateHandled: () => void }) {
   const [overrides, setOverrides] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -810,6 +930,7 @@ function OverridesView({ onSelect }: { onSelect: (id: string) => void }) {
   }, [])
 
   useEffect(() => { fetchOverrides() }, [fetchOverrides])
+  useEffect(() => { if (showCreate) { setShowCreateModal(true); onCreateHandled() } }, [showCreate, onCreateHandled])
 
   const handleCreate = async () => {
     if (!form.override_name || !form.adjustment_value) return alert("Name and adjustment value are required")
@@ -1057,8 +1178,14 @@ function PricingLogsView({ onSelect }: { onSelect: (id: string) => void }) {
 export default function BidsPricingPage() {
   const [activeTopTab, setActiveTopTab] = useState("Bid Activity")
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [showCreate, setShowCreate] = useState(false)
 
   const detailType = activeTopTab === "Bid Activity" ? "bids" : activeTopTab === "Price Control" ? "price-control" : activeTopTab === "Route Pricing" ? "route-pricing" : activeTopTab === "Pricing Logs" ? "pricing-logs" : "overrides"
+
+  const handleHeaderButton = () => {
+    if (activeTopTab === "Pricing Logs") return
+    setShowCreate(true)
+  }
 
   return (
     <div className="flex h-full">
@@ -1072,22 +1199,24 @@ export default function BidsPricingPage() {
             </div>
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-1.5 bg-white border border-border-default rounded-lg px-3 py-2 text-xs font-medium"><span className="text-sendme">📍</span> Lagos, Nigeria</div>
-              <button className="flex items-center gap-2 bg-sendme text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-sendme-dark transition-colors"><Plus size={16}/> {activeTopTab === "Bid Activity" ? "Create Price Override" : activeTopTab === "Price Control" ? "Create Price Rule" : activeTopTab === "Route Pricing" ? "Create Route Price" : activeTopTab === "Overrides" ? "Create Override" : "Export Logs"}</button>
+              {activeTopTab !== "Pricing Logs" && (
+                <button onClick={handleHeaderButton} className="flex items-center gap-2 bg-sendme text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-sendme-dark transition-colors"><Plus size={16}/> {activeTopTab === "Bid Activity" ? "Create Price Override" : activeTopTab === "Price Control" ? "Create Price Rule" : activeTopTab === "Route Pricing" ? "Create Route Price" : "Create Override"}</button>
+              )}
             </div>
           </div>
 
           {/* Top Tabs */}
           <div className="flex gap-0 border-b border-border-light">
             {topTabs.map(t => (
-              <button key={t} onClick={() => { setActiveTopTab(t); setSelectedId(null) }} className={`px-4 py-2.5 text-xs font-medium border-b-2 transition-colors ${activeTopTab===t ? "border-sendme text-sendme" : "border-transparent text-text-muted hover:text-text-primary"}`}>{t}</button>
+              <button key={t} onClick={() => { setActiveTopTab(t); setSelectedId(null); setShowCreate(false) }} className={`px-4 py-2.5 text-xs font-medium border-b-2 transition-colors ${activeTopTab===t ? "border-sendme text-sendme" : "border-transparent text-text-muted hover:text-text-primary"}`}>{t}</button>
             ))}
           </div>
 
           {/* Content */}
           {activeTopTab === "Bid Activity" && <BidActivityView onSelect={setSelectedId} />}
-          {activeTopTab === "Price Control" && <PriceControlView onSelect={setSelectedId} />}
-          {activeTopTab === "Route Pricing" && <RoutePricingView onSelect={setSelectedId} />}
-          {activeTopTab === "Overrides" && <OverridesView onSelect={setSelectedId} />}
+          {activeTopTab === "Price Control" && <PriceControlView onSelect={setSelectedId} showCreate={showCreate} onCreateHandled={() => setShowCreate(false)} />}
+          {activeTopTab === "Route Pricing" && <RoutePricingView onSelect={setSelectedId} showCreate={showCreate} onCreateHandled={() => setShowCreate(false)} />}
+          {activeTopTab === "Overrides" && <OverridesView onSelect={setSelectedId} showCreate={showCreate} onCreateHandled={() => setShowCreate(false)} />}
           {activeTopTab === "Pricing Logs" && <PricingLogsView onSelect={setSelectedId} />}
         </div>
       </div>

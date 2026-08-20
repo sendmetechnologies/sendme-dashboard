@@ -121,15 +121,27 @@ function BidActivityView({ onSelect }: { onSelect: (id: string) => void }) {
         ) : (
           <>
             <div className="overflow-x-auto"><table className="w-full"><thead><tr className="text-left text-[9px] text-text-muted font-semibold uppercase border-b border-border-light bg-surface-secondary/50">
-              <th className="px-3 py-2">Order</th><th className="px-3 py-2">Route & Type</th><th className="px-3 py-2">Customer</th><th className="px-3 py-2">Highest Bid</th><th className="px-3 py-2">Winning Bid</th><th className="px-3 py-2">Bids</th><th className="px-3 py-2">Status</th><th className="px-3 py-2 text-right">Actions</th>
+              <th className="px-3 py-2">Order</th><th className="px-3 py-2">Route & Type</th><th className="px-3 py-2">Customer</th><th className="px-3 py-2">Bids</th><th className="px-3 py-2">Highest Bid</th><th className="px-3 py-2">Winning Bid</th><th className="px-3 py-2">Status</th><th className="px-3 py-2 text-right">Actions</th>
             </tr></thead><tbody>{bids.map((b: any) => (
               <tr key={b.id} onClick={() => onSelect(b.id)} className="border-b border-border-light last:border-0 hover:bg-surface-secondary/50 cursor-pointer">
-                <td className="px-3 py-2.5"><p className="text-[11px] font-semibold text-text-primary">{b.shortId}</p><p className="text-[9px] text-text-muted">{b.time}</p></td>
-                <td className="px-3 py-2.5"><p className="text-[11px] font-medium text-text-primary">{b.route}</p><p className="text-[9px] text-text-muted">{b.type}</p></td>
+                <td className="px-3 py-2.5">
+                  <p className="text-[11px] font-semibold text-text-primary">{b.shortId}</p>
+                  <p className="text-[9px] text-text-muted">{b.time}</p>
+                </td>
+                <td className="px-3 py-2.5">
+                  <p className="text-[11px] font-medium text-text-primary">{b.route}</p>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <p className="text-[9px] text-text-muted">{b.type}</p>
+                    {b.distance && b.distance !== "—" && <span className="text-[8px] font-medium text-text-muted bg-surface-secondary px-1 py-0.5 rounded">{b.distance}</span>}
+                  </div>
+                </td>
                 <td className="px-3 py-2.5"><p className="text-[11px] font-medium text-text-primary">{b.customer}</p></td>
+                <td className="px-3 py-2.5">
+                  <p className="text-[11px] font-semibold text-text-primary">{b.bidsCount}</p>
+                  {b.urgency && b.urgency !== "normal" && <span className="text-[8px] font-semibold px-1 py-0.5 rounded bg-danger-light text-danger">{b.urgency}</span>}
+                </td>
                 <td className="px-3 py-2.5"><p className="text-[11px] font-semibold text-text-primary">{b.highestBid ? `₦${b.highestBid.toLocaleString()}` : "—"}</p>{b.highestBy !== "—" && <p className="text-[9px] text-text-muted">by {b.highestBy}</p>}</td>
                 <td className="px-3 py-2.5"><p className={`text-[11px] font-semibold ${b.winningBid ? "text-sendme" : "text-text-muted"}`}>{b.winningBid ? `₦${b.winningBid.toLocaleString()}` : "—"}</p>{b.winner !== "—" && <p className="text-[9px] text-text-muted">{b.winner}</p>}</td>
-                <td className="px-3 py-2.5"><p className="text-[11px] font-medium text-text-primary">{b.bidsCount}</p></td>
                 <td className="px-3 py-2.5"><span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${b.statusColor}`}>{b.status}</span><p className="text-[9px] text-text-muted mt-0.5">{b.statusNote}</p></td>
                 <td className="px-3 py-2.5 text-right"><button className="p-1 text-text-muted hover:text-text-primary"><Eye size={14}/></button></td>
               </tr>

@@ -225,7 +225,7 @@ export async function POST(
       return NextResponse.json({ success: true, message: "Marketer deactivated" })
     }
 
-    // ── Hard delete ──
+    // ── Hard delete (marketer ONLY — does NOT delete the underlying user account) ──
     if (action === "hard_delete") {
       const { data: profile } = await supabaseAdmin
         .from("marketer_profiles")
@@ -233,16 +233,34 @@ export async function POST(
         .eq("user_id", id)
         .single()
 
-      const { data: result, error } = await supabaseAdmin.rpc("admin_hard_delete_user", { p_user_id: id })
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-      if (result && !result.success) return NextResponse.json({ error: result.error }, { status: 500 })
-
-      // Remove the canonical marketer record so it doesn't linger as an orphan
+      // Remove canonical marketer row + wallet
       if (profile?.marketer_id) {
+        const { data: mkRow } = await supabaseAdmin
+          .from("marketers")
+          .select("id")
+          .eq("ref_id", profile.marketer_id)
+          .single()
+        if (mkRow?.id) {
+          await supabaseAdmin.from("marketer_wallets").delete().eq("marketer_id", mkRow.id)
+          await supabaseAdmin.from("marketer_wallet_transactions").delete().eq("marketer_id", mkRow.id)
+        }
         await supabaseAdmin.from("marketers").delete().eq("ref_id", profile.marketer_id)
       }
 
-      return NextResponse.json({ success: true, message: "Marketer permanently deleted" })
+      // Remove the marketer_profiles row (applied/application record)
+      const { error } = await supabaseAdmin
+        .from("marketer_profiles")
+        .delete()
+        .eq("user_id", id)
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+      // Deactivate their user account instead of deleting it — their sender/org/rider account stays
+      await supabaseAdmin
+        .from("users")
+        .update({ is_deleted: true })
+        .eq("id", id)
+
+      return NextResponse.json({ success: true, message: "Marketer deleted. User account deactivated but preserved." })
     }
 
     // ── Assign base role to a marketer-only user ──

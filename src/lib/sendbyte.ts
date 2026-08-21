@@ -254,6 +254,108 @@ export function buildMarketerRejectionEmail(data: {
   };
 }
 
+export function buildMarketerSuspendedEmail(data: {
+  userName: string;
+  reason?: string;
+}): { subject: string; html: string } {
+  const reasonBlock = data.reason
+    ? `<div style="background: #f9f9f9; padding: 16px; border-radius: 8px; margin: 16px 0;">
+        <p style="margin: 0; font-weight: 600; color: #333;">Reason:</p>
+        <p style="margin: 8px 0 0 0; color: #666;">${data.reason}</p>
+      </div>`
+    : "";
+
+  return {
+    subject: `SendMe Growth Partner - Account Suspended`,
+    html: buildEmailTemplate("Account Suspended", `
+      <p>Hi ${data.userName},</p>
+      <p>Your SendMe Growth Partner account has been <strong>suspended</strong>.</p>
+      <div style="text-align: center; margin: 24px 0;">
+        <span style="display: inline-block; padding: 6px 16px; border-radius: 20px; font-size: 13px; font-weight: 600; background: #FFF3E0; color: #E65100;">Suspended</span>
+      </div>
+      <p>During the suspension period:</p>
+      <ul style="color: #555; line-height: 2;">
+        <li>Your marketer code is temporarily inactive</li>
+        <li>New referrals will not be accepted</li>
+        <li>Existing commission tracking continues</li>
+      </ul>
+      ${reasonBlock}
+      <p>Contact support if you believe this is an error.</p>
+    `),
+  };
+}
+
+export function buildMarketerReinstatedEmail(data: {
+  userName: string;
+  marketerId: string;
+}): { subject: string; html: string } {
+  return {
+    subject: `SendMe Growth Partner - Account Reactivated`,
+    html: buildEmailTemplate("Welcome Back!", `
+      <p>Hi ${data.userName},</p>
+      <p>Your SendMe Growth Partner account has been <strong>reactivated</strong>.</p>
+      <div style="text-align: center; margin: 24px 0;">
+        <span class="badge-success">Active</span>
+      </div>
+      <div style="background: #f0faf5; border: 2px dashed #158A5E; border-radius: 12px; padding: 24px; text-align: center; margin: 24px 0;">
+        <p style="margin: 0 0 8px 0; font-size: 12px; color: #666; text-transform: uppercase; letter-spacing: 1px;">Your Marketer ID</p>
+        <p style="margin: 0; font-size: 28px; font-weight: 700; color: #158A5E; letter-spacing: 2px;">${data.marketerId}</p>
+      </div>
+      <p>Your marketer code is active again. Start sharing it to earn commissions!</p>
+    `),
+  };
+}
+
+export function buildMarketerDeactivatedEmail(data: {
+  userName: string;
+}): { subject: string; html: string } {
+  return {
+    subject: `SendMe Growth Partner - Account Deactivated`,
+    html: buildEmailTemplate("Account Deactivated", `
+      <p>Hi ${data.userName},</p>
+      <p>Your SendMe Growth Partner account has been <strong>deactivated</strong>.</p>
+      <div style="text-align: center; margin: 24px 0;">
+        <span style="display: inline-block; padding: 6px 16px; border-radius: 20px; font-size: 13px; font-weight: 600; background: #FFEBEE; color: #C62828;">Deactivated</span>
+      </div>
+      <p>Your marketer code is no longer active. If this was a mistake, please contact support.</p>
+    `),
+  };
+}
+
+export function buildMarketerRemovedEmail(data: {
+  userName: string;
+}): { subject: string; html: string } {
+  return {
+    subject: `SendMe Growth Partner - Account Removed`,
+    html: buildEmailTemplate("Account Removed", `
+      <p>Hi ${data.userName},</p>
+      <p>Your SendMe Growth Partner account has been <strong>permanently removed</strong>.</p>
+      <div style="text-align: center; margin: 24px 0;">
+        <span style="display: inline-block; padding: 6px 16px; border-radius: 20px; font-size: 13px; font-weight: 600; background: #FFEBEE; color: #C62828;">Removed</span>
+      </div>
+      <p>Your marketer profile and code have been deleted. If you believe this was done in error, please contact support.</p>
+    `),
+  };
+}
+
+export function buildMarketerRoleAssignedEmail(data: {
+  userName: string;
+  role: string;
+}): { subject: string; html: string } {
+  return {
+    subject: `SendMe - Account Role Updated`,
+    html: buildEmailTemplate("Account Role Updated", `
+      <p>Hi ${data.userName},</p>
+      <p>Your account has been updated with a new role.</p>
+      <div style="background: #f0faf5; border-radius: 12px; padding: 24px; text-align: center; margin: 24px 0;">
+        <p style="margin: 0 0 8px 0; font-size: 12px; color: #666; text-transform: uppercase; letter-spacing: 1px;">Your Role</p>
+        <p style="margin: 0; font-size: 20px; font-weight: 700; color: #158A5E; text-transform: capitalize;">${data.role}</p>
+      </div>
+      <p>You can now access all features available to ${data.role}s in the SendMe app.</p>
+    `),
+  };
+}
+
 export function buildPayoutRejectedEmail(data: {
   userName: string;
   amount: number;

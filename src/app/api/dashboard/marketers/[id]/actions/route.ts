@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
-import { sendEmail, buildMarketerApprovalEmail, buildMarketerRejectionEmail } from "@/lib/sendbyte"
+import {
+  sendEmail, buildMarketerApprovalEmail, buildMarketerRejectionEmail,
+  buildMarketerSuspendedEmail, buildMarketerReinstatedEmail,
+  buildMarketerDeactivatedEmail, buildMarketerRemovedEmail,
+  buildMarketerRoleAssignedEmail,
+} from "@/lib/sendbyte"
 
 function generateMarketerId(): string {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
@@ -196,6 +201,21 @@ export async function POST(
           .eq("ref_id", profile.marketer_id)
       }
 
+      // Send suspension email
+      try {
+        const { data: userData } = await supabaseAdmin
+          .from("users")
+          .select("full_name, email")
+          .eq("id", id)
+          .single()
+        if (userData?.email) {
+          const { subject, html } = buildMarketerSuspendedEmail({ userName: userData.full_name || "Marketer", reason })
+          await sendEmail({ to: userData.email, subject, html })
+        }
+      } catch (e) {
+        console.error("[Marketer Actions] Failed to send suspension email:", e)
+      }
+
       return NextResponse.json({ success: true, message: "Marketer suspended" })
     }
 
@@ -273,6 +293,21 @@ export async function POST(
         }
       }
 
+      // Send reinstatement email
+      try {
+        const { data: userData } = await supabaseAdmin
+          .from("users")
+          .select("full_name, email")
+          .eq("id", id)
+          .single()
+        if (userData?.email && profile?.marketer_id) {
+          const { subject, html } = buildMarketerReinstatedEmail({ userName: userData.full_name || "Marketer", marketerId: profile.marketer_id })
+          await sendEmail({ to: userData.email, subject, html })
+        }
+      } catch (e) {
+        console.error("[Marketer Actions] Failed to send reinstatement email:", e)
+      }
+
       return NextResponse.json({ success: true, message: "Marketer reinstated" })
     }
 
@@ -296,6 +331,21 @@ export async function POST(
           .from("marketers")
           .update({ is_active: false })
           .eq("ref_id", profile.marketer_id)
+      }
+
+      // Send deactivation email
+      try {
+        const { data: userData } = await supabaseAdmin
+          .from("users")
+          .select("full_name, email")
+          .eq("id", id)
+          .single()
+        if (userData?.email) {
+          const { subject, html } = buildMarketerDeactivatedEmail({ userName: userData.full_name || "Marketer" })
+          await sendEmail({ to: userData.email, subject, html })
+        }
+      } catch (e) {
+        console.error("[Marketer Actions] Failed to send deactivation email:", e)
       }
 
       return NextResponse.json({ success: true, message: "Marketer deactivated" })
@@ -332,6 +382,21 @@ export async function POST(
 
       // Do NOT touch the user account — their sender/org/rider account stays fully intact
 
+      // Send removal email
+      try {
+        const { data: userData } = await supabaseAdmin
+          .from("users")
+          .select("full_name, email")
+          .eq("id", id)
+          .single()
+        if (userData?.email) {
+          const { subject, html } = buildMarketerRemovedEmail({ userName: userData.full_name || "Marketer" })
+          await sendEmail({ to: userData.email, subject, html })
+        }
+      } catch (e) {
+        console.error("[Marketer Actions] Failed to send removal email:", e)
+      }
+
       return NextResponse.json({ success: true, message: "Marketer deleted. Sender/org/rider account preserved." })
     }
 
@@ -358,6 +423,21 @@ export async function POST(
         .update({ role: target_role })
         .eq("id", id)
       if (updateErr) return NextResponse.json({ error: updateErr.message }, { status: 500 })
+
+      // Send role assignment email
+      try {
+        const { data: userData } = await supabaseAdmin
+          .from("users")
+          .select("full_name, email")
+          .eq("id", id)
+          .single()
+        if (userData?.email) {
+          const { subject, html } = buildMarketerRoleAssignedEmail({ userName: userData.full_name || "Marketer", role: target_role })
+          await sendEmail({ to: userData.email, subject, html })
+        }
+      } catch (e) {
+        console.error("[Marketer Actions] Failed to send role assignment email:", e)
+      }
 
       return NextResponse.json({ success: true, message: `Marketer assigned base role: ${target_role}` })
     }

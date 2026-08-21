@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { getSession } from "@/lib/auth";
+import { sendEmail, buildMarketerApprovalEmail, buildMarketerRejectionEmail } from "@/lib/sendbyte";
 
 export async function POST(
   request: Request,
@@ -201,6 +202,17 @@ export async function POST(
         console.error("[Approvals] Failed to create canonical marketer row:", e);
       }
 
+      // Send approval email with marketer ID
+      try {
+        if (user?.email) {
+          const userName = user.full_name || "Marketer";
+          const { subject, html } = buildMarketerApprovalEmail({ userName, marketerId: marketerId! });
+          await sendEmail({ to: user.email, subject, html });
+        }
+      } catch (e) {
+        console.error("[Approvals] Failed to send marketer approval email:", e);
+      }
+
       return NextResponse.json({ success: true, status: "approved" });
     }
 
@@ -216,6 +228,21 @@ export async function POST(
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    // Send rejection email
+    try {
+      const { data: userData } = await supabaseAdmin
+        .from("users")
+        .select("full_name, email")
+        .eq("id", profile.user_id)
+        .single();
+      if (userData?.email) {
+        const { subject, html } = buildMarketerRejectionEmail({ userName: userData.full_name || "Marketer", reason });
+        await sendEmail({ to: userData.email, subject, html });
+      }
+    } catch (e) {
+      console.error("[Approvals] Failed to send marketer rejection email:", e);
     }
 
     return NextResponse.json({ success: true, status: "rejected" });

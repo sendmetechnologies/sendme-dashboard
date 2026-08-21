@@ -201,6 +201,59 @@ export function buildPayoutApprovedEmail(data: {
   };
 }
 
+export function buildMarketerApprovalEmail(data: {
+  userName: string;
+  marketerId: string;
+}): { subject: string; html: string } {
+  return {
+    subject: `Welcome to SendMe Growth Partners!`,
+    html: buildEmailTemplate("You're Approved!", `
+      <p>Hi ${data.userName},</p>
+      <p>Congratulations! Your application to become a SendMe Growth Partner has been approved.</p>
+      <div style="text-align: center; margin: 24px 0;">
+        <span class="badge-success">Approved</span>
+      </div>
+      <div style="background: #f0faf5; border: 2px dashed #158A5E; border-radius: 12px; padding: 24px; text-align: center; margin: 24px 0;">
+        <p style="margin: 0 0 8px 0; font-size: 12px; color: #666; text-transform: uppercase; letter-spacing: 1px;">Your Marketer ID</p>
+        <p style="margin: 0; font-size: 28px; font-weight: 700; color: #158A5E; letter-spacing: 2px;">${data.marketerId}</p>
+      </div>
+      <p>Here's what you can do now:</p>
+      <ul style="color: #555; line-height: 2;">
+        <li>Share your Marketer ID with friends and family</li>
+        <li>Earn commissions on every delivery they make</li>
+        <li>Track your referrals and earnings in the app</li>
+        <li>Withdraw your earnings anytime</li>
+      </ul>
+      <p style="margin-top: 24px;">Open the SendMe app, go to <strong>Growth Partner</strong> in your profile to see your dashboard and start earning.</p>
+    `),
+  };
+}
+
+export function buildMarketerRejectionEmail(data: {
+  userName: string;
+  reason?: string;
+}): { subject: string; html: string } {
+  const reasonBlock = data.reason
+    ? `<div style="background: #f9f9f9; padding: 16px; border-radius: 8px; margin: 16px 0;">
+        <p style="margin: 0; font-weight: 600; color: #333;">Reason:</p>
+        <p style="margin: 8px 0 0 0; color: #666;">${data.reason}</p>
+      </div>`
+    : "";
+
+  return {
+    subject: `SendMe Growth Partner Application Update`,
+    html: buildEmailTemplate("Application Update", `
+      <p>Hi ${data.userName},</p>
+      <p>Thank you for applying to become a SendMe Growth Partner.</p>
+      <div style="text-align: center; margin: 24px 0;">
+        <span class="badge-error">Not Approved</span>
+      </div>
+      ${reasonBlock}
+      <p>You can reapply after addressing the above feedback. If you have questions, please contact our support team.</p>
+    `),
+  };
+}
+
 export function buildPayoutRejectedEmail(data: {
   userName: string;
   amount: number;

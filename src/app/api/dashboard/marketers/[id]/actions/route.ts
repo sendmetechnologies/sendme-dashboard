@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
+import { sendEmail, buildMarketerApprovalEmail, buildMarketerRejectionEmail } from "@/lib/sendbyte"
 
 function generateMarketerId(): string {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
@@ -108,6 +109,18 @@ export async function POST(
         console.error("[Marketer Actions] Failed to send in-app notification:", e)
       }
 
+      // Send approval email with marketer ID
+      try {
+        const userName = user?.full_name || "Marketer"
+        const userEmail = user?.email
+        if (userEmail) {
+          const { subject, html } = buildMarketerApprovalEmail({ userName, marketerId })
+          await sendEmail({ to: userEmail, subject, html })
+        }
+      } catch (e) {
+        console.error("[Marketer Actions] Failed to send approval email:", e)
+      }
+
       return NextResponse.json({ success: true, message: `Marketer approved with ID: ${marketerId}`, marketerId })
     }
 
@@ -137,6 +150,21 @@ export async function POST(
         })
       } catch (e) {
         console.error("[Marketer Actions] Failed to send in-app notification:", e)
+      }
+
+      // Send rejection email
+      try {
+        const { data: userData } = await supabaseAdmin
+          .from("users")
+          .select("full_name, email")
+          .eq("id", id)
+          .single()
+        if (userData?.email) {
+          const { subject, html } = buildMarketerRejectionEmail({ userName: userData.full_name || "Marketer", reason })
+          await sendEmail({ to: userData.email, subject, html })
+        }
+      } catch (e) {
+        console.error("[Marketer Actions] Failed to send rejection email:", e)
       }
 
       return NextResponse.json({ success: true, message: "Marketer rejected" })

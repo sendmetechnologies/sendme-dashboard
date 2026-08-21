@@ -116,11 +116,14 @@ export async function POST(
 
       // Send approval email with marketer ID
       try {
-        const userName = user?.full_name || "Marketer"
-        const userEmail = user?.email
-        if (userEmail) {
-          const { subject, html } = buildMarketerApprovalEmail({ userName, marketerId })
-          await sendEmail({ to: userEmail, subject, html })
+        const { data: emailUser } = await supabaseAdmin
+          .from("users")
+          .select("full_name, email")
+          .eq("id", id)
+          .single()
+        if (emailUser?.email) {
+          const { subject, html } = buildMarketerApprovalEmail({ userName: emailUser.full_name || "Marketer", marketerId })
+          await sendEmail({ to: emailUser.email, subject, html })
         }
       } catch (e) {
         console.error("[Marketer Actions] Failed to send approval email:", e)

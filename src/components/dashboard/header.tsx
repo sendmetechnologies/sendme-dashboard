@@ -1,8 +1,9 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Menu, X, Bell, Search, Download, ChevronDown, LogOut } from "lucide-react"
-import { usePathname } from "next/navigation"
+import { Menu, X, Bell, Search, Download, ChevronDown, LogOut, RefreshCw } from "lucide-react"
+import { PAGE_REFRESH_EVENT } from "@/hooks/use-page-refresh"
+import { clearKycUnlock } from "@/hooks/use-kyc-unlock"
 
 interface AdminInfo {
   displayName: string
@@ -10,8 +11,8 @@ interface AdminInfo {
 }
 
 export function DashboardHeader({ onToggleSidebar, sidebarOpen }: { onToggleSidebar: () => void; sidebarOpen: boolean }) {
-  const pathname = usePathname()
   const [admin, setAdmin] = useState<AdminInfo | null>(null)
+  const [refreshing, setRefreshing] = useState(false)
 
   useEffect(() => {
     fetch("/api/auth/session")
@@ -23,8 +24,16 @@ export function DashboardHeader({ onToggleSidebar, sidebarOpen }: { onToggleSide
   }, [])
 
   const handleLogout = async () => {
+    clearKycUnlock()
     await fetch("/api/auth/logout", { method: "POST" })
     window.location.href = "/login"
+  }
+
+  const handleRefresh = () => {
+    setRefreshing(true)
+    // Tell the currently-mounted page to re-run its data fetch
+    window.dispatchEvent(new CustomEvent(PAGE_REFRESH_EVENT))
+    setTimeout(() => setRefreshing(false), 800)
   }
 
   return (
@@ -63,6 +72,15 @@ export function DashboardHeader({ onToggleSidebar, sidebarOpen }: { onToggleSide
         {/* Export */}
         <button className="hidden sm:flex items-center gap-1.5 bg-white border border-border-default rounded-lg px-3 py-1.5 text-text-secondary text-xs font-medium hover:bg-surface-hover transition-colors">
           <Download size={14} /> Export
+        </button>
+
+        {/* Refresh */}
+        <button
+          onClick={handleRefresh}
+          className={`p-2 text-text-muted hover:text-text-primary transition-colors ${refreshing ? "animate-spin" : ""}`}
+          title="Refresh"
+        >
+          <RefreshCw size={18} />
         </button>
 
         {/* Notification bell */}

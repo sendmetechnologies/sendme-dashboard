@@ -1,7 +1,29 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { getSession } from "@/lib/auth";
-import { sendEmail, buildMarketerApprovalEmail, buildMarketerRejectionEmail } from "@/lib/sendbyte";
+import { sendEmail, buildMarketerApprovalEmail, buildMarketerRejectionEmail, buildReviewNotificationEmail } from "@/lib/sendbyte";
+
+type ApprovalBody = {
+  action: "approve" | "reject";
+  reason?: string;
+  realId?: string;
+};
+
+// Resolve a full UUID from a synthetic short ID ("DRV-XXXXXXXX").
+// Prefers an exact realId sent by the client; otherwise matches the 8-char
+// prefix in JS (LIKE is not supported on uuid columns by PostgREST).
+async function resolveId(
+  table: "driver_profiles" | "organization_profiles" | "organization_payout_requests" | "marketer_profiles",
+  prefix: string,
+  realId?: string
+): Promise<{ id: string } | null> {
+  if (realId) {
+    return { id: realId };
+  }
+  const { data } = await supabaseAdmin.from(table).select("id");
+  if (!data) return null;
+  return data.find((row) => row.id.startsWith(prefix.toLowerCase())) || null;
+}
 
 export async function POST(
   request: Request,
@@ -13,8 +35,8 @@ export async function POST(
   }
 
   const { id } = await params;
-  const body = await request.json();
-  const { action, reason } = body as { action: "approve" | "reject"; reason?: string };
+  const body = (await request.json()) as ApprovalBody;
+  const { action, reason, realId } = body;
 
   if (!action || !["approve", "reject"].includes(action)) {
     return NextResponse.json({ error: "Invalid action" }, { status: 400 });
@@ -23,14 +45,7 @@ export async function POST(
   // Determine type from prefix
   if (id.startsWith("DRV-")) {
     // Driver verification
-    const realId = id.replace("DRV-", "").toLowerCase();
-    // We need to find the driver profile by matching the short ID prefix
-    const { data: profile } = await supabaseAdmin
-      .from("driver_profiles")
-      .select("id")
-      .like("id", `${realId}%`)
-      .single();
-
+    const profile = await resolveId("driver_profiles", id.replace("DRV-", ""), realId);
     if (!profile) {
       return NextResponse.json({ error: "Driver not found" }, { status: 404 });
     }
@@ -41,6 +56,7 @@ export async function POST(
       .update({
         verification_status: newStatus,
         review_reason: reason || null,
+        updated_at: new Date().toISOString(),
       })
       .eq("id", profile.id);
 
@@ -48,17 +64,32 @@ export async function POST(
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
+    if (action === "reject" && reason) {
+      try {
+        const { data: user } = await supabaseAdmin
+          .from("users")
+          .select("full_name, email")
+          .eq("id", profile.id)
+          .single();
+        if (user?.email) {
+          const { subject, html } = buildReviewNotificationEmail("user", {
+            userName: user.full_name || "Rider",
+            userRole: "Rider",
+            status: "rejected",
+            reason,
+          });
+          await sendEmail({ to: user.email, subject, html });
+        }
+      } catch (e) {
+        console.error("[Approvals] Failed to send rider rejection email:", e);
+      }
+    }
+
     return NextResponse.json({ success: true, status: newStatus });
   }
 
   if (id.startsWith("ORG-")) {
-    const realId = id.replace("ORG-", "").toLowerCase();
-    const { data: profile } = await supabaseAdmin
-      .from("organization_profiles")
-      .select("id")
-      .like("id", `${realId}%`)
-      .single();
-
+    const profile = await resolveId("organization_profiles", id.replace("ORG-", ""), realId);
     if (!profile) {
       return NextResponse.json({ error: "Organization not found" }, { status: 404 });
     }
@@ -70,6 +101,7 @@ export async function POST(
         verification_status: newStatus,
         is_verified: action === "approve",
         review_reason: reason || null,
+        updated_at: new Date().toISOString(),
       })
       .eq("id", profile.id);
 
@@ -77,18 +109,43 @@ export async function POST(
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
+    if (action === "reject" && reason) {
+      try {
+        const { data: user } = await supabaseAdmin
+          .from("users")
+          .select("full_name, email")
+          .eq("id", profile.id)
+          .single();
+        if (user?.email) {
+          const { subject, html } = buildReviewNotificationEmail("user", {
+            userName: user.full_name || "Organization",
+            userRole: "Organization",
+            status: "rejected",
+            reason,
+          });
+          await sendEmail({ to: user.email, subject, html });
+        }
+      } catch (e) {
+        console.error("[Approvals] Failed to send org rejection email:", e);
+      }
+    }
+
     return NextResponse.json({ success: true, status: newStatus });
   }
 
   if (id.startsWith("PAYOUT-")) {
-    const realId = id.replace("PAYOUT-", "").toLowerCase();
-    const { data: payout } = await supabaseAdmin
+    const payout = await resolveId("organization_payout_requests", id.replace("PAYOUT-", ""), realId);
+    if (!payout) {
+      return NextResponse.json({ error: "Payout request not found" }, { status: 404 });
+    }
+
+    const { data: payoutRow } = await supabaseAdmin
       .from("organization_payout_requests")
       .select("id, organization_id, amount")
-      .like("id", `${realId}%`)
+      .eq("id", payout.id)
       .single();
 
-    if (!payout) {
+    if (!payoutRow) {
       return NextResponse.json({ error: "Payout request not found" }, { status: 404 });
     }
 
@@ -108,8 +165,8 @@ export async function POST(
     // If rejected, refund the organization wallet
     if (action === "reject") {
       await supabaseAdmin.rpc("increment_wallet_balance", {
-        p_user_id: payout.organization_id,
-        p_amount: payout.amount,
+        p_user_id: payoutRow.organization_id,
+        p_amount: payoutRow.amount,
       });
     }
 
@@ -117,20 +174,24 @@ export async function POST(
   }
 
   if (id.startsWith("MRK-")) {
-    const realId = id.replace("MRK-", "").toLowerCase();
-    const { data: profile } = await supabaseAdmin
+    const profile = await resolveId("marketer_profiles", id.replace("MRK-", ""), realId);
+    if (!profile) {
+      return NextResponse.json({ error: "Marketer not found" }, { status: 404 });
+    }
+
+    const { data: marketerProfile } = await supabaseAdmin
       .from("marketer_profiles")
       .select("id, user_id, marketer_id")
-      .like("id", `${realId}%`)
+      .eq("id", profile.id)
       .single();
 
-    if (!profile) {
+    if (!marketerProfile) {
       return NextResponse.json({ error: "Marketer not found" }, { status: 404 });
     }
 
     if (action === "approve") {
       // Generate a unique marketer ID if not assigned
-      let marketerId = profile.marketer_id;
+      let marketerId = marketerProfile.marketer_id;
       if (!marketerId) {
         const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
         let attempts = 0;
@@ -155,7 +216,7 @@ export async function POST(
           review_reason: reason || null,
           updated_at: new Date().toISOString(),
         })
-        .eq("id", profile.id);
+        .eq("id", marketerProfile.id);
 
       if (error) {
         return NextResponse.json({ error: error.message }, { status: 500 });
@@ -166,12 +227,12 @@ export async function POST(
         const { data: user } = await supabaseAdmin
           .from("users")
           .select("full_name, email, phone")
-          .eq("id", profile.user_id)
+          .eq("id", marketerProfile.user_id)
           .single();
         const { data: userProfile } = await supabaseAdmin
           .from("marketer_profiles")
           .select("phone")
-          .eq("user_id", profile.user_id)
+          .eq("user_id", marketerProfile.user_id)
           .single();
         const { data: rateSetting } = await supabaseAdmin
           .from("platform_settings")
@@ -207,7 +268,7 @@ export async function POST(
         const { data: emailUser } = await supabaseAdmin
           .from("users")
           .select("full_name, email")
-          .eq("id", profile.user_id)
+          .eq("id", marketerProfile.user_id)
           .single();
         if (emailUser?.email) {
           const userName = emailUser.full_name || "Marketer";
@@ -229,7 +290,7 @@ export async function POST(
         review_reason: reason || null,
         updated_at: new Date().toISOString(),
       })
-      .eq("id", profile.id);
+      .eq("id", marketerProfile.id);
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
@@ -240,7 +301,7 @@ export async function POST(
       const { data: userData } = await supabaseAdmin
         .from("users")
         .select("full_name, email")
-        .eq("id", profile.user_id)
+        .eq("id", marketerProfile.user_id)
         .single();
       if (userData?.email) {
         const { subject, html } = buildMarketerRejectionEmail({ userName: userData.full_name || "Marketer", reason });

@@ -1,14 +1,15 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import {
-  X, DollarSign, User, Building2, CreditCard, Clock, CheckCircle, XCircle, AlertTriangle, Loader2, MessageSquare
+  X, User, Building2, CreditCard, Clock, CheckCircle, XCircle, AlertTriangle, Loader2, MessageSquare,
+  ArrowUpRight, ArrowDownLeft, Wallet, RefreshCw, Copy, Check
 } from "lucide-react"
 
 interface PayoutRequest {
   id: string
-  type: "driver" | "organization"
+  type: "driver" | "customer" | "organization"
   user_id: string
   user_name: string
   user_phone: string
@@ -23,6 +24,15 @@ interface PayoutRequest {
   processed_at?: string
 }
 
+interface Transaction {
+  id: string
+  type: string
+  amount: number
+  status: string
+  note: string | null
+  created_at: string
+}
+
 interface PayoutDetailProps {
   payout: PayoutRequest
   onClose: () => void
@@ -35,6 +45,28 @@ export function PayoutDetail({ payout, onClose, onActionComplete }: PayoutDetail
   const [actionResult, setActionResult] = useState<{ success: boolean; message: string } | null>(null)
   const [rejectReason, setRejectReason] = useState("")
   const [showRejectInput, setShowRejectInput] = useState(false)
+
+  const [transactions, setTransactions] = useState<Transaction[]>([])
+  const [txLoading, setTxLoading] = useState(true)
+  const [walletBalance, setWalletBalance] = useState(0)
+  const [copiedAccount, setCopiedAccount] = useState(false)
+
+  useEffect(() => {
+    const fetchTransactions = async () => {
+      setTxLoading(true)
+      try {
+        const res = await fetch(`/api/dashboard/transactions?user_id=${payout.user_id}`)
+        const data = await res.json()
+        setTransactions(data.transactions || [])
+        setWalletBalance(data.walletBalance || 0)
+      } catch {
+        setTransactions([])
+      } finally {
+        setTxLoading(false)
+      }
+    }
+    fetchTransactions()
+  }, [payout.user_id])
 
   const handleApprove = async () => {
     setApproving(true)
@@ -58,7 +90,7 @@ export function PayoutDetail({ payout, onClose, onActionComplete }: PayoutDetail
           onClose()
         }, 1500)
       }
-    } catch (err) {
+    } catch {
       setActionResult({ success: false, message: "Network error" })
     } finally {
       setApproving(false)
@@ -97,7 +129,7 @@ export function PayoutDetail({ payout, onClose, onActionComplete }: PayoutDetail
           onClose()
         }, 1500)
       }
-    } catch (err) {
+    } catch {
       setActionResult({ success: false, message: "Network error" })
     } finally {
       setRejecting(false)
@@ -122,8 +154,17 @@ export function PayoutDetail({ payout, onClose, onActionComplete }: PayoutDetail
     } catch { return d }
   }
 
+  const txTypeConfig: Record<string, { color: string; bg: string; icon: any; label: string }> = {
+    deposit: { color: "text-sendme", bg: "bg-sendme-50", icon: ArrowDownLeft, label: "Deposit" },
+    earning: { color: "text-sendme", bg: "bg-sendme-50", icon: ArrowDownLeft, label: "Earning" },
+    credit: { color: "text-sendme", bg: "bg-sendme-50", icon: ArrowDownLeft, label: "Credit" },
+    payout: { color: "text-danger", bg: "bg-danger-light", icon: ArrowUpRight, label: "Payout" },
+    debit: { color: "text-danger", bg: "bg-danger-light", icon: ArrowUpRight, label: "Debit" },
+    withdrawal: { color: "text-danger", bg: "bg-danger-light", icon: ArrowUpRight, label: "Withdrawal" },
+  }
+
   return (
-    <div className="w-[380px] bg-white border-l border-border-default flex flex-col shrink-0 h-full overflow-hidden">
+    <div className="w-[420px] bg-white border-l border-border-default flex flex-col shrink-0 h-full overflow-hidden">
       {/* Header */}
       <div className="px-4 pt-4 pb-3 border-b border-border-light">
         <div className="flex items-center justify-between mb-1">
@@ -143,9 +184,9 @@ export function PayoutDetail({ payout, onClose, onActionComplete }: PayoutDetail
 
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-5">
         {/* Amount */}
-        <div className="text-center py-3">
+        <div className="text-center py-3 min-w-0">
           <p className="text-[10px] text-text-muted mb-1">Requested Amount</p>
-          <p className="text-3xl font-bold text-text-primary">₦{payout.amount.toLocaleString()}</p>
+          <p className="text-3xl font-bold text-text-primary break-words leading-tight">₦{payout.amount.toLocaleString()}</p>
         </div>
 
         {/* Action Buttons (only for pending) */}
@@ -226,7 +267,7 @@ export function PayoutDetail({ payout, onClose, onActionComplete }: PayoutDetail
             </div>
             <div className="flex items-center gap-2">
               <Building2 size={14} className="text-text-muted shrink-0" />
-              <p className="text-[10px] text-text-secondary capitalize">{payout.type === "driver" ? "Independent Driver" : "Organization"}</p>
+              <p className="text-[10px] text-text-secondary capitalize">{payout.type === "driver" ? "Independent Driver" : payout.type === "customer" ? "Customer" : "Organization"}</p>
             </div>
           </div>
         </div>
@@ -239,13 +280,107 @@ export function PayoutDetail({ payout, onClose, onActionComplete }: PayoutDetail
               <CreditCard size={14} className="text-text-muted shrink-0" />
               <div>
                 <p className="text-[11px] font-medium text-text-primary">{payout.bank_name}</p>
-                <p className="text-[9px] text-text-muted font-mono">{payout.account_number}</p>
+                <div className="flex items-center gap-1.5">
+                  <p className="text-[9px] text-text-muted font-mono">{payout.account_number}</p>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(payout.account_number)
+                      setCopiedAccount(true)
+                      setTimeout(() => setCopiedAccount(false), 2000)
+                    }}
+                    className="p-0.5 text-text-muted hover:text-sendme transition-colors"
+                    title="Copy account number"
+                  >
+                    {copiedAccount ? <Check size={10} className="text-sendme" /> : <Copy size={10} />}
+                  </button>
+                </div>
               </div>
             </div>
             {payout.account_name && payout.account_name !== "—" && (
               <div className="flex items-center gap-2">
                 <User size={14} className="text-text-muted shrink-0" />
                 <p className="text-[10px] text-text-secondary">{payout.account_name}</p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Wallet Balance */}
+        <div>
+          <h4 className="text-[11px] font-semibold text-text-primary mb-2">Wallet Balance</h4>
+          <div className="bg-surface-secondary/50 rounded-lg p-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Wallet size={14} className="text-sendme shrink-0" />
+                <p className="text-[11px] font-medium text-text-primary">Current Balance</p>
+              </div>
+              <p className={`text-[12px] font-bold text-right shrink-0 ${walletBalance >= payout.amount ? "text-sendme" : "text-danger"}`}>
+                ₦{walletBalance.toLocaleString()}
+              </p>
+            </div>
+            {walletBalance < payout.amount && (
+              <p className="text-[9px] text-danger mt-1.5 ml-6">Insufficient balance for this request</p>
+            )}
+          </div>
+        </div>
+
+        {/* Transaction History */}
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <h4 className="text-[11px] font-semibold text-text-primary">Transaction History</h4>
+            <button
+              onClick={async () => {
+                setTxLoading(true)
+                try {
+                  const res = await fetch(`/api/dashboard/transactions?user_id=${payout.user_id}`)
+                  const data = await res.json()
+                  setTransactions(data.transactions || [])
+                  setWalletBalance(data.walletBalance || 0)
+                } catch {} finally { setTxLoading(false) }
+              }}
+              className="p-1 text-text-muted hover:text-sendme transition-colors"
+              title="Refresh"
+            >
+              <RefreshCw size={12} className={txLoading ? "animate-spin" : ""} />
+            </button>
+          </div>
+          <div className="bg-surface-secondary/50 rounded-lg overflow-hidden">
+            {txLoading ? (
+              <div className="h-24 flex items-center justify-center">
+                <Loader2 size={16} className="animate-spin text-sendme" />
+              </div>
+            ) : transactions.length === 0 ? (
+              <div className="h-24 flex items-center justify-center">
+                <p className="text-[10px] text-text-muted">No transactions found</p>
+              </div>
+            ) : (
+              <div className="max-h-[240px] overflow-y-auto divide-y divide-border-light">
+                {transactions.map((tx) => {
+                  const tc = txTypeConfig[tx.type] || { color: "text-text-muted", bg: "bg-surface-secondary", icon: ArrowUpRight, label: tx.type }
+                  const TxIcon = tc.icon
+                  const isCredit = ["deposit", "earning", "credit"].includes(tx.type)
+                  return (
+                    <div key={tx.id} className="px-3 py-2 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className={`w-6 h-6 rounded-full flex items-center justify-center ${tc.bg}`}>
+                          <TxIcon size={10} className={tc.color} />
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-medium text-text-primary">{tc.label}</p>
+                          <p className="text-[8px] text-text-muted">{formatDate(tx.created_at)}</p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className={`text-[10px] font-semibold ${isCredit ? "text-sendme" : "text-danger"}`}>
+                          {isCredit ? "+" : "-"}₦{Math.abs(tx.amount).toLocaleString()}
+                        </p>
+                        <p className={`text-[8px] ${tx.status === "completed" ? "text-sendme" : tx.status === "pending" ? "text-warning" : "text-danger"}`}>
+                          {tx.status}
+                        </p>
+                      </div>
+                    </div>
+                  )
+                })}
               </div>
             )}
           </div>

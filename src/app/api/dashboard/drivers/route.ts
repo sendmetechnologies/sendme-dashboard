@@ -19,12 +19,13 @@ export async function GET(req: NextRequest) {
     // ── Get all driver profile statuses in one query ──
     const { data: allProfiles } = await supabaseAdmin
       .from("driver_profiles")
-      .select("id, verification_status, is_online")
+      .select("id, verification_status, is_online, is_suspended, is_deleted")
 
     const profiles = allProfiles || []
     const verifiedCount = profiles.filter((p) => p.verification_status === "verified").length
     const pendingCount = profiles.filter((p) => p.verification_status === "pending" || p.verification_status === "under_review").length
-    const rejectedCount = profiles.filter((p) => p.verification_status === "rejected").length
+    const rejectedCount = profiles.filter((p) => p.verification_status === "rejected" && p.is_suspended !== true).length
+    const suspendedCount = profiles.filter((p) => p.is_suspended === true).length
     const onlineCount = profiles.filter((p) => p.is_online === true).length
 
     // Riders WITHOUT a driver_profile row (signed up but not onboarded)
@@ -47,8 +48,8 @@ export async function GET(req: NextRequest) {
     let query = supabaseAdmin
       .from("users")
       .select(`
-        id, full_name, phone, email, state, created_at,
-        driver_profiles(verification_status, rating, vehicle_info, is_online, review_reason, trips_count)
+        id, full_name, phone, email, state, created_at, is_onboarded,
+        driver_profiles(verification_status, rating, vehicle_info, is_online, review_reason, trips_count, id_details, is_suspended, is_deleted)
       `)
       .eq("role", "driver")
       .order("created_at", { ascending: false })
@@ -113,14 +114,23 @@ export async function GET(req: NextRequest) {
       const trips = tripCounts[d.id] || profile?.trips_count || 0
       const verificationStatus = profile?.verification_status || "pending"
       const isOnline = profile?.is_online || false
+      const isSuspended = profile?.is_suspended === true
+      const isDeleted = profile?.is_deleted === true
+      const isHttpUrl = (v: unknown): v is string => typeof v === "string" && /^https?:\/\//i.test(v)
+      const idDetails = (profile?.id_details && typeof profile.id_details === "object" ? profile.id_details : {}) as Record<string, unknown>
+      const hasSubmittedDocs = Object.values(idDetails).some(isHttpUrl)
+      const isOnboarded = (d as any)?.is_onboarded === true
+      const isIncomplete = !hasSubmittedDocs && verificationStatus !== "verified" && verificationStatus !== "rejected" && !isOnboarded
 
       let statusLabel = "Pending Review"
       let statusColor = "bg-warning-light text-warning"
       const isRemovedMarketer = removedMarketerIds.has(d.id)
       if (isRemovedMarketer) { statusLabel = "Removed marketer"; statusColor = "bg-surface-secondary text-text-muted" }
+      else if (isSuspended) { statusLabel = "Suspended"; statusColor = "bg-warning-light text-warning" }
+      else if (isDeleted) { statusLabel = "Deactivated"; statusColor = "bg-surface-secondary text-text-muted" }
       else if (verificationStatus === "verified") { statusLabel = "Approved"; statusColor = "bg-sendme-50 text-sendme" }
-      else if (verificationStatus === "rejected") { statusLabel = "Suspended"; statusColor = "bg-danger-light text-danger" }
-      else if (verificationStatus === "under_review") { statusLabel = "Under Review"; statusColor = "bg-info-light text-info" }
+      else if (verificationStatus === "rejected") { statusLabel = "Rejected"; statusColor = "bg-danger-light text-danger" }
+      else if (isIncomplete) { statusLabel = "Incomplete Registration"; statusColor = "bg-surface-secondary text-text-muted" }
 
       const created = new Date(d.created_at)
       const now = new Date()
@@ -159,8 +169,8 @@ export async function GET(req: NextRequest) {
         total: totalRiders || 0,
         approved: verifiedCount,
         pending: pendingCount + ridersWithoutProfile,
-        suspended: rejectedCount,
-        blocked: 0,
+        suspended: suspendedCount,
+        blocked: rejectedCount,
         onlineNow: onlineCount,
         totalBalance,
         totalBalanceFormatted: `₦${totalBalance.toLocaleString()}`,

@@ -2,6 +2,7 @@
 
 import { toast } from "sonner"
 import { useState, useEffect } from "react"
+import { formatCardValue } from "@/lib/format"
 import {
   X, Phone, Mail, MapPin, Briefcase, Target, Star,
   Loader2, AlertTriangle, Trash2, Ban, ShieldCheck,
@@ -218,13 +219,13 @@ export function MarketerDetail({ marketerId, onClose }: MarketerDetailProps) {
 
             {/* Stats */}
             <div className="grid grid-cols-2 gap-2">
-              <div className="bg-surface-secondary rounded-lg p-3 text-center">
-                <p className="text-[9px] text-text-muted">Total Referrals</p>
-                <p className="text-lg font-bold text-text-primary mt-0.5">{data.marketer.totalReferrals}</p>
+              <div className="bg-surface-secondary rounded-lg p-3 text-center min-w-0 overflow-hidden">
+                <p className="text-[9px] text-text-muted truncate">Total Referrals</p>
+                <p className="text-lg font-bold text-text-primary mt-0.5 truncate">{data.marketer.totalReferrals}</p>
               </div>
-              <div className="bg-sendme-50 rounded-lg p-3 text-center">
-                <p className="text-[9px] text-text-muted">Total Earnings</p>
-                <p className="text-lg font-bold text-sendme mt-0.5">{data.marketer.totalEarningsFormatted}</p>
+              <div className="bg-sendme-50 rounded-lg p-3 text-center min-w-0 overflow-hidden">
+                <p className="text-[9px] text-text-muted truncate">Total Earnings</p>
+                <p className="text-lg font-bold text-sendme mt-0.5 truncate" title={data.marketer.totalEarningsFormatted}>{formatCardValue(data.marketer.totalEarningsFormatted)}</p>
               </div>
             </div>
 

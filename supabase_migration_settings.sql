@@ -15,7 +15,8 @@ CREATE TABLE IF NOT EXISTS public.app_settings (
 INSERT INTO public.app_settings (key, value, description) VALUES
   ('otp_from_email', '"admin@sendme.com"', 'Sender email address for admin OTP messages'),
   ('otp_from_name', '"SendMe"', 'Sender display name for admin OTP messages'),
-  ('referral_enabled', 'true', 'Enable referral feature in the SendMe mobile app')
+  ('referral_enabled', 'true', 'Enable referral feature in the SendMe mobile app'),
+  ('payout_notification_email', '"sendmetechnologies@gmail.com"', 'Email address to notify when a user requests a withdrawal')
 ON CONFLICT (key) DO NOTHING;
 
 -- RLS: only service_role touches this (dashboard uses service role key)

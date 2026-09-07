@@ -1,6 +1,48 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 
+interface OrgStorageDoc {
+  folder: string
+  url: string
+  name: string
+}
+
+// Folders in the org_documents bucket that hold org verification uploads
+const ORG_STORAGE_FOLDERS = ["business_registration", "tax_certificate"]
+
+async function listOrgStorageDocs(orgId: string): Promise<OrgStorageDoc[]> {
+  try {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+    if (!url || !key) return []
+
+    const docs: OrgStorageDoc[] = []
+    for (const folder of ORG_STORAGE_FOLDERS) {
+      const prefix = `${orgId}/${folder}/`
+      const res = await fetch(`${url}/storage/v1/object/list/org_documents`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+        body: JSON.stringify({ prefix, limit: 100, offset: 0 }),
+      })
+      if (!res.ok) continue
+      const items = (await res.json()) as { name: string }[]
+      if (!Array.isArray(items)) continue
+      for (const item of items) {
+        if (!item.name) continue
+        docs.push({
+          folder,
+          url: `${url}/storage/v1/object/public/org_documents/${prefix}${encodeURIComponent(item.name)}`,
+          name: item.name,
+        })
+      }
+    }
+    return docs
+  } catch (err) {
+    console.error("[Org Detail] Storage scan error:", err)
+    return []
+  }
+}
+
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -13,8 +55,8 @@ export async function GET(
     const full = await supabaseAdmin
       .from("users")
       .select(`
-        id, full_name, phone, email, state, created_at,
-        organization_profiles(business_name, business_address, contact_person_name, contact_person_phone, business_email, business_registration_number, tax_id, industry, website, logo_url, is_verified, is_suspended, verification_documents)
+        id, full_name, phone, email, state, created_at, is_onboarded,
+        organization_profiles(business_name, business_address, business_lat, business_lng, contact_person_name, contact_person_phone, business_email, business_registration_number, tax_id, industry, website, logo_url, is_verified, is_suspended, verification_documents, verification_status, review_reason, city, state)
       `)
       .eq("id", id)
       .single()
@@ -23,8 +65,8 @@ export async function GET(
       const fallback = await supabaseAdmin
         .from("users")
         .select(`
-          id, full_name, phone, email, state, created_at,
-          organization_profiles(business_name, business_address, contact_person_name, contact_person_phone, business_email, business_registration_number, tax_id, industry, website, logo_url, is_verified, verification_documents)
+          id, full_name, phone, email, state, created_at, is_onboarded,
+          organization_profiles(business_name, business_address, business_lat, business_lng, contact_person_name, contact_person_phone, business_email, business_registration_number, tax_id, industry, website, logo_url, is_verified, verification_documents, verification_status, review_reason, city, state)
         `)
         .eq("id", id)
         .single()
@@ -39,6 +81,12 @@ export async function GET(
     const profileEmbed = (org as any).organization_profiles
     const profile = Array.isArray(profileEmbed) ? profileEmbed[0] : profileEmbed
     const isVerified = profile?.is_verified === true
+
+    const isHttpUrl = (v: unknown): v is string => typeof v === "string" && /^https?:\/\//i.test(v)
+    const verificationDocs = (profile?.verification_documents && typeof profile.verification_documents === "object" ? profile.verification_documents : {}) as Record<string, unknown>
+    const hasSubmittedDocs = Object.values(verificationDocs).some(isHttpUrl)
+    const isOnboarded = (org as any)?.is_onboarded === true
+    const isIncomplete = !hasSubmittedDocs && !isVerified && (org as any)?.is_suspended !== true && !isOnboarded
 
     // Order stats
     const [totalResult, completedResult, cancelledResult] = await Promise.all([
@@ -90,10 +138,14 @@ export async function GET(
       .limit(5)
 
     // Status
-    let statusLabel = "Pending"
+    const verificationStatus = profile?.verification_status || (isVerified ? "verified" : "pending")
+    let statusLabel = "Pending Review"
     let statusColor = "bg-warning-light text-warning"
     if (isVerified && profile?.is_suspended !== true) { statusLabel = "Active"; statusColor = "bg-sendme-50 text-sendme" }
     else if (profile?.is_suspended === true) { statusLabel = "Suspended"; statusColor = "bg-warning-light text-warning" }
+    else if (verificationStatus === "rejected") { statusLabel = "Rejected"; statusColor = "bg-danger-light text-danger" }
+    else if (isIncomplete) { statusLabel = "Incomplete Registration"; statusColor = "bg-surface-secondary text-text-muted" }
+    const submissionStatus: "incomplete" | "submitted" = isIncomplete ? "incomplete" : "submitted"
 
     const created = new Date(org.created_at)
     const now = new Date()
@@ -105,6 +157,14 @@ export async function GET(
     else if (diffDays > 30) memberDuration = `${Math.floor(diffDays / 30)} month${Math.floor(diffDays / 30) > 1 ? "s" : ""}`
     else memberDuration = `${diffDays} day${diffDays > 1 ? "s" : ""}`
 
+    // Orphaned uploads in storage not referenced from verification_documents
+    const storageDocs = await listOrgStorageDocs(id)
+    const referenced = new Set<string>()
+    for (const v of Object.values(verificationDocs)) {
+      if (typeof v === "string" && /^https?:/.test(v)) referenced.add(v)
+    }
+    const extraStorageDocs = storageDocs.filter((d) => !referenced.has(d.url))
+
     return NextResponse.json({
       organization: {
         id: org.id,
@@ -113,7 +173,10 @@ export async function GET(
         initials: (profile?.business_name || org.full_name || "?").split(" ").map((w: string) => w[0]).join("").slice(0, 3).toUpperCase(),
         industry: profile?.industry || "—",
         address: profile?.business_address || "—",
-        city: (org as any).state || "—",
+        city: profile?.city || (org as any).state || "—",
+        state: profile?.state || (org as any).state || "—",
+        businessLat: profile?.business_lat ?? null,
+        businessLng: profile?.business_lng ?? null,
         contactName: profile?.contact_person_name || "—",
         contactPhone: profile?.contact_person_phone || org.phone || "—",
         contactEmail: profile?.business_email || org.email || "—",
@@ -123,8 +186,11 @@ export async function GET(
         logoUrl: profile?.logo_url || null,
         status: statusLabel,
         statusColor,
-        statusRaw: profile?.is_suspended ? "suspended" : isVerified ? "verified" : "pending",
-        reviewReason: null,
+        statusRaw: profile?.is_suspended ? "suspended" : isVerified ? "verified" : verificationStatus,
+        submissionStatus,
+        reviewReason: profile?.review_reason || null,
+        verificationDocuments: profile?.verification_documents || null,
+        verificationStatus,
         memberSince,
         memberDuration,
         created_at: org.created_at,
@@ -137,6 +203,7 @@ export async function GET(
         totalSpendFormatted: totalSpend ? `₦${totalSpend.toLocaleString()}` : "—",
         driverCount: driverCount || 0,
       },
+      storageDocs: extraStorageDocs,
       wallet: wallet ? {
         balance: Number(wallet.balance) || 0,
         balanceFormatted: `₦${(Number(wallet.balance) || 0).toLocaleString()}`,

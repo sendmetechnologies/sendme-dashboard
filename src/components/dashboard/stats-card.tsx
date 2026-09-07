@@ -1,4 +1,5 @@
 import type { LucideIcon } from "lucide-react"
+import { formatCardValue } from "@/lib/format"
 
 interface StatsCardProps {
   label: string
@@ -12,14 +13,14 @@ interface StatsCardProps {
 
 export function StatsCard({ label, value, change, changeType, icon: Icon, color = "text-sendme", bgColor = "bg-sendme-50" }: StatsCardProps) {
   return (
-    <div className="bg-white border border-border-default rounded-xl p-5 hover:shadow-sm transition-shadow">
+    <div className="bg-white border border-border-default rounded-xl p-5 min-w-0 overflow-hidden hover:shadow-sm transition-shadow">
       <div className="flex items-start justify-between mb-3">
-        <div className={`p-2.5 rounded-lg ${bgColor} ${color}`}>
+        <div className={`p-2.5 rounded-lg ${bgColor} ${color} shrink-0`}>
           <Icon size={18} />
         </div>
         {change && (
           <span
-            className={`text-xs font-medium ${
+            className={`text-xs font-medium truncate ${
               changeType === "up"
                 ? "text-sendme"
                 : changeType === "down"
@@ -31,9 +32,9 @@ export function StatsCard({ label, value, change, changeType, icon: Icon, color 
           </span>
         )}
       </div>
-      <div>
-        <p className="text-xs text-text-muted font-medium mb-1">{label}</p>
-        <p className="text-2xl font-bold text-text-primary">{value}</p>
+      <div className="min-w-0">
+        <p className="text-xs text-text-muted font-medium mb-1 truncate">{label}</p>
+        <p className="text-2xl font-bold text-text-primary truncate" title={String(value)}>{formatCardValue(value)}</p>
       </div>
     </div>
   )

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { Card } from "@/components/ui/card"
+import { formatCardValue } from "@/lib/format"
 import { OrderDetail } from "@/components/dashboard/order-detail"
 import { OrderForm } from "@/components/dashboard/forms"
 import {
@@ -31,6 +32,7 @@ interface DeliveryOrder {
   eta: string
   etaStatus: string
   payment: string
+  pin: string | null
   created_at: string
 }
 
@@ -156,15 +158,15 @@ export default function DeliveriesPage() {
             {statCards.map((stat) => {
               const Icon = stat.icon
               return (
-                <Card key={stat.label} className="p-4">
+                <Card key={stat.label} className="p-4 min-w-0 overflow-hidden">
                   <div className="flex items-start justify-between mb-2">
-                    <p className="text-xs text-text-muted">{stat.label}</p>
-                    <div className={`p-1.5 rounded-lg ${stat.bg} ${stat.color}`}>
+                    <p className="text-xs text-text-muted truncate">{stat.label}</p>
+                    <div className={`p-1.5 rounded-lg ${stat.bg} ${stat.color} shrink-0`}>
                       <Icon size={16} />
                     </div>
                   </div>
-                  <p className="text-2xl font-bold text-text-primary mb-0.5">{stat.value.toLocaleString()}</p>
-                  <p className="text-[10px] text-text-muted mb-1">{stat.subtitle}</p>
+                  <p className="text-2xl font-bold text-text-primary mb-0.5 truncate" title={String(stat.value)}>{formatCardValue(stat.value)}</p>
+                  <p className="text-[10px] text-text-muted mb-1 truncate">{stat.subtitle}</p>
                 </Card>
               )
             })}
@@ -227,6 +229,7 @@ export default function DeliveriesPage() {
                       <th className="px-4 py-3 font-semibold">Driver</th>
                       <th className="px-4 py-3 font-semibold">Type</th>
                       <th className="px-4 py-3 font-semibold">Fare / Bid</th>
+                      <th className="px-4 py-3 font-semibold">PIN</th>
                       <th className="px-4 py-3 font-semibold">Status</th>
                       <th className="px-4 py-3 font-semibold">ETA / SLA</th>
                       <th className="px-4 py-3 font-semibold text-right">Actions</th>
@@ -275,6 +278,13 @@ export default function DeliveriesPage() {
                         <td className="px-4 py-3">
                           <p className="text-xs font-semibold text-text-primary">{order.fare}</p>
                           <p className="text-[10px] text-text-muted">{order.fareSub}</p>
+                        </td>
+                        <td className="px-4 py-3">
+                          {order.pin ? (
+                            <span className="text-xs font-mono font-bold text-text-primary bg-surface-secondary px-2 py-0.5 rounded">{order.pin}</span>
+                          ) : (
+                            <span className="text-[10px] text-text-muted">—</span>
+                          )}
                         </td>
                         <td className="px-4 py-3">
                           <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${order.statusColor}`}>{order.status}</span>

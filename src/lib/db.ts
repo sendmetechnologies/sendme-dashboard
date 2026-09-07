@@ -37,24 +37,36 @@ export async function updateLastLogin(adminId: string): Promise<void> {
     .eq("id", adminId);
 }
 
-export async function storeOTPCode(adminId: string, code: string, channel: "sms" | "email"): Promise<boolean> {
+export async function storeOTPCode(
+  adminId: string,
+  code: string,
+  channel: "sms" | "email",
+  purpose: string = "login"
+): Promise<boolean> {
   const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
   const { error } = await supabaseAdmin.from("admin_otp_codes").insert({
     admin_id: adminId,
     code,
     channel,
+    purpose,
     expires_at: expiresAt,
   });
   return !error;
 }
 
-export async function verifyOTPCode(adminId: string, code: string, channel: "sms" | "email"): Promise<boolean> {
+export async function verifyOTPCode(
+  adminId: string,
+  code: string,
+  channel: "sms" | "email",
+  purpose: string = "login"
+): Promise<boolean> {
   const { data, error } = await supabaseAdmin
     .from("admin_otp_codes")
     .select("*")
     .eq("admin_id", adminId)
     .eq("code", code)
     .eq("channel", channel)
+    .eq("purpose", purpose)
     .eq("used", false)
     .gte("expires_at", new Date().toISOString())
     .single();

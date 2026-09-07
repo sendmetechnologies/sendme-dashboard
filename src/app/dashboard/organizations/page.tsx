@@ -2,8 +2,12 @@
 
 import { useState, useEffect } from "react"
 import { Card } from "@/components/ui/card"
+import { formatCardValue } from "@/lib/format"
 import { OrganizationDetail } from "@/components/dashboard/org-detail"
 import { OrganizationForm } from "@/components/dashboard/forms"
+import { OtpUnlockModal } from "@/components/ui/otp-unlock-modal"
+import { useKycUnlock } from "@/hooks/use-kyc-unlock"
+import { usePageRefresh } from "@/hooks/use-page-refresh"
 import {
   Building2, CheckCircle, Clock, AlertTriangle, Wallet,
   ChevronDown, Search, Download, Plus, MoreHorizontal, ArrowUpDown, Filter,
@@ -18,6 +22,7 @@ interface OrgRow {
   industry: string
   industryColor: string
   city: string
+  state: string
   address: string
   contactName: string
   contactPhone: string
@@ -45,6 +50,7 @@ export default function OrganizationsPage() {
   const [tabCounts, setTabCounts] = useState<Record<string, number>>({})
   const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, totalPages: 1 })
   const [searchQuery, setSearchQuery] = useState("")
+  const kyc = useKycUnlock()
 
   const fetchData = (page: number, search: string) => {
     setLoading(true)
@@ -69,6 +75,8 @@ export default function OrganizationsPage() {
   useEffect(() => {
     fetchData(1, "")
   }, [])
+
+  usePageRefresh(() => fetchData(pagination.page, searchQuery))
 
   const handleSearch = (q: string) => {
     setSearchQuery(q)
@@ -134,15 +142,15 @@ export default function OrganizationsPage() {
             {statCards.map((stat) => {
               const Icon = stat.icon
               return (
-                <Card key={stat.label} className="p-4">
+                <Card key={stat.label} className="p-4 min-w-0 overflow-hidden">
                   <div className="flex items-start justify-between mb-2">
-                    <p className="text-xs text-text-muted">{stat.label}</p>
-                    <div className={`p-1.5 rounded-lg ${stat.bg} ${stat.color}`}>
+                    <p className="text-xs text-text-muted truncate">{stat.label}</p>
+                    <div className={`p-1.5 rounded-lg ${stat.bg} ${stat.color} shrink-0`}>
                       <Icon size={16} />
                     </div>
                   </div>
-                  <p className="text-2xl font-bold text-text-primary mb-0.5">
-                    {typeof stat.value === "number" ? stat.value.toLocaleString() : stat.value}
+                  <p className="text-2xl font-bold text-text-primary mb-0.5 truncate" title={String(stat.value)}>
+                    {formatCardValue(stat.value)}
                   </p>
                 </Card>
               )
@@ -345,11 +353,23 @@ export default function OrganizationsPage() {
 
       {/* Organization Detail Sidebar */}
       {selectedOrg && (
-        <OrganizationDetail orgId={selectedOrg} onClose={() => setSelectedOrg(null)} />
+        <OrganizationDetail
+          orgId={selectedOrg}
+          onClose={() => setSelectedOrg(null)}
+          kycLocked={!kyc.isUnlocked}
+          onRequestUnlock={kyc.requestUnlock}
+        />
       )}
 
       {/* Organization Form Modal */}
       <OrganizationForm isOpen={isOrgFormOpen} onClose={() => setIsOrgFormOpen(false)} />
+
+      {/* KYC Unlock Modal */}
+      <OtpUnlockModal
+        isOpen={kyc.otpOpen}
+        onClose={kyc.closeOtp}
+        onUnlocked={kyc.handleUnlocked}
+      />
     </div>
   )
 }

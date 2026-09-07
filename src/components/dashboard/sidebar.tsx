@@ -6,7 +6,7 @@ import {
   LayoutDashboard, Package, MapPin, Calendar, Users, Building2,
   Car, DollarSign, Wallet, AlertCircle, CheckCircle, BarChart3, Bell,
   Settings, ChevronLeft, ChevronRight, Send, HelpCircle, ArrowLeftRight,
-  Megaphone
+  Megaphone, Trophy
 } from "lucide-react"
 import { useState, useEffect } from "react"
 
@@ -58,8 +58,9 @@ const navSections: NavSection[] = [
   {
     title: "RESOLUTION",
     items: [
-      { name: "Disputes & Support", href: "/dashboard/disputes", icon: AlertCircle, badge: 5 },
+      { name: "Disputes & Support", href: "/dashboard/disputes", icon: AlertCircle },
       { name: "Approvals", href: "/dashboard/approvals", icon: CheckCircle, badge: 18 },
+      { name: "Reward Reviews", href: "/dashboard/rewards", icon: Trophy },
     ],
   },
   {
@@ -81,12 +82,20 @@ export function Sidebar() {
   const pathname = usePathname()
   const [collapsed, setCollapsed] = useState(false)
   const [isAdmin, setIsAdmin] = useState(false)
+  const [openComplaints, setOpenComplaints] = useState(0)
 
   useEffect(() => {
     fetch("/api/auth/session")
       .then((r) => r.json())
       .then((data) => {
         if (data.authenticated && data.admin?.role === "super_admin") setIsAdmin(true)
+      })
+      .catch(() => {})
+
+    fetch("/api/dashboard/complaints?status=open&limit=1")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.tabCounts) setOpenComplaints(data.tabCounts["open"] || 0)
       })
       .catch(() => {})
   }, [])
@@ -101,6 +110,16 @@ export function Sidebar() {
       return {
         ...section,
         items: isAdmin ? section.items : [],
+      }
+    }
+    if (section.title === "RESOLUTION") {
+      return {
+        ...section,
+        items: section.items.map((item) =>
+          item.href === "/dashboard/disputes"
+            ? { ...item, badge: openComplaints > 0 ? openComplaints : undefined }
+            : item
+        ),
       }
     }
     return section

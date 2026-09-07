@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import { Card } from "@/components/ui/card"
+import { formatCardValue } from "@/lib/format"
 import { ScheduleDetail } from "@/components/dashboard/schedule-detail"
 import { ScheduleForm } from "@/components/dashboard/forms"
 import {
@@ -84,13 +85,13 @@ export default function SchedulesPage() {
             {stats.map((stat) => {
               const Icon = stat.icon
               return (
-                <Card key={stat.label} className="p-4">
+                <Card key={stat.label} className="p-4 min-w-0 overflow-hidden">
                   <div className="flex items-start justify-between mb-2">
-                    <p className="text-xs text-text-muted">{stat.label}</p>
-                    <div className={`p-1.5 rounded-lg ${stat.bg} ${stat.color}`}><Icon size={16} /></div>
+                    <p className="text-xs text-text-muted truncate">{stat.label}</p>
+                    <div className={`p-1.5 rounded-lg ${stat.bg} ${stat.color} shrink-0`}><Icon size={16} /></div>
                   </div>
-                  <p className="text-2xl font-bold text-text-primary mb-0.5">{stat.value}</p>
-                  <p className={`text-[10px] font-medium ${stat.up ? "text-sendme" : "text-danger"}`}>{stat.up ? "↑" : "↓"} {stat.change}</p>
+                  <p className="text-2xl font-bold text-text-primary mb-0.5 truncate" title={String(stat.value)}>{formatCardValue(stat.value)}</p>
+                  <p className={`text-[10px] font-medium ${stat.up ? "text-sendme" : "text-danger"} truncate`}>{stat.up ? "↑" : "↓"} {stat.change}</p>
                 </Card>
               )
             })}

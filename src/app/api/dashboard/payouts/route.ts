@@ -56,11 +56,18 @@ export async function GET(req: NextRequest) {
     }
 
     // Normalize and merge both into a unified list
+    // payout_requests can belong to any user role (driver, customer, etc.)
+    // Resolve the actual type from the user's role in the users table
     const driverPayouts = (driverResult.data || []).map((p: any) => {
       const method = p.payout_method_id ? payoutMethodsMap[p.payout_method_id] : null
+      const userRole = p.users?.role || "driver"
+      const resolvedType: "driver" | "customer" | "organization" =
+        userRole === "driver" ? "driver" :
+        userRole === "customer" ? "customer" :
+        userRole === "organization" ? "organization" : "driver"
       return {
         id: p.id,
-        type: "driver" as const,
+        type: resolvedType,
         user_id: p.driver_id,
         user_name: p.users?.full_name || "—",
         user_phone: p.users?.phone || "—",
@@ -92,8 +99,9 @@ export async function GET(req: NextRequest) {
 
     let allPayouts = [...driverPayouts, ...orgPayouts]
 
-    // Filter by type
+    // Filter by type (resolved from actual user role)
     if (type === "driver") allPayouts = allPayouts.filter((p) => p.type === "driver")
+    else if (type === "customer") allPayouts = allPayouts.filter((p) => p.type === "customer")
     else if (type === "org") allPayouts = allPayouts.filter((p) => p.type === "organization")
 
     // Sort by created_at descending

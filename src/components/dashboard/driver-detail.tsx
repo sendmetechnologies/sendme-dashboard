@@ -2,14 +2,20 @@
 
 import { toast } from "sonner"
 import { useState, useEffect } from "react"
+import { formatCardValue } from "@/lib/format"
+import { DocumentPreviewModal } from "@/components/ui/document-preview-modal"
 import {
   X, Phone, MessageCircle, Star, CheckCircle, Clock, Truck,
-  Eye, Loader2, AlertTriangle, Trash2, Ban, Shield, DollarSign, CreditCard
+  Eye, Loader2, AlertTriangle, Trash2, Ban, Shield, DollarSign, CreditCard, FileText
 } from "lucide-react"
 
 interface DriverDetailProps {
   driverId: string
   onClose: () => void
+  /** When true, sensitive KYC data (docs, ID numbers, images) is hidden behind a lock. */
+  kycLocked?: boolean
+  /** Call to open the OTP unlock modal when kycLocked. */
+  onRequestUnlock?: () => void
 }
 
 interface DriverData {
@@ -21,6 +27,7 @@ interface DriverData {
     status: string
     statusColor: string
     statusRaw: string
+    submissionStatus?: "incomplete" | "submitted"
     reviewReason: string | null
     type: string
     city: string
@@ -46,15 +53,19 @@ interface DriverData {
   vehicle: {
     type: string
     capacity: string
-    makeModel: string
-    ownership: string
-    plateNumber: string
-    fuelType: string
+    make: string
+    model: string
+    plate: string
     color: string
-    transmission: string
-    year: string
-    seatingCapacity: string
+    license: string
   } | null
+  idDetails: Record<string, unknown> | null
+  vehicleInfo: Record<string, unknown> | null
+  storageDocs?: {
+    folder: string
+    url: string
+    name: string
+  }[]
   recentPayouts: {
     id: string
     amount: number
@@ -73,10 +84,214 @@ interface DriverData {
   }[]
 }
 
-const tabs = ["Overview", "Vehicle", "Trips", "Payouts", "Activity"]
+const tabs = ["Overview", "Documents", "Vehicle", "Trips", "Payouts", "Activity"]
 
-function OverviewTab({ data }: { data: DriverData }) {
+function isDocUrl(v: unknown): v is string {
+  return typeof v === "string" && /^https?:\/\//i.test(v)
+}
+
+const docLabels: Record<string, string> = {
+  document_url: "ID Document",
+  license_url: "Driver's License",
+  mot_url: "MOT Certificate",
+  papers_url: "Vehicle Papers",
+  insurance_url: "Insurance",
+  roadworthiness_url: "Roadworthiness",
+  passport_photo_url: "Passport Photo",
+  tax_certificate_url: "Tax Certificate",
+  business_registration_doc_url: "Business Registration",
+}
+
+const docFieldLabels: Record<string, string> = {
+  type: "ID Type",
+  number: "ID Number",
+  id_type: "ID Type",
+  id_number: "ID Number",
+}
+
+function DocList({ docs, onPreview }: { docs: Record<string, unknown>; onPreview: (url: string, label: string) => void }) {
+  const entries = Object.entries(docs).filter(([k, v]) => isDocUrl(v) && /(?:_url|_photo|_image|Photo|Image|Url)$/.test(k))
+  if (entries.length === 0) return null
+  return (
+    <div className="grid grid-cols-1 gap-2">
+      {entries.map(([k, v]) => {
+        const label = docLabels[k] || k.replace(/_/g, " ")
+        return (
+          <button
+            key={k}
+            type="button"
+            onClick={() => onPreview(v as string, label)}
+            className="flex items-center gap-2 p-2 border border-border-default rounded-lg text-left hover:bg-surface-hover hover:border-sendme/40 transition-colors w-full group"
+          >
+            <FileText size={14} className="text-text-muted shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-[10px] font-medium text-text-primary capitalize truncate">{label}</p>
+            </div>
+            <span className="text-[9px] text-sendme font-semibold group-hover:underline shrink-0 flex items-center gap-1">
+              <Eye size={10} /> View
+            </span>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+function docEntries(docs: Record<string, unknown>) {
+  return Object.entries(docs).filter(([k, v]) => isDocUrl(v) && /(?:_url|_photo|_image|Photo|Image|Url)$/.test(k))
+}
+
+function isImageFile(url: string) {
+  return /\.(jpe?g|png|gif|webp|bmp|svg|avif)(\?.*)?$/i.test(url.split("?")[0])
+}
+
+function DocumentCard({ url, label, onPreview }: { url: string; label: string; onPreview: (url: string, label: string) => void }) {
+  const isPdf = /\.pdf(\?.*)?$/i.test(url.split("?")[0])
+  const isKnownImage = isImageFile(url)
+  const [imgFailed, setImgFailed] = useState(false)
+  const showImage = isKnownImage && !imgFailed
+
+  return (
+    <button
+      type="button"
+      onClick={() => onPreview(url, label)}
+      className="w-full p-2 border border-border-default rounded-lg text-left hover:bg-surface-hover hover:border-sendme/40 transition-colors group"
+    >
+      <div className="flex items-center justify-between mb-1.5">
+        <span className="text-[10px] font-medium text-text-primary capitalize truncate">{label}</span>
+        <span className="text-[9px] text-sendme font-semibold group-hover:underline shrink-0 flex items-center gap-1">
+          <Eye size={10} /> Preview
+        </span>
+      </div>
+      {showImage ? (
+        <div className="relative w-full h-28 bg-surface-secondary rounded overflow-hidden">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={url}
+            alt={label}
+            className="w-full h-full object-cover"
+            onError={() => setImgFailed(true)}
+          />
+        </div>
+      ) : (
+        <div className="flex flex-col items-center justify-center w-full h-28 bg-surface-secondary rounded overflow-hidden">
+          <FileText size={22} className="text-text-muted/50 mb-1" />
+          <span className="text-[9px] font-medium text-text-muted">
+            {isPdf ? "PDF document" : imgFailed ? "Preview unavailable — click to view" : "Document file"}
+          </span>
+        </div>
+      )}
+    </button>
+  )
+}
+
+function KycLockedCard({ onRequestUnlock, title = "Sensitive KYC data locked" }: { onRequestUnlock?: () => void; title?: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center h-48 text-center px-6 border border-dashed border-border-default rounded-xl bg-surface-secondary/50">
+      <div className="w-10 h-10 bg-warning-light rounded-full flex items-center justify-center mb-3">
+        <Shield size={18} className="text-warning" />
+      </div>
+      <p className="text-xs font-semibold text-text-primary mb-1">{title}</p>
+      <p className="text-[10px] text-text-muted mb-3 max-w-[220px]">
+        Documents, ID details, and images are hidden for security. Verify with the OTP sent to your email to view them.
+      </p>
+      <button
+        type="button"
+        onClick={onRequestUnlock}
+        className="flex items-center gap-1.5 px-3 py-2 bg-sendme text-white rounded-lg text-[11px] font-semibold hover:bg-sendme-dark transition-colors"
+      >
+        <Shield size={12} /> Enter OTP to view
+      </button>
+    </div>
+  )
+}
+
+const storageFolderLabels: Record<string, string> = {
+  id_documents: "ID Document (stored)",
+  licenses: "Driver's License (stored)",
+  vehicle_papers: "Vehicle Papers (stored)",
+  mot: "MOT Certificate (stored)",
+}
+
+function DocumentsTab({ data, onPreview, kycLocked, onRequestUnlock }: {
+  data: DriverData
+  onPreview: (url: string, label: string) => void
+  kycLocked?: boolean
+  onRequestUnlock?: () => void
+}) {
+  const idDocs = docEntries(data.idDetails || {})
+  const vehicleDocs = docEntries(data.vehicleInfo || {})
+  const sections = [
+    { title: "ID Documents", docs: idDocs },
+    { title: "Vehicle Documents", docs: vehicleDocs },
+  ].filter((s) => s.docs.length > 0)
+  const storageDocs = data.storageDocs || []
+  const isIncomplete = data.driver.submissionStatus === "incomplete"
+
+  if (kycLocked) {
+    return <KycLockedCard onRequestUnlock={onRequestUnlock} />
+  }
+
+  if (sections.length === 0 && storageDocs.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center h-40 text-center px-6">
+        <FileText size={24} className="text-text-muted/40 mb-2" />
+        <p className="text-xs text-text-muted">
+          {isIncomplete
+            ? "Registration incomplete — this rider hasn't submitted their documents yet"
+            : "No documents uploaded by this rider yet"}
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-5">
+      {sections.map((section) => (
+        <div key={section.title}>
+          <div className="flex items-center justify-between mb-2">
+            <h4 className="text-xs font-semibold text-text-primary">{section.title}</h4>
+            <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-surface-secondary text-text-muted">{section.docs.length}</span>
+          </div>
+          <div className="space-y-2">
+            {section.docs.map(([k, v]) => (
+              <DocumentCard key={k} url={v as string} label={docLabels[k] || k.replace(/_/g, " ")} onPreview={onPreview} />
+            ))}
+          </div>
+        </div>
+      ))}
+
+      {storageDocs.length > 0 && (
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <h4 className="text-xs font-semibold text-text-primary">Stored Uploads</h4>
+            <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-surface-secondary text-text-muted">{storageDocs.length}</span>
+          </div>
+          <div className="space-y-2">
+            {storageDocs.map((d) => (
+              <DocumentCard
+                key={d.url}
+                url={d.url}
+                label={storageFolderLabels[d.folder] || `${d.folder.replace(/_/g, " ")} (stored)`}
+                onPreview={onPreview}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function OverviewTab({ data, onPreview, kycLocked, onRequestUnlock, onEditKyc }: {
+  data: DriverData
+  onPreview: (url: string, label: string) => void
+  kycLocked?: boolean
+  onRequestUnlock?: () => void
+  onEditKyc?: () => void
+}) {
   const { driver, stats, wallet } = data
+  const hasIdData = data.idDetails && Object.keys(data.idDetails).filter((k) => !isDocUrl(data.idDetails?.[k])).length > 0
   return (
     <div className="space-y-5">
       {/* Driver Info */}
@@ -93,6 +308,65 @@ function OverviewTab({ data }: { data: DriverData }) {
           </div>
         ))}
       </div>
+
+      {/* Sensitive KYC sections (docs / ID numbers) */}
+      {kycLocked ? (
+        <KycLockedCard onRequestUnlock={onRequestUnlock} />
+      ) : (
+        <>
+          {/* ID Details + KYC entry */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <h4 className="text-xs font-semibold text-text-primary">ID Details</h4>
+              <button
+                type="button"
+                onClick={onEditKyc}
+                className="flex items-center gap-1 text-[9px] font-semibold text-sendme hover:underline"
+              >
+                <FileText size={10} /> {hasIdData ? "Edit KYC" : "Add KYC"}
+              </button>
+            </div>
+            {hasIdData ? (
+              <>
+                <div className="space-y-1.5">
+                  {Object.entries(data.idDetails as Record<string, unknown>)
+                    .filter(([k, v]) => !isDocUrl(v) && k !== "document_url")
+                    .map(([k, v]) => (
+                      <div key={k} className="flex items-center justify-between py-1 border-b border-border-light last:border-0">
+                        <p className="text-[11px] text-text-muted">{docFieldLabels[k] || k.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase())}</p>
+                        <p className="text-[11px] font-medium text-text-primary">{String(v) || "—"}</p>
+                      </div>
+                    ))}
+                </div>
+                {docEntries(data.idDetails as Record<string, unknown>).length > 0 && (
+                  <div className="mt-2">
+                    <DocList docs={data.idDetails as Record<string, unknown>} onPreview={onPreview} />
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="flex items-center justify-between py-3 px-3 bg-surface-secondary rounded-lg">
+                <p className="text-[10px] text-text-muted">No KYC details added yet</p>
+                <button
+                  type="button"
+                  onClick={onEditKyc}
+                  className="flex items-center gap-1 px-2.5 py-1.5 bg-sendme-50 text-sendme rounded-lg text-[10px] font-semibold hover:bg-sendme/10 transition-colors"
+                >
+                  <FileText size={11} /> Add KYC details
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Vehicle Documents */}
+          {data.vehicleInfo && docEntries(data.vehicleInfo).length > 0 && (
+            <div>
+              <h4 className="text-xs font-semibold text-text-primary mb-2">Vehicle Documents</h4>
+              <DocList docs={data.vehicleInfo} onPreview={onPreview} />
+            </div>
+          )}
+        </>
+      )}
 
       {/* Stats Grid */}
       <div className="grid grid-cols-3 gap-2">
@@ -124,13 +398,13 @@ function OverviewTab({ data }: { data: DriverData }) {
           </div>
           {stats.ratingCount > 0 && <p className="text-[8px] text-text-muted">({stats.ratingCount} reviews)</p>}
         </div>
-        <div className="bg-surface-secondary rounded-lg p-2.5 text-center">
-          <p className="text-[9px] text-text-muted">Total Earnings</p>
-          <p className="text-sm font-bold text-text-primary mt-0.5">{stats.totalEarningsFormatted}</p>
+        <div className="bg-surface-secondary rounded-lg p-2.5 text-center min-w-0 overflow-hidden">
+          <p className="text-[9px] text-text-muted truncate">Total Earnings</p>
+          <p className="text-sm font-bold text-text-primary mt-0.5 truncate" title={stats.totalEarningsFormatted}>{formatCardValue(stats.totalEarningsFormatted)}</p>
         </div>
-        <div className="bg-surface-secondary rounded-lg p-2.5 text-center">
-          <p className="text-[9px] text-text-muted">Wallet Balance</p>
-          <p className="text-sm font-bold text-sendme mt-0.5">{wallet?.balanceFormatted || "₦0"}</p>
+        <div className="bg-surface-secondary rounded-lg p-2.5 text-center min-w-0 overflow-hidden">
+          <p className="text-[9px] text-text-muted truncate">Wallet Balance</p>
+          <p className="text-sm font-bold text-sendme mt-0.5 truncate" title={wallet?.balanceFormatted || "₦0"}>{formatCardValue(wallet?.balanceFormatted || "₦0")}</p>
         </div>
       </div>
 
@@ -148,15 +422,30 @@ function OverviewTab({ data }: { data: DriverData }) {
                   <CheckCircle size={12} className="text-sendme" />
                   <span className="text-[11px] font-semibold text-sendme">Verified</span>
                 </>
+              ) : driver.statusRaw === "suspended" ? (
+                <>
+                  <Ban size={12} className="text-warning" />
+                  <span className="text-[11px] font-semibold text-warning">Suspended</span>
+                </>
+              ) : driver.statusRaw === "deleted" ? (
+                <>
+                  <Ban size={12} className="text-text-muted" />
+                  <span className="text-[11px] font-semibold text-text-muted">Deactivated</span>
+                </>
               ) : driver.statusRaw === "rejected" ? (
                 <>
                   <AlertTriangle size={12} className="text-danger" />
                   <span className="text-[11px] font-semibold text-danger">Rejected</span>
                 </>
+              ) : driver.submissionStatus === "incomplete" ? (
+                <>
+                  <AlertTriangle size={12} className="text-warning" />
+                  <span className="text-[11px] font-semibold text-warning">Incomplete Registration</span>
+                </>
               ) : (
                 <>
                   <Clock size={12} className="text-warning" />
-                  <span className="text-[11px] font-semibold text-warning">Pending</span>
+                  <span className="text-[11px] font-semibold text-warning">Pending Review</span>
                 </>
               )}
             </div>
@@ -167,7 +456,9 @@ function OverviewTab({ data }: { data: DriverData }) {
           </div>
           {driver.reviewReason && (
             <div className="bg-danger-light rounded-lg p-2.5">
-              <p className="text-[9px] text-danger font-semibold mb-0.5">Rejection Reason</p>
+              <p className="text-[9px] text-danger font-semibold mb-0.5">
+                {driver.statusRaw === "suspended" ? "Suspension Reason" : "Rejection Reason"}
+              </p>
               <p className="text-[11px] text-danger">{driver.reviewReason}</p>
             </div>
           )}
@@ -177,8 +468,15 @@ function OverviewTab({ data }: { data: DriverData }) {
   )
 }
 
-function VehicleTab({ data }: { data: DriverData }) {
+function VehicleTab({ data, kycLocked, onRequestUnlock }: {
+  data: DriverData
+  kycLocked?: boolean
+  onRequestUnlock?: () => void
+}) {
   const v = data.vehicle
+  if (kycLocked) {
+    return <KycLockedCard onRequestUnlock={onRequestUnlock} title="Vehicle details locked" />
+  }
   if (!v) {
     return (
       <div className="flex items-center justify-center h-32">
@@ -189,15 +487,12 @@ function VehicleTab({ data }: { data: DriverData }) {
 
   const vehicleInfo = [
     ["Vehicle Type", v.type],
-    ["Load Capacity", v.capacity],
-    ["Make / Model", v.makeModel],
-    ["Ownership Type", v.ownership],
-    ["Plate Number", v.plateNumber],
-    ["Fuel Type", v.fuelType],
+    ["Make", v.make],
+    ["Model", v.model],
+    ["Plate Number", v.plate],
     ["Color", v.color],
-    ["Transmission", v.transmission],
-    ["Year", v.year],
-    ["Seating Capacity", v.seatingCapacity],
+    ["Load Capacity", v.capacity],
+    ["License Number", v.license],
   ]
 
   return (
@@ -275,7 +570,7 @@ function PayoutsTab({ data, onProcessPayout }: { data: DriverData; onProcessPayo
         {data.wallet && (
           <div className="text-right">
             <p className="text-[9px] text-text-muted">Wallet Balance</p>
-            <p className="text-[11px] font-bold text-sendme">{data.wallet.balanceFormatted}</p>
+            <p className="text-[11px] font-bold text-sendme truncate" title={data.wallet.balanceFormatted}>{formatCardValue(data.wallet.balanceFormatted)}</p>
           </div>
         )}
       </div>
@@ -330,7 +625,7 @@ function ActivityTab() {
   )
 }
 
-export function DriverDetail({ driverId, onClose }: DriverDetailProps) {
+export function DriverDetail({ driverId, onClose, kycLocked = false, onRequestUnlock }: DriverDetailProps) {
   const [activeTab, setActiveTab] = useState("Overview")
   const [loading, setLoading] = useState(true)
   const [data, setData] = useState<DriverData | null>(null)
@@ -341,6 +636,11 @@ export function DriverDetail({ driverId, onClose }: DriverDetailProps) {
   const [creditNote, setCreditNote] = useState("")
   const [showRejectModal, setShowRejectModal] = useState(false)
   const [rejectReason, setRejectReason] = useState("")
+  const [previewDoc, setPreviewDoc] = useState<{ url: string; label: string } | null>(null)
+  const [showKycModal, setShowKycModal] = useState(false)
+  const [kycSaving, setKycSaving] = useState(false)
+
+  const handlePreview = (url: string, label: string) => setPreviewDoc({ url, label })
 
   const fetchData = () => {
     if (!driverId) return
@@ -348,7 +648,11 @@ export function DriverDetail({ driverId, onClose }: DriverDetailProps) {
     fetch(`/api/dashboard/drivers/${driverId}`)
       .then((r) => r.json())
       .then((result) => {
-        setData(result)
+        // Only accept payloads that actually contain a driver; error objects
+        // (e.g. { error: "Driver not found" }) are left as null so the
+        // "Failed to load" state renders instead of crashing on .driver.x
+        if (result?.driver) setData(result)
+        else setData(null)
         setLoading(false)
       })
       .catch(() => setLoading(false))
@@ -440,7 +744,7 @@ export function DriverDetail({ driverId, onClose }: DriverDetailProps) {
     await handleAction("process_payout", { payout_id: payoutId, payout_action: action })
   }
 
-  const isVerified = data?.driver.statusRaw === "verified"
+  const isVerified = data?.driver?.statusRaw === "verified"
 
   return (
     <div className="w-[340px] bg-white border-l border-border-default flex flex-col shrink-0 h-full overflow-hidden">
@@ -509,8 +813,17 @@ export function DriverDetail({ driverId, onClose }: DriverDetailProps) {
           </div>
         ) : (
           <>
-            {activeTab === "Overview" && <OverviewTab data={data} />}
-            {activeTab === "Vehicle" && <VehicleTab data={data} />}
+            {activeTab === "Overview" && (
+              <OverviewTab
+                data={data}
+                onPreview={handlePreview}
+                kycLocked={kycLocked}
+                onRequestUnlock={onRequestUnlock}
+                onEditKyc={() => setShowKycModal(true)}
+              />
+            )}
+            {activeTab === "Documents" && <DocumentsTab data={data} onPreview={handlePreview} kycLocked={kycLocked} onRequestUnlock={onRequestUnlock} />}
+            {activeTab === "Vehicle" && <VehicleTab data={data} kycLocked={kycLocked} onRequestUnlock={onRequestUnlock} />}
             {activeTab === "Trips" && <TripsTab data={data} />}
             {activeTab === "Payouts" && <PayoutsTab data={data} onProcessPayout={handleProcessPayout} />}
             {activeTab === "Activity" && <ActivityTab />}
@@ -657,6 +970,128 @@ export function DriverDetail({ driverId, onClose }: DriverDetailProps) {
           )}
         </div>
       )}
+
+      {/* Document Preview Modal */}
+      {previewDoc && (
+        <DocumentPreviewModal url={previewDoc.url} label={previewDoc.label} onClose={() => setPreviewDoc(null)} />
+      )}
+
+      {/* Add/Edit KYC Modal */}
+      {showKycModal && (
+        <KycFormModal
+          driverId={driverId}
+          existingIdDetails={data?.idDetails || null}
+          onClose={() => setShowKycModal(false)}
+          onSaved={() => {
+            setShowKycModal(false)
+            fetchData()
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
+const ID_TYPES = ["NIN", "Voter's Card", "Driver's License", "International Passport", "Other"]
+
+function KycFormModal({
+  driverId,
+  existingIdDetails,
+  onClose,
+  onSaved,
+}: {
+  driverId: string
+  existingIdDetails: Record<string, unknown> | null
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const [idType, setIdType] = useState<string>(() => {
+    const raw = existingIdDetails?.type || existingIdDetails?.id_type
+    return typeof raw === "string" && ID_TYPES.includes(raw) ? raw : ""
+  })
+  const [idNumber, setIdNumber] = useState(() => {
+    const raw = existingIdDetails?.number ?? existingIdDetails?.id_number
+    return typeof raw === "string" ? raw : ""
+  })
+  const [saving, setSaving] = useState(false)
+
+  const handleSave = async () => {
+    if (!idType) return toast.error("Select an ID type")
+    if (!idNumber.trim()) return toast.error("Enter the ID number")
+    setSaving(true)
+    try {
+      const res = await fetch(`/api/dashboard/drivers/${driverId}/kyc`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ idType, idNumber }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        toast.error(data.error || "Failed to save KYC details")
+        return
+      }
+      toast.success("KYC details saved")
+      onSaved()
+    } catch {
+      toast.error("Network error. Please try again.")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
+    >
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-200">
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-border-light">
+          <h3 className="text-sm font-semibold text-text-primary">Add / Edit KYC Details</h3>
+          <button onClick={onClose} className="p-1.5 text-text-muted hover:text-text-primary hover:bg-surface-secondary rounded-lg transition-colors">
+            <X size={16} />
+          </button>
+        </div>
+        <div className="px-5 py-4 space-y-3">
+          <div>
+            <label className="block text-[10px] font-medium text-text-muted mb-1">ID Type</label>
+            <select
+              value={idType}
+              onChange={(e) => setIdType(e.target.value)}
+              className="w-full text-xs text-text-primary bg-surface-secondary border border-border-light rounded-lg px-3 py-2 focus:outline-none focus:border-sendme"
+            >
+              <option value="">Select ID type...</option>
+              {ID_TYPES.map((t) => (
+                <option key={t} value={t}>{t}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-[10px] font-medium text-text-muted mb-1">ID Number</label>
+            <input
+              value={idNumber}
+              onChange={(e) => setIdNumber(e.target.value)}
+              placeholder="e.g. 12345678901"
+              className="w-full text-xs text-text-primary placeholder:text-text-muted bg-surface-secondary border border-border-light rounded-lg px-3 py-2 focus:outline-none focus:border-sendme"
+            />
+          </div>
+          <div className="flex gap-2 pt-1">
+            <button
+              onClick={onClose}
+              className="flex-1 px-3 py-2 border border-border-default rounded-lg text-[11px] font-medium text-text-primary hover:bg-surface-hover transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              className="flex-1 px-3 py-2 bg-sendme text-white rounded-lg text-[11px] font-semibold hover:bg-sendme-dark transition-colors flex items-center justify-center gap-1 disabled:opacity-50"
+            >
+              {saving && <Loader2 size={12} className="animate-spin" />}
+              {saving ? "Saving..." : "Save KYC"}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }

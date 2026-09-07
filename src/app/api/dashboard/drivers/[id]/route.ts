@@ -1,6 +1,48 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 
+interface StorageDoc {
+  folder: string
+  url: string
+  name: string
+}
+
+// Folder name in the driver_documents bucket -> doc label used by the UI
+const DRIVER_STORAGE_FOLDERS = ["id_documents", "licenses", "vehicle_papers", "mot"]
+
+async function listDriverStorageDocs(riderId: string): Promise<StorageDoc[]> {
+  try {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+    if (!url || !key) return []
+
+    const docs: StorageDoc[] = []
+    for (const folder of DRIVER_STORAGE_FOLDERS) {
+      const prefix = `${riderId}/${folder}/`
+      const res = await fetch(`${url}/storage/v1/object/list/driver_documents`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+        body: JSON.stringify({ prefix, limit: 100, offset: 0 }),
+      })
+      if (!res.ok) continue
+      const items = (await res.json()) as { name: string; metadata?: { mimetype?: string } }[]
+      if (!Array.isArray(items)) continue
+      for (const item of items) {
+        if (!item.name) continue
+        docs.push({
+          folder,
+          url: `${url}/storage/v1/object/public/driver_documents/${prefix}${encodeURIComponent(item.name)}`,
+          name: item.name,
+        })
+      }
+    }
+    return docs
+  } catch (err) {
+    console.error("[Driver Detail] Storage scan error:", err)
+    return []
+  }
+}
+
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -11,8 +53,8 @@ export async function GET(
     const { data: driver, error } = await supabaseAdmin
       .from("users")
       .select(`
-        id, full_name, phone, email, state, created_at,
-        driver_profiles(verification_status, rating, vehicle_info, is_online, id_details, review_reason, trips_count)
+        id, full_name, phone, email, state, created_at, is_onboarded,
+        driver_profiles(verification_status, rating, vehicle_info, is_online, id_details, review_reason, trips_count, is_suspended, is_deleted)
       `)
       .eq("id", id)
       .single()
@@ -25,6 +67,14 @@ export async function GET(
     const profile = Array.isArray(profileEmbed) ? profileEmbed[0] : profileEmbed
     const vp = profile?.vehicle_info as any
     const verificationStatus = profile?.verification_status || "pending"
+
+    const isHttpUrl = (v: unknown): v is string => typeof v === "string" && /^https?:\/\//i.test(v)
+    const idDetails = (profile?.id_details && typeof profile.id_details === "object" ? profile.id_details : {}) as Record<string, unknown>
+    const hasSubmittedDocs = Object.values(idDetails).some(isHttpUrl)
+    const isOnboarded = (driver as any)?.is_onboarded === true
+    const isSuspended = profile?.is_suspended === true
+    const isDeleted = profile?.is_deleted === true
+    const isIncomplete = !hasSubmittedDocs && verificationStatus !== "verified" && verificationStatus !== "rejected" && !isOnboarded
 
     // Trip stats
     const [completedResult, cancelledResult, totalResult] = await Promise.all([
@@ -74,9 +124,13 @@ export async function GET(
     // Status label
     let statusLabel = "Pending Review"
     let statusColor = "bg-warning-light text-warning"
-    if (verificationStatus === "verified") { statusLabel = "Approved"; statusColor = "bg-sendme-50 text-sendme" }
-    else if (verificationStatus === "rejected") { statusLabel = "Suspended"; statusColor = "bg-danger-light text-danger" }
-    else if (verificationStatus === "under_review") { statusLabel = "Under Review"; statusColor = "bg-info-light text-info" }
+    if (isSuspended) { statusLabel = "Suspended"; statusColor = "bg-warning-light text-warning" }
+    else if (isDeleted) { statusLabel = "Deactivated"; statusColor = "bg-surface-secondary text-text-muted" }
+    else if (verificationStatus === "verified") { statusLabel = "Approved"; statusColor = "bg-sendme-50 text-sendme" }
+    else if (verificationStatus === "rejected") { statusLabel = "Rejected"; statusColor = "bg-danger-light text-danger" }
+    else if (isIncomplete) { statusLabel = "Incomplete Registration"; statusColor = "bg-surface-secondary text-text-muted" }
+    const submissionStatus: "incomplete" | "submitted" = isIncomplete ? "incomplete" : "submitted"
+    const displayStatusRaw = isSuspended ? "suspended" : isDeleted ? "deleted" : verificationStatus
 
     const created = new Date(driver.created_at)
     const now = new Date()
@@ -88,6 +142,14 @@ export async function GET(
     else if (diffDays > 30) memberDuration = `${Math.floor(diffDays / 30)} month${Math.floor(diffDays / 30) > 1 ? "s" : ""}`
     else memberDuration = `${diffDays} day${diffDays > 1 ? "s" : ""}`
 
+    // Orphaned uploads in storage that aren't referenced from id_details / vehicle_info
+    const storageDocs = await listDriverStorageDocs(id)
+    const referenced = new Set<string>()
+    for (const v of [...Object.values(idDetails), ...Object.values(vp || {})]) {
+      if (typeof v === "string" && /^https?:/.test(v)) referenced.add(v)
+    }
+    const extraStorageDocs = storageDocs.filter((d) => !referenced.has(d.url))
+
     return NextResponse.json({
       driver: {
         id: driver.id,
@@ -97,7 +159,8 @@ export async function GET(
         avatar: (driver.full_name || "?")[0],
         status: statusLabel,
         statusColor,
-        statusRaw: verificationStatus,
+        statusRaw: displayStatusRaw,
+        submissionStatus,
         reviewReason: profile?.review_reason || null,
         type: "Independent Driver",
         city: (driver as any).state || "—",
@@ -122,16 +185,16 @@ export async function GET(
       } : null,
       vehicle: vp ? {
         type: vp.type || "—",
-        capacity: vp.capacity || "—",
-        makeModel: vp.make || vp.model || "—",
-        ownership: vp.ownership || "—",
-        plateNumber: vp.plate || "—",
-        fuelType: vp.fuel_type || "—",
+        capacity: vp.capacity ? `${vp.capacity}kg` : "—",
+        make: vp.make || "—",
+        model: vp.model || "—",
+        plate: vp.plate || "—",
         color: vp.color || "—",
-        transmission: vp.transmission || "—",
-        year: vp.year || "—",
-        seatingCapacity: vp.seating_capacity || "—",
+        license: vp.license || "—",
       } : null,
+      idDetails: profile?.id_details || null,
+      vehicleInfo: vp || null,
+      storageDocs: extraStorageDocs,
       recentPayouts: (payouts || []).map((p) => ({
         id: p.id,
         shortId: p.id.slice(0, 8).toUpperCase(),

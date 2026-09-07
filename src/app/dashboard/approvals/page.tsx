@@ -83,6 +83,58 @@ function formatCurrency(n: number) {
   return "₦" + n.toLocaleString("en-NG")
 }
 
+function isUrl(v: unknown): v is string {
+  return typeof v === "string" && /^https?:\/\//i.test(v)
+}
+
+const docLabels: Record<string, string> = {
+  document_url: "ID Document",
+  license_url: "Driver's License",
+  mot_url: "MOT Certificate",
+  papers_url: "Vehicle Papers",
+  insurance_url: "Insurance",
+  roadworthiness_url: "Roadworthiness",
+  passport_photo_url: "Passport Photo",
+  tax_certificate_url: "Tax Certificate",
+  business_registration_doc_url: "Business Registration",
+}
+
+function DocumentPreview({ url, label }: { url: string; label: string }) {
+  const [preview, setPreview] = useState(true)
+  return (
+    <div className="p-2 border border-border-default rounded-lg">
+      <div className="flex items-center justify-between mb-1.5">
+        <span className="text-[10px] text-text-primary capitalize">{label}</span>
+        <a href={url} target="_blank" rel="noopener noreferrer" className="text-[9px] text-sendme font-medium hover:underline">
+          View full
+        </a>
+      </div>
+      {preview ? (
+        <div className="relative h-28 bg-surface-secondary rounded overflow-hidden">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={url} alt={label} className="w-full h-full object-cover" onClick={() => setPreview(false)} />
+        </div>
+      ) : (
+        <button onClick={() => setPreview(true)} className="text-[9px] text-sendme hover:underline">
+          Show preview
+        </button>
+      )}
+    </div>
+  )
+}
+
+function DocumentPills({ obj }: { obj: Record<string, unknown> }) {
+  const docs = Object.entries(obj).filter(([k, v]) => isUrl(v) && /(?:_url|_photo|_image|Photo|Image|Url)$/.test(k))
+  if (docs.length === 0) return null
+  return (
+    <div className="space-y-2">
+      {docs.map(([k, v]) => (
+        <DocumentPreview key={k} url={v as string} label={docLabels[k] || k.replace(/_/g, " ")} />
+      ))}
+    </div>
+  )
+}
+
 export default function ApprovalsPage() {
   const [activeTab, setActiveTab] = useState("all")
   const [selected, setSelected] = useState<ApprovalItem | null>(null)
@@ -139,7 +191,11 @@ export default function ApprovalsPage() {
       const res = await fetch(`/api/dashboard/approvals/${selected.id}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, reason: action === "reject" ? rejectReason : undefined }),
+        body: JSON.stringify({
+          action,
+          reason: action === "reject" ? rejectReason : undefined,
+          realId: selected.details?.profile_id,
+        }),
       })
       if (res.ok) {
         const data = await res.json()
@@ -406,14 +462,21 @@ export default function ApprovalsPage() {
                     <p className="text-[9px] text-text-muted uppercase tracking-wider mb-2">ID Details</p>
                     <div className="p-3 bg-surface-secondary rounded-lg space-y-1.5">
                       {typeof selected.details.id_details === "object" &&
-                        Object.entries(selected.details.id_details).map(([k, v]) => (
-                          <div key={k} className="flex justify-between">
-                            <span className="text-[11px] text-text-muted capitalize">{k.replace(/_/g, " ")}</span>
-                            <span className="text-[11px] font-medium text-text-primary">{String(v)}</span>
-                          </div>
-                        ))
+                        Object.entries(selected.details.id_details)
+                          .filter(([, v]) => !isUrl(v))
+                          .map(([k, v]) => (
+                            <div key={k} className="flex justify-between">
+                              <span className="text-[11px] text-text-muted capitalize">{k.replace(/_/g, " ")}</span>
+                              <span className="text-[11px] font-medium text-text-primary">{String(v)}</span>
+                            </div>
+                          ))
                       }
                     </div>
+                    {typeof selected.details.id_details === "object" && (
+                      <div className="mt-2">
+                        <DocumentPills obj={selected.details.id_details} />
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -422,34 +485,30 @@ export default function ApprovalsPage() {
                   <div>
                     <p className="text-[9px] text-text-muted uppercase tracking-wider mb-2">Vehicle Information</p>
                     <div className="p-3 bg-surface-secondary rounded-lg space-y-1.5">
-                      {Object.entries(selected.details.vehicle_info).map(([k, v]) => (
-                        <div key={k} className="flex justify-between">
-                          <span className="text-[11px] text-text-muted capitalize">{k.replace(/_/g, " ")}</span>
-                          <span className="text-[11px] font-medium text-text-primary">{String(v)}</span>
-                        </div>
-                      ))}
+                      {Object.entries(selected.details.vehicle_info)
+                        .filter(([, v]) => !isUrl(v) && v !== "" && v !== null)
+                        .map(([k, v]) => (
+                          <div key={k} className="flex justify-between">
+                            <span className="text-[11px] text-text-muted capitalize">{k.replace(/_/g, " ")}</span>
+                            <span className="text-[11px] font-medium text-text-primary">{String(v)}</span>
+                          </div>
+                        ))}
+                    </div>
+                    <div className="mt-2">
+                      <DocumentPills obj={selected.details.vehicle_info} />
                     </div>
                   </div>
                 )}
 
                 {/* Verification documents */}
-                {selected.details?.verification_documents && typeof selected.details.verification_documents === "object" && (
+                {selected.type === "org_verification" && selected.details?.verification_documents && typeof selected.details.verification_documents === "object" && (
                   <div>
                     <p className="text-[9px] text-text-muted uppercase tracking-wider mb-2">Verification Documents</p>
                     <div className="space-y-2">
-                      {Object.entries(selected.details.verification_documents).map(([k, v]) => (
-                        <div key={k} className="flex items-center justify-between p-2 border border-border-default rounded-lg">
-                          <div className="flex items-center gap-2">
-                            <FileText size={14} className="text-text-muted" />
-                            <span className="text-[11px] text-text-primary capitalize">{k.replace(/_/g, " ")}</span>
-                          </div>
-                          {v ? (
-                            <a href={String(v)} target="_blank" rel="noopener noreferrer" className="text-[9px] text-sendme font-medium hover:underline">View</a>
-                          ) : (
-                            <span className="text-[9px] text-text-muted">Not uploaded</span>
-                          )}
-                        </div>
-                      ))}
+                      <DocumentPills obj={selected.details.verification_documents} />
+                      {Object.entries(selected.details.verification_documents).every(([, v]) => !isUrl(v)) && (
+                        <p className="text-[10px] text-text-muted">No documents uploaded</p>
+                      )}
                     </div>
                   </div>
                 )}

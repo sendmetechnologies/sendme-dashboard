@@ -1,6 +1,7 @@
 "use client"
 import { useState, useEffect, useCallback } from "react"
 import { Card } from "@/components/ui/card"
+import { formatCompactCurrency } from "@/lib/format"
 import {
   TrendingUp, TrendingDown, Download, ChevronDown, ChevronRight,
   DollarSign, Package, Truck, Users, Star, AlertTriangle, Loader2,
@@ -133,9 +134,9 @@ function OverviewTab({ stats, charts, data }: any) {
   return (
     <>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card className="p-4">
+        <Card className="p-4 min-w-0 overflow-hidden">
           <div className="flex items-center justify-between mb-3">
-            <div><p className="text-[11px] font-semibold text-text-primary">Revenue Overview</p><p className="text-lg font-bold text-text-primary mt-0.5">{formatCurrency(stats.revenue || 0)}</p></div>
+            <div><p className="text-[11px] font-semibold text-text-primary truncate">Revenue Overview</p><p className="text-lg font-bold text-text-primary mt-0.5 truncate" title={formatFullCurrency(stats.revenue || 0)}>{formatCurrency(stats.revenue || 0)}</p></div>
           </div>
           <div className="h-[120px] flex items-end gap-1.5 px-1">
             {(charts.revenueByDay || []).slice(-14).map((d: any, i: number) => {
@@ -150,8 +151,8 @@ function OverviewTab({ stats, charts, data }: any) {
             })}
           </div>
         </Card>
-        <Card className="p-4">
-          <div className="mb-3"><p className="text-[11px] font-semibold text-text-primary">Orders Overview</p><p className="text-lg font-bold text-text-primary mt-0.5">{(stats.totalOrders || 0).toLocaleString()}</p></div>
+        <Card className="p-4 min-w-0 overflow-hidden">
+          <div className="mb-3"><p className="text-[11px] font-semibold text-text-primary truncate">Orders Overview</p><p className="text-lg font-bold text-text-primary mt-0.5 truncate" title={(stats.totalOrders || 0).toLocaleString()}>{(stats.totalOrders || 0).toLocaleString()}</p></div>
           <div className="h-[120px] flex items-end gap-1.5 px-1">
             {(charts.ordersByDay || []).slice(-14).map((d: any, i: number) => {
               const maxOrd = Math.max(...(charts.ordersByDay || []).map((x: any) => x.total), 1)
@@ -160,11 +161,11 @@ function OverviewTab({ stats, charts, data }: any) {
             })}
           </div>
         </Card>
-        <Card className="p-4">
-          <p className="text-[11px] font-semibold text-text-primary mb-3">Orders by Status</p>
+        <Card className="p-4 min-w-0 overflow-hidden">
+          <p className="text-[11px] font-semibold text-text-primary mb-3 truncate">Orders by Status</p>
           <div className="flex items-center justify-center mb-3">
             <div className="w-[100px] h-[100px] rounded-full border-[12px] border-sendme border-t-blue-400 border-r-orange-400 flex items-center justify-center">
-              <div className="text-center"><p className="text-lg font-bold text-text-primary">{totalOrders.toLocaleString()}</p><p className="text-[8px] text-text-muted">Total</p></div>
+              <div className="text-center min-w-0"><p className="text-lg font-bold text-text-primary truncate" title={totalOrders.toLocaleString()}>{totalOrders.toLocaleString()}</p><p className="text-[8px] text-text-muted">Total</p></div>
             </div>
           </div>
           <div className="space-y-1.5">
@@ -242,9 +243,9 @@ function FinancialsTab({ tabData }: any) {
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-        <Card className="p-3"><p className="text-[10px] text-text-muted">Total Commissions</p><p className="text-lg font-bold text-text-primary">{formatFullCurrency(tabData.totalCommissions || 0)}</p></Card>
-        <Card className="p-3"><p className="text-[10px] text-text-muted">Avg. Order Value</p><p className="text-lg font-bold text-text-primary">{formatFullCurrency(tabData.avgOrderValue || 0)}</p></Card>
-        <Card className="p-3"><p className="text-[10px] text-text-muted">Transaction Types</p><p className="text-lg font-bold text-text-primary">{breakdown.length}</p></Card>
+        <Card className="p-3 min-w-0 overflow-hidden"><p className="text-[10px] text-text-muted truncate">Total Commissions</p><p className="text-lg font-bold text-text-primary truncate" title={formatFullCurrency(tabData.totalCommissions || 0)}>{formatCompactCurrency(tabData.totalCommissions || 0)}</p></Card>
+        <Card className="p-3 min-w-0 overflow-hidden"><p className="text-[10px] text-text-muted truncate">Avg. Order Value</p><p className="text-lg font-bold text-text-primary truncate" title={formatFullCurrency(tabData.avgOrderValue || 0)}>{formatCompactCurrency(tabData.avgOrderValue || 0)}</p></Card>
+        <Card className="p-3 min-w-0 overflow-hidden"><p className="text-[10px] text-text-muted truncate">Transaction Types</p><p className="text-lg font-bold text-text-primary truncate">{breakdown.length}</p></Card>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Card className="p-4">
@@ -280,8 +281,8 @@ function DriversTab({ tabData }: any) {
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-        <Card className="p-3"><p className="text-[10px] text-text-muted">Total Drivers</p><p className="text-lg font-bold text-text-primary">{drivers.length}</p></Card>
-        <Card className="p-3"><p className="text-[10px] text-text-muted">Online Now</p><p className="text-lg font-bold text-sendme">{tabData.onlineDrivers || 0}</p></Card>
+        <Card className="p-3 min-w-0 overflow-hidden"><p className="text-[10px] text-text-muted truncate">Total Drivers</p><p className="text-lg font-bold text-text-primary truncate">{drivers.length}</p></Card>
+        <Card className="p-3 min-w-0 overflow-hidden"><p className="text-[10px] text-text-muted truncate">Online Now</p><p className="text-lg font-bold text-sendme truncate">{tabData.onlineDrivers || 0}</p></Card>
       </div>
       <Card className="overflow-hidden">
         {drivers.length === 0 ? (
@@ -312,9 +313,9 @@ function CustomersTab({ tabData }: any) {
     <div className="space-y-4">
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {roles.map((r: any) => (
-          <Card key={r.role} className="p-3">
-            <p className="text-[10px] text-text-muted capitalize">{r.role}</p>
-            <p className="text-lg font-bold text-text-primary">{r.count}</p>
+          <Card key={r.role} className="p-3 min-w-0 overflow-hidden">
+            <p className="text-[10px] text-text-muted capitalize truncate">{r.role}</p>
+            <p className="text-lg font-bold text-text-primary truncate">{r.count}</p>
           </Card>
         ))}
       </div>
@@ -341,11 +342,11 @@ function PerformanceTab({ tabData, stats }: any) {
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-        <Card className="p-3"><p className="text-[10px] text-text-muted">Avg. Delivery Time</p><p className="text-lg font-bold text-text-primary">{tabData.avgDeliveryTime || "—"}</p></Card>
-        <Card className="p-3"><p className="text-[10px] text-text-muted">Bid Acceptance Rate</p><p className="text-lg font-bold text-text-primary">{tabData.bidAcceptanceRate || 0}%</p></Card>
-        <Card className="p-3"><p className="text-[10px] text-text-muted">Total Bids</p><p className="text-lg font-bold text-text-primary">{(tabData.totalBids || 0).toLocaleString()}</p></Card>
-        <Card className="p-3"><p className="text-[10px] text-text-muted">Delivered Orders</p><p className="text-lg font-bold text-text-primary">{(tabData.deliveredCount || 0).toLocaleString()}</p></Card>
-        <Card className="p-3"><p className="text-[10px] text-text-muted">Avg. Order Value</p><p className="text-lg font-bold text-text-primary">{formatFullCurrency(tabData.avgOrderValue || 0)}</p></Card>
+        <Card className="p-3 min-w-0 overflow-hidden"><p className="text-[10px] text-text-muted truncate">Avg. Delivery Time</p><p className="text-lg font-bold text-text-primary truncate">{tabData.avgDeliveryTime || "—"}</p></Card>
+        <Card className="p-3 min-w-0 overflow-hidden"><p className="text-[10px] text-text-muted truncate">Bid Acceptance Rate</p><p className="text-lg font-bold text-text-primary truncate">{tabData.bidAcceptanceRate || 0}%</p></Card>
+        <Card className="p-3 min-w-0 overflow-hidden"><p className="text-[10px] text-text-muted truncate">Total Bids</p><p className="text-lg font-bold text-text-primary truncate">{(tabData.totalBids || 0).toLocaleString()}</p></Card>
+        <Card className="p-3 min-w-0 overflow-hidden"><p className="text-[10px] text-text-muted truncate">Delivered Orders</p><p className="text-lg font-bold text-text-primary truncate">{(tabData.deliveredCount || 0).toLocaleString()}</p></Card>
+        <Card className="p-3 min-w-0 overflow-hidden"><p className="text-[10px] text-text-muted truncate">Avg. Order Value</p><p className="text-lg font-bold text-text-primary truncate" title={formatFullCurrency(tabData.avgOrderValue || 0)}>{formatCompactCurrency(tabData.avgOrderValue || 0)}</p></Card>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Card className="p-4">

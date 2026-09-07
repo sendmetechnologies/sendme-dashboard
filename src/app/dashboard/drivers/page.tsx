@@ -2,8 +2,12 @@
 
 import { useState, useEffect } from "react"
 import { Card } from "@/components/ui/card"
+import { formatCardValue } from "@/lib/format"
 import { DriverDetail } from "@/components/dashboard/driver-detail"
 import { DriverForm } from "@/components/dashboard/forms"
+import { OtpUnlockModal } from "@/components/ui/otp-unlock-modal"
+import { useKycUnlock } from "@/hooks/use-kyc-unlock"
+import { usePageRefresh } from "@/hooks/use-page-refresh"
 import {
   Users, CheckCircle, Clock, AlertTriangle, Ban, Wifi, ChevronDown,
   Search, Download, Plus, MoreHorizontal, ArrowUpDown, Filter,
@@ -40,6 +44,7 @@ export default function DriversPage() {
   const [tabCounts, setTabCounts] = useState<Record<string, number>>({})
   const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, totalPages: 1 })
   const [searchQuery, setSearchQuery] = useState("")
+  const kyc = useKycUnlock()
 
   const fetchData = (page: number, search: string) => {
     setLoading(true)
@@ -64,6 +69,8 @@ export default function DriversPage() {
     fetchData(1, "")
   }, [])
 
+  usePageRefresh(() => fetchData(pagination.page, searchQuery))
+
   const handleSearch = (q: string) => {
     setSearchQuery(q)
     fetchData(1, q)
@@ -77,8 +84,8 @@ export default function DriversPage() {
     { label: "Total Drivers", value: stats.total, icon: Users, color: "text-sendme", bg: "bg-sendme-50" },
     { label: "Approved", value: stats.approved, icon: CheckCircle, color: "text-sendme", bg: "bg-sendme-50" },
     { label: "Pending Review", value: stats.pending, icon: Clock, color: "text-warning", bg: "bg-warning-light" },
-    { label: "Suspended", value: stats.suspended, icon: AlertTriangle, color: "text-danger", bg: "bg-danger-light" },
-    { label: "Blocked", value: stats.blocked, icon: Ban, color: "text-text-muted", bg: "bg-surface-secondary" },
+    { label: "Suspended", value: stats.suspended, icon: AlertTriangle, color: "text-warning", bg: "bg-warning-light" },
+    { label: "Rejected", value: stats.blocked, icon: Ban, color: "text-danger", bg: "bg-danger-light" },
     { label: "Online Now", value: stats.onlineNow, icon: Wifi, color: "text-sendme", bg: "bg-sendme-50" },
     { label: "Total Balance", value: stats.totalBalanceFormatted, icon: DollarSign, color: "text-sendme", bg: "bg-sendme-50" },
   ]
@@ -138,14 +145,14 @@ export default function DriversPage() {
             {statCards.map((stat) => {
               const Icon = stat.icon
               return (
-                <Card key={stat.label} className="p-4">
+                <Card key={stat.label} className="p-4 min-w-0 overflow-hidden">
                   <div className="flex items-start justify-between mb-2">
-                    <p className="text-xs text-text-muted">{stat.label}</p>
-                    <div className={`p-1.5 rounded-lg ${stat.bg} ${stat.color}`}>
+                    <p className="text-xs text-text-muted truncate">{stat.label}</p>
+                    <div className={`p-1.5 rounded-lg ${stat.bg} ${stat.color} shrink-0`}>
                       <Icon size={16} />
                     </div>
                   </div>
-                  <p className="text-2xl font-bold text-text-primary mb-0.5">{stat.value.toLocaleString()}</p>
+                  <p className="text-2xl font-bold text-text-primary mb-0.5 truncate" title={String(stat.value)}>{formatCardValue(stat.value)}</p>
                 </Card>
               )
             })}
@@ -331,11 +338,23 @@ export default function DriversPage() {
 
       {/* Driver Detail Sidebar */}
       {selectedDriver && (
-        <DriverDetail driverId={selectedDriver} onClose={() => setSelectedDriver(null)} />
+        <DriverDetail
+          driverId={selectedDriver}
+          onClose={() => setSelectedDriver(null)}
+          kycLocked={!kyc.isUnlocked}
+          onRequestUnlock={kyc.requestUnlock}
+        />
       )}
 
       {/* Driver Form Modal */}
       <DriverForm isOpen={isDriverFormOpen} onClose={() => setIsDriverFormOpen(false)} />
+
+      {/* KYC Unlock Modal */}
+      <OtpUnlockModal
+        isOpen={kyc.otpOpen}
+        onClose={kyc.closeOtp}
+        onUnlocked={kyc.handleUnlocked}
+      />
     </div>
   )
 }

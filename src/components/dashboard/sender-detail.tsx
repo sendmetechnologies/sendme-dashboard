@@ -2,6 +2,7 @@
 
 import { toast } from "sonner"
 import { useState, useEffect } from "react"
+import { formatCardValue } from "@/lib/format"
 import {
   X, Phone, MessageCircle, Package, Clock,
   Eye, Loader2, AlertTriangle, Trash2, Ban, DollarSign
@@ -74,24 +75,24 @@ function OverviewTab({ data }: { data: SenderData }) {
           ["Completed", String(stats.completedOrders)],
           ["Cancelled", String(stats.cancelledOrders)],
         ].map(([label, value]) => (
-          <div key={label} className="bg-surface-secondary rounded-lg p-2.5 text-center">
-            <p className="text-[9px] text-text-muted">{label}</p>
-            <p className="text-sm font-bold text-text-primary mt-0.5">{value}</p>
+          <div key={label} className="bg-surface-secondary rounded-lg p-2.5 text-center min-w-0 overflow-hidden">
+            <p className="text-[9px] text-text-muted truncate">{label}</p>
+            <p className="text-sm font-bold text-text-primary mt-0.5 truncate">{value}</p>
           </div>
         ))}
       </div>
 
       {/* Spending */}
-      <div className="bg-surface-secondary rounded-lg p-3 text-center">
-        <p className="text-[9px] text-text-muted">Total Spent</p>
-        <p className="text-lg font-bold text-sendme mt-0.5">{stats.totalSpentFormatted}</p>
+      <div className="bg-surface-secondary rounded-lg p-3 text-center min-w-0 overflow-hidden">
+        <p className="text-[9px] text-text-muted truncate">Total Spent</p>
+        <p className="text-lg font-bold text-sendme mt-0.5 truncate" title={stats.totalSpentFormatted}>{formatCardValue(stats.totalSpentFormatted)}</p>
       </div>
 
       {/* Wallet Balance */}
       {wallet && (
-        <div className="bg-sendme-50 rounded-lg p-3 text-center">
-          <p className="text-[9px] text-text-muted">Wallet Balance</p>
-          <p className="text-lg font-bold text-sendme mt-0.5">{wallet.balanceFormatted}</p>
+        <div className="bg-sendme-50 rounded-lg p-3 text-center min-w-0 overflow-hidden">
+          <p className="text-[9px] text-text-muted truncate">Wallet Balance</p>
+          <p className="text-lg font-bold text-sendme mt-0.5 truncate" title={wallet.balanceFormatted}>{formatCardValue(wallet.balanceFormatted)}</p>
         </div>
       )}
 
@@ -173,7 +174,7 @@ export function SenderDetail({ senderId, onClose }: SenderDetailProps) {
     fetch(`/api/dashboard/senders/${senderId}`)
       .then((r) => r.json())
       .then((result) => {
-        setData(result)
+        if (result?.sender) setData(result)
         setLoading(false)
       })
       .catch(() => setLoading(false))
@@ -300,7 +301,7 @@ export function SenderDetail({ senderId, onClose }: SenderDetailProps) {
           <div className="flex items-center justify-center h-48">
             <Loader2 size={24} className="animate-spin text-sendme" />
           </div>
-        ) : !data ? (
+        ) : !data?.sender ? (
           <div className="flex items-center justify-center h-48">
             <p className="text-xs text-text-muted">Failed to load sender details</p>
           </div>

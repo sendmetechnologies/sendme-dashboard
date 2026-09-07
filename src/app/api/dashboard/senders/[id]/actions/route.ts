@@ -1,6 +1,24 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 
+async function sendUserNotification(userId: string, title: string, body: string, type: string = "PAYMENT") {
+  await supabaseAdmin.from("messages").insert({
+    user_id: userId, title, body, type, status: "UNREAD",
+    data: { event: "WALLET_CREDIT" }, created_at: new Date().toISOString(),
+  })
+  try {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+    if (supabaseUrl && serviceKey) {
+      await fetch(`${supabaseUrl}/functions/v1/send-message`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${serviceKey}` },
+        body: JSON.stringify({ userId, title, body, type, channels: { inApp: true, push: true, email: false } }),
+      })
+    }
+  } catch {}
+}
+
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -39,6 +57,8 @@ export async function POST(
         type: "deposit",
         amount: amount,
       })
+
+      await sendUserNotification(id, "Wallet Credited", `₦${Number(amount).toLocaleString()} has been added to your wallet by admin.`, "PAYMENT")
 
       return NextResponse.json({ success: true, message: `₦${Number(amount).toLocaleString()} credited to wallet` })
     }

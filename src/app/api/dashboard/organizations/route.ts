@@ -55,7 +55,7 @@ export async function GET(req: NextRequest) {
       let q = supabaseAdmin
         .from("users")
         .select(`
-          id, full_name, phone, email, state, created_at,
+          id, full_name, phone, email, state, created_at, is_onboarded,
           organization_profiles(${profileCols})
         `)
         .eq("role", "organization")
@@ -76,9 +76,9 @@ export async function GET(req: NextRequest) {
     let orgs: any[] | null = null
     let queryError: any = null
 
-    const full = await tryOrgQuery("business_name, business_address, contact_person_name, contact_person_phone, business_email, industry, is_verified, is_suspended, logo_url")
+    const full = await tryOrgQuery("business_name, business_address, contact_person_name, contact_person_phone, business_email, industry, is_verified, is_suspended, logo_url, city, state, verification_documents, verification_status")
     if (full.error) {
-      const fallback = await tryOrgQuery("business_name, business_address, contact_person_name, contact_person_phone, business_email, industry, is_verified, logo_url")
+      const fallback = await tryOrgQuery("business_name, business_address, contact_person_name, contact_person_phone, business_email, industry, is_verified, logo_url, city, state, verification_documents, verification_status")
       orgs = fallback.data
       queryError = fallback.error
     } else {
@@ -145,21 +145,30 @@ export async function GET(req: NextRequest) {
       const profileEmbed = (o as any).organization_profiles
       const profile = Array.isArray(profileEmbed) ? profileEmbed[0] : profileEmbed
       const isVerified = profile?.is_verified === true
+      const orgVerificationStatus = profile?.verification_status || (isVerified ? "verified" : "pending")
       const industry = profile?.industry || "—"
       const businessName = profile?.business_name || o.full_name || "—"
       const contactName = profile?.contact_person_name || "—"
       const contactPhone = profile?.contact_person_phone || o.phone || "—"
       const businessEmail = profile?.business_email || o.email || "—"
       const address = profile?.business_address || "—"
-      const city = (o as any).state || "—"
+      const city = profile?.city || (o as any).state || "—"
+      const state = profile?.state || (o as any).state || "—"
       const logoUrl = profile?.logo_url || null
+      const isHttpUrl = (v: unknown): v is string => typeof v === "string" && /^https?:\/\//i.test(v)
+      const vDocs = (profile?.verification_documents && typeof profile.verification_documents === "object" ? profile.verification_documents : {}) as Record<string, unknown>
+      const hasSubmittedDocs = Object.values(vDocs).some(isHttpUrl)
+      const isOnboarded = (o as any)?.is_onboarded === true
+      const isIncomplete = !hasSubmittedDocs && !isVerified && profile?.is_suspended !== true && !isOnboarded
 
-      let statusLabel = "Pending"
+      let statusLabel = "Pending Review"
       let statusColor = "bg-warning-light text-warning"
       const isRemovedMarketer = removedMarketerIds.has(o.id)
       if (isRemovedMarketer) { statusLabel = "Removed marketer"; statusColor = "bg-surface-secondary text-text-muted" }
       else if (isVerified && profile?.is_suspended !== true) { statusLabel = "Active"; statusColor = "bg-sendme-50 text-sendme" }
       else if (profile?.is_suspended === true) { statusLabel = "Suspended"; statusColor = "bg-warning-light text-warning" }
+      else if (orgVerificationStatus === "rejected") { statusLabel = "Rejected"; statusColor = "bg-danger-light text-danger" }
+      else if (isIncomplete) { statusLabel = "Incomplete Registration"; statusColor = "bg-surface-secondary text-text-muted" }
 
       const created = new Date(o.created_at)
       const now = new Date()
@@ -180,6 +189,7 @@ export async function GET(req: NextRequest) {
         industry,
         industryColor: "bg-sendme-50 text-sendme",
         city,
+        state,
         address,
         contactName,
         contactPhone,

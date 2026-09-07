@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react"
 import { Card } from "@/components/ui/card"
+import { formatCardValue } from "@/lib/format"
 import {
   Users, Truck, Building2, DollarSign, Package,
   ArrowRight, TrendingUp, TrendingDown, Loader2, Calendar
@@ -76,23 +77,23 @@ function fmtAmt(v: number): string {
 }
 
 function SubStat({ label, value, color = "text-text-secondary", format }: { label: string; value: number; color?: string; format?: string }) {
-  const displayValue = format === "currency" ? fmtAmt(value) : value.toLocaleString()
+  const displayValue = format === "currency" ? fmtAmt(value) : formatCardValue(value)
   return (
-    <div className="flex items-center gap-1.5">
-      <span className={`text-lg font-bold ${color}`}>{displayValue}</span>
-      <span className="text-[11px] text-text-muted">{label}</span>
+    <div className="flex items-center gap-1.5 min-w-0">
+      <span className={`text-lg font-bold ${color} truncate`}>{displayValue}</span>
+      <span className="text-[11px] text-text-muted truncate">{label}</span>
     </div>
   )
 }
 
 function StatCard({ label, icon: Icon, total, subs }: { label: string; icon: React.ElementType; total: number; subs: { label: string; value: number; color?: string; format?: string }[] }) {
   return (
-    <Card className="p-5 hover:shadow-md transition-shadow">
+    <Card className="p-5 min-w-0 overflow-hidden hover:shadow-md transition-shadow">
       <div className="flex items-center gap-3 mb-4">
-        <div className="p-2.5 rounded-xl bg-sendme-50 text-sendme"><Icon size={20} /></div>
-        <p className="text-xs font-semibold text-text-muted uppercase tracking-wide">{label}</p>
+        <div className="p-2.5 rounded-xl bg-sendme-50 text-sendme shrink-0"><Icon size={20} /></div>
+        <p className="text-xs font-semibold text-text-muted uppercase tracking-wide truncate">{label}</p>
       </div>
-      <p className="text-3xl font-extrabold text-text-primary mb-3">{total.toLocaleString()}</p>
+      <p className="text-3xl font-extrabold text-text-primary mb-3 truncate" title={total.toLocaleString()}>{formatCardValue(total)}</p>
       <div className="flex flex-wrap gap-x-4 gap-y-1.5 pt-3 border-t border-border-light">
         {subs.map((s) => <SubStat key={s.label} {...s} />)}
       </div>
@@ -263,19 +264,19 @@ export default function DashboardOverview() {
       {comparison && (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3">
           {([
-            { key: "deliveries" as const, label: "Deliveries", value: comparison.deliveries.current, fmt: (v: number) => v.toLocaleString() },
+            { key: "deliveries" as const, label: "Deliveries", value: comparison.deliveries.current, fmt: (v: number) => formatCardValue(v) },
             { key: "revenue" as const, label: "Revenue", value: comparison.revenue.current, fmt: fmtAmt },
-            { key: "newSenders" as const, label: "New Senders", value: comparison.newSenders.current, fmt: (v: number) => v.toLocaleString() },
-            { key: "newRiders" as const, label: "New Riders", value: comparison.newRiders.current, fmt: (v: number) => v.toLocaleString() },
-            { key: "newOrgs" as const, label: "New Orgs", value: comparison.newOrgs.current, fmt: (v: number) => v.toLocaleString() },
-            { key: "newMarketers" as const, label: "New Marketers", value: comparison.newMarketers.current, fmt: (v: number) => v.toLocaleString() },
+            { key: "newSenders" as const, label: "New Senders", value: comparison.newSenders.current, fmt: (v: number) => formatCardValue(v) },
+            { key: "newRiders" as const, label: "New Riders", value: comparison.newRiders.current, fmt: (v: number) => formatCardValue(v) },
+            { key: "newOrgs" as const, label: "New Orgs", value: comparison.newOrgs.current, fmt: (v: number) => formatCardValue(v) },
+            { key: "newMarketers" as const, label: "New Marketers", value: comparison.newMarketers.current, fmt: (v: number) => formatCardValue(v) },
             { key: "payouts" as const, label: "Payouts", value: comparison.payouts.current, fmt: fmtAmt },
           ]).map((item) => {
             const d = comparison[item.key]
             return (
-              <Card key={item.key} className="p-3">
-                <p className="text-[10px] font-semibold text-text-muted uppercase tracking-wide mb-1">{item.label}</p>
-                <p className="text-xl font-extrabold text-text-primary">{item.fmt(item.value)}</p>
+              <Card key={item.key} className="p-3 min-w-0 overflow-hidden">
+                <p className="text-[10px] font-semibold text-text-muted uppercase tracking-wide mb-1 truncate">{item.label}</p>
+                <p className="text-xl font-extrabold text-text-primary truncate" title={item.value.toLocaleString()}>{item.fmt(item.value)}</p>
                 <div className="mt-1">
                   <ComparisonBadge d={d} label={prevLabel} />
                 </div>

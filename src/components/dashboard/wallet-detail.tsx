@@ -27,8 +27,8 @@ export function WalletDetail({ onClose }: WalletDetailProps) {
         {/* Balance */}
         <div className="text-center">
           <p className="text-[10px] text-text-muted mb-1">Balance <Eye size={10} className="inline" /></p>
-          <p className="text-2xl font-bold text-text-primary">₦4,562,300.50</p>
-          <p className="text-[10px] text-text-muted mt-1">Available: <span className="font-semibold text-text-primary">₦3,892,100.20</span> • On Hold: <span className="font-semibold text-text-primary">₦420,500.00</span></p>
+          <p className="text-2xl font-bold text-text-primary break-words leading-tight">₦4,562,300.50</p>
+          <p className="text-[10px] text-text-muted mt-1 break-words">Available: <span className="font-semibold text-text-primary">₦3,892,100.20</span> • On Hold: <span className="font-semibold text-text-primary">₦420,500.00</span></p>
         </div>
 
         {/* Action Buttons */}

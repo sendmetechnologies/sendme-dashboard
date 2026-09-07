@@ -75,7 +75,7 @@ export async function GET(req: NextRequest) {
       .select(`
         id, status, final_price, pickup_address, dropoff_address,
         payment_method, vehicle_type, created_at, updated_at,
-        customer_id, accepted_driver_id,
+        customer_id, accepted_driver_id, pin_enabled, pin_code,
         sender_name, sender_phone, receiver_name, receiver_phone,
         item_details, item_value, is_scheduled, scheduled_date,
         customer:users!orders_customer_id_fkey(full_name, email, phone),
@@ -197,6 +197,7 @@ export async function GET(req: NextRequest) {
         eta: "—",
         etaStatus: "—",
         payment: o.payment_method ? o.payment_method.charAt(0).toUpperCase() + o.payment_method.slice(1) : "—",
+        pin: o.pin_enabled ? (o.pin_code || "—") : null,
         created_at: o.created_at,
       }
     })

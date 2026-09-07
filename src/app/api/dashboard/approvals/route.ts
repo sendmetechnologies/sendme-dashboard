@@ -15,7 +15,7 @@ export async function GET(request: Request) {
   const page = parseInt(searchParams.get("page") || "1");
   const limit = parseInt(searchParams.get("limit") || "20");
 
-  // Fetch driver verifications (under_review = pending approval)
+  // Fetch driver verifications (pending/under_review = pending approval)
   const driverQuery = supabaseAdmin
     .from("driver_profiles")
     .select(`
@@ -24,12 +24,10 @@ export async function GET(request: Request) {
       review_reason,
       id_details,
       vehicle_info,
-      avatar_url,
-      created_at,
       updated_at,
-      user:users!driver_profiles_id_fkey (id, full_name, phone, email, state, created_at)
+      user:users!driver_profiles_id_fkey (id, full_name, phone, email, state, avatar_url, created_at)
     `)
-    .in("verification_status", ["under_review", "verified", "rejected"]);
+    .in("verification_status", ["pending", "under_review", "verified", "rejected"]);
 
   // Fetch organization verifications
   const orgQuery = supabaseAdmin
@@ -38,18 +36,21 @@ export async function GET(request: Request) {
       id,
       business_name,
       business_address,
-      business_phone,
+      contact_person_name,
+      contact_person_phone,
       business_email,
-      registration_number,
+      business_registration_number,
+      tax_id,
+      industry,
       verification_status,
       review_reason,
       verification_documents,
       is_verified,
       created_at,
       updated_at,
-      user:users!organization_profiles_id_fkey (id, full_name, phone, email, state, created_at)
+      user:users!organization_profiles_id_fkey (id, full_name, phone, email, state, avatar_url, created_at)
     `)
-    .in("verification_status", ["under_review", "verified", "rejected"]);
+    .in("verification_status", ["pending", "under_review", "verified", "rejected"]);
 
   // Fetch organization payout requests
   const payoutQuery = supabaseAdmin
@@ -125,15 +126,16 @@ export async function GET(request: Request) {
         requested_by: name,
         requested_by_role: "Driver",
         avatar: initials,
-        created_at: d.updated_at || d.created_at,
+        created_at: d.updated_at,
         details: {
-          user_id: d.id,
+          profile_id: d.id,
+          user_id: user?.id || d.id,
           phone: user?.phone || "—",
           email: user?.email || "—",
           state: user?.state || "—",
           id_details: d.id_details,
           vehicle_info: d.vehicle_info,
-          avatar_url: d.avatar_url,
+          avatar_url: user?.avatar_url || null,
           review_reason: d.review_reason,
         },
       });
@@ -156,11 +158,15 @@ export async function GET(request: Request) {
         avatar: initials,
         created_at: o.updated_at || o.created_at,
         details: {
-          user_id: o.id,
-          phone: o.business_phone || user?.phone || "—",
+          profile_id: o.id,
+          user_id: user?.id || o.id,
+          phone: o.contact_person_phone || user?.phone || "—",
           email: o.business_email || user?.email || "—",
+          contact_person_name: o.contact_person_name || "—",
           business_address: o.business_address || "—",
-          registration_number: o.registration_number || "—",
+          registration_number: o.business_registration_number || "—",
+          tax_id: o.tax_id || "—",
+          industry: o.industry || "—",
           verification_documents: o.verification_documents,
           review_reason: o.review_reason,
         },
@@ -184,6 +190,7 @@ export async function GET(request: Request) {
         avatar: initials,
         created_at: p.created_at,
         details: {
+          profile_id: p.id,
           payout_id: p.id,
           amount: p.amount,
           bank_name: p.bank_name,
@@ -212,6 +219,7 @@ export async function GET(request: Request) {
         avatar: initials,
         created_at: m.created_at,
         details: {
+          profile_id: m.id,
           user_id: m.user_id,
           phone: m.phone || user?.phone || "—",
           email: user?.email || "—",

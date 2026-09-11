@@ -284,7 +284,7 @@ export function MarketerDetail({ marketerId, onClose }: MarketerDetailProps) {
           {confirmAction ? (
             <div className="space-y-2">
               <p className="text-[11px] text-text-muted text-center">
-                {confirmAction === "hard_delete" ? "Permanently delete this marketer?" :
+                {confirmAction === "hard_delete" ? "Permanently delete this Growth Partner? Their profile and wallet are erased and they can register again." :
                  confirmAction === "suspend" ? "Suspend this marketer?" :
                  confirmAction === "reinstate" ? "Reinstate this marketer as approved?" :
                  "Deactivate this marketer?"}

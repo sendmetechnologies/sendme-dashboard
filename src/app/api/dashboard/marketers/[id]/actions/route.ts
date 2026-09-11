@@ -354,7 +354,7 @@ export async function POST(
       return NextResponse.json({ success: true, message: "Marketer deactivated" })
     }
 
-    // ── Hard delete (marketer ONLY — does NOT delete the underlying user account) ──
+    // ── Hard delete (permanently erases Growth Partner data; keeps the underlying user account) ──
     if (action === "hard_delete") {
       const { data: profile } = await supabaseAdmin
         .from("marketer_profiles")
@@ -376,12 +376,16 @@ export async function POST(
         await supabaseAdmin.from("marketers").delete().eq("ref_id", profile.marketer_id)
       }
 
-      // Mark as removed instead of deleting — so lists can show "removed marketer"
+      // Permanently delete the profile — no 'removed' tombstone is left behind,
+      // so this email can register as a Growth Partner again.
       const { error } = await supabaseAdmin
         .from("marketer_profiles")
-        .update({ status: "removed", updated_at: new Date().toISOString() })
+        .delete()
         .eq("user_id", id)
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+      // Clear the marketer code off the user so no stale link remains
+      await supabaseAdmin.from("users").update({ marketer_id: null }).eq("id", id)
 
       // Do NOT touch the user account — their sender/org/rider account stays fully intact
 
@@ -400,7 +404,7 @@ export async function POST(
         console.error("[Marketer Actions] Failed to send removal email:", e)
       }
 
-      return NextResponse.json({ success: true, message: "Marketer deleted. Sender/org/rider account preserved." })
+      return NextResponse.json({ success: true, message: "Growth Partner permanently deleted. Their sender/org/rider account is preserved and they can register as a Growth Partner again." })
     }
 
     // ── Assign base role to a marketer-only user ──

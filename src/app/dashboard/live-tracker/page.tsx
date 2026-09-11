@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card } from "@/components/ui/card"
 import { TrackerDetail } from "@/components/dashboard/tracker-detail"
 import {
@@ -8,20 +8,13 @@ import {
   Plus, Maximize2, Minus, Activity
 } from "lucide-react"
 
-const stats = [
-  { label: "Active Deliveries", value: "246", change: "↑ 12 vs yesterday", up: true, icon: Truck, color: "text-sendme", bg: "bg-sendme-50" },
-  { label: "Drivers Online", value: "1,284", change: "↑ 8% vs yesterday", up: true, icon: Users, color: "text-info", bg: "bg-info-light" },
-  { label: "Vehicles Active", value: "876", change: "↑ 5% vs yesterday", up: true, icon: Car, color: "text-info", bg: "bg-info-light" },
-  { label: "On Time", value: "91%", change: "↑ 3% vs yesterday", up: true, icon: CheckCircle, color: "text-sendme", bg: "bg-sendme-50" },
-  { label: "Delayed", value: "15", change: "↓ 2 vs yesterday", up: false, icon: AlertTriangle, color: "text-danger", bg: "bg-danger-light" },
-]
-
-const viewOptions = [
-  { label: "All Active", checked: true },
-  { label: "Deliveries", count: 246 },
-  { label: "Drivers", count: 1284 },
-  { label: "Vehicles", count: 876 },
-]
+const statIcons: Record<string, any> = {
+  truck: Truck,
+  users: Users,
+  car: Car,
+  check: CheckCircle,
+  alert: AlertTriangle,
+}
 
 const deliveryStatuses = [
   { label: "In Transit", checked: true },
@@ -33,40 +26,12 @@ const deliveryStatuses = [
   { label: "At Risk", checked: true },
 ]
 
-const activeDeliveries = [
-  {
-    id: "SM-20491", status: "In Transit", statusColor: "bg-sendme-50 text-sendme",
-    from: "Lekki Phase 1, Lekki", to: "Ikeja, Lagos",
-    driver: "Damilaro A.", vehicle: "ABC 123 DE", eta: "14 mins",
-    time: "10:24 AM",
-  },
-  {
-    id: "SM-20492", status: "In Transit", statusColor: "bg-sendme-50 text-sendme",
-    from: "Surulere, Lagos", to: "Ajah, Lagos",
-    driver: "Emeka N.", vehicle: "KJA 908 LM", eta: "22 mins",
-    time: "10:31 AM",
-  },
-  {
-    id: "SM-20493", status: "Picked Up", statusColor: "bg-info-light text-info",
-    from: "Yaba, Lagos", to: "Victoria Island, Lagos",
-    driver: "Tosin A.", vehicle: "LND 234 TR", eta: "31 mins",
-    time: "10:15 AM",
-  },
-]
-
-const deliveryTabs = [
-  { name: "In Transit", count: 152, active: true },
-  { name: "Arrived", count: 24 },
-  { name: "Picked Up", count: 38 },
-  { name: "At Risk", count: 8 },
-]
-
 const vehicleTypes = [
-  { icon: "🏍️", label: "Motorbike" },
-  { icon: "🚗", label: "Car" },
-  { icon: "🛻", label: "Pickup" },
-  { icon: "🚛", label: "Truck" },
-  { icon: "🚚", label: "Bulk Vehicle" },
+  { icon: "\u{1F68D}", label: "Motorbike" },
+  { icon: "\u{1F697}", label: "Car" },
+  { icon: "\u{1F6FB}", label: "Pickup" },
+  { icon: "\u{1F69B}", label: "Truck" },
+  { icon: "\u{1F69A}", label: "Bulk Vehicle" },
 ]
 
 const statusLegend = [
@@ -75,8 +40,64 @@ const statusLegend = [
   { color: "bg-danger", label: "At Risk" },
 ]
 
+// Nigeria bounding box used to place real GPS coordinates on the map
+const BBOX = { minLat: 4.5, maxLat: 14, minLng: 3, maxLng: 14 }
+
+const markerPos = (lat: number, lng: number) => ({
+  top: `${((BBOX.maxLat - lat) / (BBOX.maxLat - BBOX.minLat)) * 100}%`,
+  left: `${((lng - BBOX.minLng) / (BBOX.maxLng - BBOX.minLng)) * 100}%`,
+})
+
+const TAB_MATCH: Record<string, string[]> = {
+  "In Transit": ["In Transit", "En Route to Dropoff", "Searching", "Open for Bids"],
+  Arrived: [],
+  "Picked Up": ["Picked Up"],
+  "At Risk": [],
+}
+
 export default function LiveTrackerPage() {
-  const [selectedOrder, setSelectedOrder] = useState<string | null>("SM-20491")
+  const [selectedOrder, setSelectedOrder] = useState<string | null>(null)
+  const [activeDeliveryTab, setActiveDeliveryTab] = useState("In Transit")
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [stats, setStats] = useState<any[]>([])
+  const [viewOptions, setViewOptions] = useState<any[]>([])
+  const [deliveryTabs, setDeliveryTabs] = useState<any[]>([])
+  const [activeDeliveries, setActiveDeliveries] = useState<any[]>([])
+
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    fetch("/api/dashboard/live-tracker")
+      .then((r) => r.json())
+      .then((data) => {
+        if (cancelled) return
+        setStats(data.stats || [])
+        setViewOptions(data.viewOptions || [])
+        setDeliveryTabs(data.deliveryTabs || [])
+        setActiveDeliveries(data.activeDeliveries || [])
+        setError(null)
+        setLoading(false)
+        if ((data.activeDeliveries || []).length > 0) setSelectedOrder(data.activeDeliveries[0].id)
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setError("Failed to load live tracker")
+          setLoading(false)
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const matched = TAB_MATCH[activeDeliveryTab] || []
+  const shownDeliveries = matched.length === 0
+    ? activeDeliveries
+    : activeDeliveries.filter((d) => matched.includes(d.status))
+
+  const selectedDelivery = activeDeliveries.find((d) => d.id === selectedOrder) || null
+  const mapDeliveries = activeDeliveries.filter((d) => d.lat != null && d.lng != null)
 
   return (
     <div className="flex h-full relative">
@@ -88,21 +109,19 @@ export default function LiveTrackerPage() {
             <button className="text-[10px] font-semibold text-sendme hover:text-sendme-dark">Reset</button>
           </div>
 
-          {/* View */}
           <div className="mb-5">
             <p className="text-[10px] font-semibold text-text-muted uppercase tracking-wider mb-2">View</p>
             <div className="space-y-2">
-              {viewOptions.map((opt) => (
+              {viewOptions.map((opt, i) => (
                 <label key={opt.label} className="flex items-center gap-2.5 cursor-pointer group">
-                  <input type="radio" name="view" defaultChecked={opt.checked} className="w-3.5 h-3.5 text-sendme border-border-default focus:ring-sendme/20" />
+                  <input type="radio" name="view" defaultChecked={i === 0} className="w-3.5 h-3.5 text-sendme border-border-default focus:ring-sendme/20" />
                   <span className="text-xs text-text-primary group-hover:text-sendme transition-colors flex-1">{opt.label}</span>
-                  {opt.count && <span className="text-[10px] text-text-muted">{opt.count.toLocaleString()}</span>}
+                  {opt.count != null && <span className="text-[10px] text-text-muted">{opt.count.toLocaleString()}</span>}
                 </label>
               ))}
             </div>
           </div>
 
-          {/* Delivery Status */}
           <div className="mb-5">
             <p className="text-[10px] font-semibold text-text-muted uppercase tracking-wider mb-2">Delivery Status</p>
             <div className="space-y-2">
@@ -115,7 +134,6 @@ export default function LiveTrackerPage() {
             </div>
           </div>
 
-          {/* Vehicle Type */}
           <div className="mb-5">
             <p className="text-[10px] font-semibold text-text-muted uppercase tracking-wider mb-2">Vehicle Type</p>
             <button className="w-full flex items-center justify-between bg-white border border-border-default rounded-lg px-3 py-2 text-xs text-text-primary hover:bg-surface-hover transition-colors">
@@ -123,7 +141,6 @@ export default function LiveTrackerPage() {
             </button>
           </div>
 
-          {/* Delivery Type */}
           <div className="mb-5">
             <p className="text-[10px] font-semibold text-text-muted uppercase tracking-wider mb-2">Delivery Type</p>
             <button className="w-full flex items-center justify-between bg-white border border-border-default rounded-lg px-3 py-2 text-xs text-text-primary hover:bg-surface-hover transition-colors">
@@ -131,7 +148,6 @@ export default function LiveTrackerPage() {
             </button>
           </div>
 
-          {/* More Filters */}
           <div className="mb-4">
             <p className="text-[10px] font-semibold text-text-muted uppercase tracking-wider mb-2">More Filters</p>
             <button className="flex items-center gap-1.5 text-xs font-medium text-sendme hover:text-sendme-dark transition-colors">
@@ -140,7 +156,7 @@ export default function LiveTrackerPage() {
           </div>
 
           <p className="text-[10px] text-text-muted">
-            Showing results for <span className="font-semibold text-sendme">Lagos, Nigeria</span>
+            Tracking <span className="font-semibold text-sendme">{activeDeliveries.length}</span> active {activeDeliveries.length === 1 ? "delivery" : "deliveries"}
           </p>
         </div>
       </div>
@@ -166,26 +182,28 @@ export default function LiveTrackerPage() {
             <span className="absolute top-[50%] left-[40%] text-[10px] text-text-secondary/60 font-medium">Yaba</span>
             <span className="absolute top-[65%] left-[35%] text-[10px] text-text-secondary/60 font-medium">Surulere</span>
             <span className="absolute top-[80%] left-[25%] text-[10px] text-text-secondary/60 font-medium">Ikorodu</span>
-            <span className="absolute top-[45%] right-[15%] text-[10px] text-text-secondary/60 font-medium">Lagos Lagoon</span>
-            <div className="absolute top-[20%] left-[35%] w-7 h-7 bg-sendme rounded-full flex items-center justify-center shadow-lg cursor-pointer hover:scale-110 transition-transform" onClick={() => setSelectedOrder("SM-20491")}>
-              <Truck size={12} className="text-white" />
-            </div>
-            <div className="absolute top-[40%] left-[25%] w-6 h-6 bg-sendme/70 rounded-full flex items-center justify-center cursor-pointer hover:scale-110 transition-transform">
-              <Car size={10} className="text-white" />
-            </div>
-            <div className="absolute top-[55%] left-[45%] w-6 h-6 bg-info rounded-full flex items-center justify-center cursor-pointer hover:scale-110 transition-transform">
-              <Truck size={10} className="text-white" />
-            </div>
-            <div className="absolute top-[30%] right-[30%] w-6 h-6 bg-warning rounded-full flex items-center justify-center cursor-pointer hover:scale-110 transition-transform">
-              <Truck size={10} className="text-white" />
-            </div>
-            <div className="absolute top-[70%] left-[50%] w-5 h-5 bg-sendme/50 rounded-full flex items-center justify-center cursor-pointer hover:scale-110 transition-transform" />
-            <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 800 500">
-              <path d="M280,100 Q300,150 350,180 T400,220" stroke="#7c3aed" strokeWidth="2.5" fill="none" strokeDasharray="6,3" />
-            </svg>
-            <div className="absolute top-[18%] left-[42%] bg-white border border-border-default rounded-lg px-2.5 py-1 shadow-md">
-              <p className="text-[10px] font-bold text-text-primary">SM-20491</p>
-            </div>
+
+            {mapDeliveries.map((d) => (
+              <div
+                key={d.id}
+                style={markerPos(d.lat, d.lng)}
+                className={`absolute w-7 h-7 -translate-x-1/2 -translate-y-1/2 rounded-full flex items-center justify-center shadow-lg cursor-pointer z-10 transition-transform hover:scale-110 ${selectedOrder === d.id ? "bg-sendme ring-2 ring-sendme/30" : "bg-sendme/70"}`}
+                onClick={() => setSelectedOrder(d.id)}
+                title={`${d.id} · ${d.status}`}
+              >
+                <Truck size={12} className="text-white" />
+              </div>
+            ))}
+
+            {selectedDelivery && selectedDelivery.lat != null && selectedDelivery.lng != null && (
+              <div
+                style={markerPos(selectedDelivery.lat, selectedDelivery.lng)}
+                className="absolute -translate-x-1/2 -translate-y-[150%] bg-white border border-border-default rounded-lg px-2.5 py-1 shadow-md z-20"
+              >
+                <p className="text-[10px] font-bold text-text-primary">{selectedDelivery.id}</p>
+                <p className="text-[9px] text-text-muted">{selectedDelivery.status}</p>
+              </div>
+            )}
           </div>
         </div>
 
@@ -198,14 +216,13 @@ export default function LiveTrackerPage() {
           </button>
         </div>
 
-        <div className="absolute top-4 right-[140px] flex flex-col gap-1 z-10">
-          <button className="bg-white border border-border-default rounded-lg w-8 h-8 flex items-center justify-center shadow-sm hover:bg-surface-hover transition-colors">
-            <Plus size={14} className="text-text-muted" />
-          </button>
-          <button className="bg-white border border-border-default rounded-lg w-8 h-8 flex items-center justify-center shadow-sm hover:bg-surface-hover transition-colors">
-            <Minus size={14} className="text-text-muted" />
-          </button>
-        </div>
+        {selectedOrder && (
+          <TrackerDetail
+            orderId={selectedOrder}
+            delivery={selectedDelivery}
+            onClose={() => setSelectedOrder(null)}
+          />
+        )}
 
         <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-white border border-border-default rounded-xl px-5 py-2.5 shadow-sm flex items-center gap-5 z-10">
           {vehicleTypes.map((v) => (
@@ -222,10 +239,6 @@ export default function LiveTrackerPage() {
             </div>
           ))}
         </div>
-
-        {selectedOrder && (
-          <TrackerDetail orderId={selectedOrder} onClose={() => setSelectedOrder(null)} />
-        )}
       </div>
 
       {/* Right Sidebar - Active Deliveries */}
@@ -233,14 +246,15 @@ export default function LiveTrackerPage() {
         <div className="px-4 pt-4 pb-2">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-sm font-semibold text-text-primary">Active Deliveries</h3>
-            <button className="text-[10px] font-semibold text-sendme hover:text-sendme-dark">View All</button>
+            <span className="text-[10px] font-semibold text-sendme hover:text-sendme-dark cursor-pointer">View All</span>
           </div>
           <div className="flex gap-0 border-b border-border-light">
             {deliveryTabs.map((tab) => (
               <button
                 key={tab.name}
+                onClick={() => setActiveDeliveryTab(tab.name)}
                 className={`px-2.5 py-2 text-[10px] font-medium whitespace-nowrap border-b-2 transition-colors ${
-                  tab.active
+                  activeDeliveryTab === tab.name
                     ? "border-sendme text-sendme"
                     : "border-transparent text-text-muted hover:text-text-primary"
                 }`}
@@ -251,45 +265,67 @@ export default function LiveTrackerPage() {
           </div>
         </div>
 
+        <div className="px-4 pt-3 text-xs font-semibold text-text-primary">Stats</div>
+        <div className="grid grid-cols-2 gap-2 px-4 pt-2">
+          {stats.slice(0, 2).map((s) => {
+            const Icon = statIcons[s.icon] || Truck
+            return (
+              <Card key={s.label} className="p-2.5 min-w-0 overflow-hidden">
+                <div className="flex items-center gap-1.5 mb-1">
+                  <Icon size={12} className={s.color || "text-sendme"} />
+                  <p className="text-[9px] text-text-muted truncate">{s.label}</p>
+                </div>
+                <p className="text-sm font-bold text-text-primary truncate" title={String(s.value)}>{String(s.value)}</p>
+              </Card>
+            )
+          })}
+        </div>
+
         <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
-          {activeDeliveries.map((d) => (
-            <div
-              key={d.id}
-              onClick={() => setSelectedOrder(d.id)}
-              className={`p-3 rounded-xl border transition-colors cursor-pointer ${
-                selectedOrder === d.id
-                  ? "border-sendme bg-sendme-50/30"
-                  : "border-border-light hover:border-border-default"
-              }`}
-            >
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold text-text-primary">{d.id}</span>
-                  <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${d.statusColor}`}>{d.status}</span>
-                </div>
-                <span className="text-[10px] text-text-muted">{d.time}</span>
-              </div>
-              <div className="space-y-1 mb-2.5">
-                <div className="flex items-center gap-1.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-sendme shrink-0" />
-                  <p className="text-[11px] text-text-secondary truncate">{d.from}</p>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-danger shrink-0" />
-                  <p className="text-[11px] text-text-secondary truncate">{d.to}</p>
-                </div>
-              </div>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="w-5 h-5 bg-sendme-50 rounded-full flex items-center justify-center text-sendme text-[8px] font-bold">
-                    {d.driver.charAt(0)}
+          {error ? (
+            <p className="text-xs text-danger">{error}</p>
+          ) : !loading && shownDeliveries.length === 0 ? (
+            <p className="text-xs text-text-muted text-center py-8">No active deliveries{` for "${activeDeliveryTab}"`}.</p>
+          ) : (
+            shownDeliveries.map((d) => (
+              <div
+                key={d.id}
+                onClick={() => setSelectedOrder(d.id)}
+                className={`p-3 rounded-xl border transition-colors cursor-pointer ${
+                  selectedOrder === d.id
+                    ? "border-sendme bg-sendme-50/30"
+                    : "border-border-light hover:border-border-default"
+                }`}
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-text-primary">{d.id}</span>
+                    <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${d.statusColor}`}>{d.status}</span>
                   </div>
-                  <span className="text-[10px] text-text-muted">{d.driver} • {d.vehicle}</span>
+                  <span className="text-[10px] text-text-muted">{d.time}</span>
                 </div>
-                <span className="text-[10px] font-semibold text-sendme">ETA {d.eta}</span>
+                <div className="space-y-1 mb-2.5">
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-sendme shrink-0" />
+                    <p className="text-[11px] text-text-secondary truncate">{d.from}</p>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-danger shrink-0" />
+                    <p className="text-[11px] text-text-secondary truncate">{d.to}</p>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-5 h-5 bg-sendme-50 rounded-full flex items-center justify-center text-sendme text-[8px] font-bold">
+                      {d.driver ? d.driver.charAt(0) : "?"}
+                    </div>
+                    <span className="text-[10px] text-text-muted truncate">{d.driver} • {d.vehicle}</span>
+                  </div>
+                  <span className="text-[10px] font-semibold text-sendme">{d.eta}</span>
+                </div>
               </div>
-            </div>
-          ))}
+            ))
+          )}
         </div>
       </div>
     </div>

@@ -9,7 +9,6 @@ const DEFAULT_PRICING = {
   perKm: { bicycle: 200, motorcycle: 400, car: 600, truck: 1200 },
   perMinute: { bicycle: 10, motorcycle: 18, car: 28, truck: 42 },
   urgencyMultiplier: { normal: 1.0, fast: 1.2, immediate: 1.4, express: 1.7 },
-  minimumFare: { bicycle: 500, motorcycle: 800, car: 1200, truck: 2400 },
   vehicleSpeedKmh: { bicycle: 12, motorcycle: 25, car: 20, truck: 16 },
   pickupBufferMin: 4,
   dropoffBufferMin: 4,
@@ -24,7 +23,6 @@ function isValidConfig(cfg: any): boolean {
   for (const v of VEHICLES) {
     if (typeof cfg.perKm?.[v] !== "number" || cfg.perKm[v] < 0) return false;
     if (typeof cfg.perMinute?.[v] !== "number" || cfg.perMinute[v] < 0) return false;
-    if (typeof cfg.minimumFare?.[v] !== "number" || cfg.minimumFare[v] < 0) return false;
     // Optional: vehicle speeds (km/h) — positive only
     if (cfg.vehicleSpeedKmh?.[v] !== undefined && (typeof cfg.vehicleSpeedKmh[v] !== "number" || cfg.vehicleSpeedKmh[v] <= 0)) return false;
   }
@@ -80,6 +78,10 @@ export async function PUT(req: NextRequest) {
     }
 
     const { config } = await req.json();
+    // Minimum fare is no longer part of the pricing model (price is set by the
+    // rate card and, where applicable, bidders). Strip it so a stale value in
+    // the stored JSON can never be reintroduced.
+    if (config && typeof config === "object") delete config.minimumFare;
     if (!isValidConfig(config)) {
       return NextResponse.json({ error: "Invalid pricing config shape" }, { status: 400 });
     }

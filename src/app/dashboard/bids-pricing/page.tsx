@@ -195,10 +195,6 @@ function PriceControlView({ onSelect, showCreate, onCreateHandled }: { onSelect:
     motorcycle_per_min: '',
     car_per_min: '',
     truck_per_min: '',
-    bicycle_min_fare: '',
-    motorcycle_min_fare: '',
-    car_min_fare: '',
-    truck_min_fare: '',
   })
 
   const fetchStates = useCallback(async () => {
@@ -236,12 +232,6 @@ function PriceControlView({ onSelect, showCreate, onCreateHandled }: { onSelect:
           car: Number(form.car_per_min) || null,
           truck: Number(form.truck_per_min) || null,
         },
-        minimum_fare: {
-          bicycle: Number(form.bicycle_min_fare) || null,
-          motorcycle: Number(form.motorcycle_min_fare) || null,
-          car: Number(form.car_min_fare) || null,
-          truck: Number(form.truck_min_fare) || null,
-        },
       }
       const method = editingState ? 'PUT' : 'POST'
       const res = await fetch('/api/admin/state-pricing', {
@@ -253,7 +243,7 @@ function PriceControlView({ onSelect, showCreate, onCreateHandled }: { onSelect:
       if (data.error) throw new Error(data.error)
       setShowAddModal(false)
       setEditingState(null)
-      setForm({ state: '', label: '', base_fare: '', bicycle_per_km: '', motorcycle_per_km: '', car_per_km: '', truck_per_km: '', bicycle_per_min: '', motorcycle_per_min: '', car_per_min: '', truck_per_min: '', bicycle_min_fare: '', motorcycle_min_fare: '', car_min_fare: '', truck_min_fare: '' })
+      setForm({ state: '', label: '', base_fare: '', bicycle_per_km: '', motorcycle_per_km: '', car_per_km: '', truck_per_km: '', bicycle_per_min: '', motorcycle_per_min: '', car_per_min: '', truck_per_min: '' })
       fetchStates()
     } catch (e: any) {
       alert('Error: ' + e.message)
@@ -301,10 +291,6 @@ function PriceControlView({ onSelect, showCreate, onCreateHandled }: { onSelect:
       motorcycle_per_min: s.per_minute?.motorcycle?.toString() || '',
       car_per_min: s.per_minute?.car?.toString() || '',
       truck_per_min: s.per_minute?.truck?.toString() || '',
-      bicycle_min_fare: s.minimum_fare?.bicycle?.toString() || '',
-      motorcycle_min_fare: s.minimum_fare?.motorcycle?.toString() || '',
-      car_min_fare: s.minimum_fare?.car?.toString() || '',
-      truck_min_fare: s.minimum_fare?.truck?.toString() || '',
     })
     setShowAddModal(true)
   }
@@ -386,7 +372,7 @@ function PriceControlView({ onSelect, showCreate, onCreateHandled }: { onSelect:
 
       <div className="flex items-center justify-between">
         <p className="text-xs text-text-muted">Per-kilometre rates by state. States without pricing use the global fallback.</p>
-        <button onClick={() => { setEditingState(null); setForm({ state: '', label: '', base_fare: '', bicycle_per_km: '', motorcycle_per_km: '', car_per_km: '', truck_per_km: '', bicycle_per_min: '', motorcycle_per_min: '', car_per_min: '', truck_per_min: '', bicycle_min_fare: '', motorcycle_min_fare: '', car_min_fare: '', truck_min_fare: '' }); setShowAddModal(true) }} className="flex items-center gap-1.5 bg-sendme text-white px-3 py-1.5 rounded-lg text-[11px] font-semibold"><Plus size={14}/> Add State</button>
+        <button onClick={() => { setEditingState(null); setForm({ state: '', label: '', base_fare: '', bicycle_per_km: '', motorcycle_per_km: '', car_per_km: '', truck_per_km: '', bicycle_per_min: '', motorcycle_per_min: '', car_per_min: '', truck_per_min: '' }); setShowAddModal(true) }} className="flex items-center gap-1.5 bg-sendme text-white px-3 py-1.5 rounded-lg text-[11px] font-semibold"><Plus size={14}/> Add State</button>
       </div>
 
       {loading ? (
@@ -487,28 +473,7 @@ function PriceControlView({ onSelect, showCreate, onCreateHandled }: { onSelect:
                   </div>
                 </div>
               </div>
-              <div>
-                <p className="text-[10px] font-semibold text-text-muted uppercase tracking-wide mb-2">Minimum Fare (₦)</p>
-                <div className="grid grid-cols-4 gap-2">
-                  <div>
-                    <label className="text-[9px] text-text-muted">Bicycle</label>
-                    <input value={form.bicycle_min_fare} onChange={e => setForm(f => ({ ...f, bicycle_min_fare: e.target.value }))} className="w-full mt-1 px-2 py-1.5 border border-border-default rounded-lg text-xs" type="number" placeholder="Optional" />
-                  </div>
-                  <div>
-                    <label className="text-[9px] text-text-muted">Motorcycle</label>
-                    <input value={form.motorcycle_min_fare} onChange={e => setForm(f => ({ ...f, motorcycle_min_fare: e.target.value }))} className="w-full mt-1 px-2 py-1.5 border border-border-default rounded-lg text-xs" type="number" placeholder="Optional" />
-                  </div>
-                  <div>
-                    <label className="text-[9px] text-text-muted">Car</label>
-                    <input value={form.car_min_fare} onChange={e => setForm(f => ({ ...f, car_min_fare: e.target.value }))} className="w-full mt-1 px-2 py-1.5 border border-border-default rounded-lg text-xs" type="number" placeholder="Optional" />
-                  </div>
-                  <div>
-                    <label className="text-[9px] text-text-muted">Truck</label>
-                    <input value={form.truck_min_fare} onChange={e => setForm(f => ({ ...f, truck_min_fare: e.target.value }))} className="w-full mt-1 px-2 py-1.5 border border-border-default rounded-lg text-xs" type="number" placeholder="Optional" />
-                  </div>
-                </div>
-              </div>
-              <p className="text-[9px] text-text-muted">Per-minute rates are configured globally. Only per-km and minimum fare are set per state.</p>
+              <p className="text-[9px] text-text-muted">Per-minute rates are configured globally. Only base fare and per-km rates are set per state.</p>
             </div>
             <div className="flex justify-end gap-2 pt-2">
               <button onClick={() => { setShowAddModal(false); setEditingState(null) }} className="px-3 py-1.5 text-[11px] font-medium border border-border-default rounded-lg">Cancel</button>
@@ -558,18 +523,6 @@ function PriceControlView({ onSelect, showCreate, onCreateHandled }: { onSelect:
                   <div key={v.key}>
                     <label className="text-[10px] text-text-muted font-medium">{v.label} /min</label>
                     <input value={globalConfig.perMinute?.[v.key] ?? ''} onChange={e => updateGlobal(`perMinute.${v.key}`, e.target.value)} className="w-full mt-1 px-3 py-1.5 border border-border-default rounded-lg text-xs" type="number" />
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <p className="text-[10px] font-semibold text-text-muted uppercase tracking-wide mb-2">Minimum Fare (₦)</p>
-              <div className="grid grid-cols-4 gap-3">
-                {vehicles.map(v => (
-                  <div key={v.key}>
-                    <label className="text-[10px] text-text-muted font-medium">{v.label} min</label>
-                    <input value={globalConfig.minimumFare?.[v.key] ?? ''} onChange={e => updateGlobal(`minimumFare.${v.key}`, e.target.value)} className="w-full mt-1 px-3 py-1.5 border border-border-default rounded-lg text-xs" type="number" />
                   </div>
                 ))}
               </div>

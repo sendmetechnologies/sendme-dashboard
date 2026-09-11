@@ -11,6 +11,18 @@ import {
 
 const topTabs = ["Bid Activity", "Price Control", "Route Pricing", "Overrides", "Pricing Logs"]
 
+// Canonical Nigerian states (+ FCT). Used as the state-pricing key so it always
+// matches the app's detected state names exactly (the app detects title-case
+// names like "Benue"); a free-text field previously let admins store "BENUE",
+// which silently failed to match and fell back to global pricing.
+const NIGERIAN_STATES = [
+  "Abia", "Adamawa", "Akwa Ibom", "Anambra", "Bauchi", "Bayelsa", "Benue", "Borno",
+  "Cross River", "Delta", "Ebonyi", "Edo", "Ekiti", "Enugu", "FCT - Abuja", "Gombe",
+  "Imo", "Jigawa", "Kaduna", "Kano", "Katsina", "Kebbi", "Kogi", "Kwara", "Lagos",
+  "Nasarawa", "Niger", "Ogun", "Ondo", "Osun", "Oyo", "Plateau", "Rivers", "Sokoto",
+  "Taraba", "Yobe", "Zamfara",
+]
+
 // ====== BID ACTIVITY (live from DB) ======
 
 // ====== PRICE CONTROL ======
@@ -434,12 +446,20 @@ function PriceControlView({ onSelect, showCreate, onCreateHandled }: { onSelect:
             <div className="space-y-3">
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-[10px] text-text-muted font-medium">State Key *</label>
-                  <input disabled={!!editingState} value={form.state} onChange={e => setForm(f => ({ ...f, state: e.target.value }))} className="w-full mt-1 px-3 py-1.5 border border-border-default rounded-lg text-xs" placeholder="e.g. Lagos" />
+                  <label className="text-[10px] text-text-muted font-medium">State *</label>
+                  <select
+                    disabled={!!editingState}
+                    value={form.state}
+                    onChange={e => setForm(f => ({ ...f, state: e.target.value, label: e.target.value }))}
+                    className="w-full mt-1 px-3 py-1.5 border border-border-default rounded-lg text-xs disabled:opacity-60"
+                  >
+                    <option value="">Select a state…</option>
+                    {NIGERIAN_STATES.map(s => (<option key={s} value={s}>{s}</option>))}
+                  </select>
                 </div>
                 <div>
                   <label className="text-[10px] text-text-muted font-medium">Display Label *</label>
-                  <input value={form.label} onChange={e => setForm(f => ({ ...f, label: e.target.value }))} className="w-full mt-1 px-3 py-1.5 border border-border-default rounded-lg text-xs" placeholder="e.g. Lagos State" />
+                  <input value={form.label} onChange={e => setForm(f => ({ ...f, label: e.target.value }))} className="w-full mt-1 px-3 py-1.5 border border-border-default rounded-lg text-xs" placeholder="e.g. Benue" />
                 </div>
               </div>
               <div>

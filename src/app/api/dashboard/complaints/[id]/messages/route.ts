@@ -70,7 +70,7 @@ export async function POST(
     })
     .eq("id", id);
 
-  // Send push + in-app notification to the user
+  // Send push notification to the user (in-app row is created by a DB trigger)
   try {
     // 1. Look up user's active push token
     const { data: tokenRow } = await supabaseAdmin
@@ -82,26 +82,11 @@ export async function POST(
       .limit(1)
       .maybeSingle();
 
-    // 2. Insert in-app message for the bell icon
+    // 2. Send push notification if token exists
+    // (The DB trigger on complaint_messages creates the in-app notification.)
     const pushTitle = `Admin: ${complaint.subject}`;
     const pushBody = message.trim();
 
-    await supabaseAdmin.from("messages").insert({
-      user_id: complaint.user_id,
-      title: pushTitle,
-      body: pushBody,
-      type: "ADMIN",
-      priority: "HIGH",
-      status: "UNREAD",
-      deep_link: "/profile/complaints",
-      related_id: id,
-      related_type: "complaint",
-      channels: { in_app: true, push: true, email: false },
-      in_app_sent: true,
-      in_app_sent_at: new Date().toISOString(),
-    });
-
-    // 3. Send push notification if token exists
     if (tokenRow?.token) {
       const pushRes = await supabaseAdmin.functions.invoke("send-push-notification", {
         body: {

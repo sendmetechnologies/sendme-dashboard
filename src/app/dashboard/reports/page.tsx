@@ -70,7 +70,7 @@ export default function ReportsPage() {
   ]
 
   return (
-    <div className="p-4 lg:p-6 space-y-4 overflow-y-auto h-full">
+    <div className="space-y-4">
       <div className="flex items-start justify-between mb-2">
         <div>
           <h1 className="text-xl font-bold text-text-primary">Reports & Insights</h1>

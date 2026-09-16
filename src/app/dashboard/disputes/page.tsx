@@ -290,7 +290,7 @@ export default function DisputesPage() {
   return (
     <div className="flex h-full">
       {/* Main Content */}
-      <div className="flex-1 flex flex-col min-w-0 p-4 lg:p-6 overflow-y-auto">
+      <div className="flex-1 flex flex-col min-w-0 min-h-0 p-4 lg:p-6 overflow-y-auto">
         {/* Header */}
         <div className="flex items-start justify-between mb-4">
           <div>

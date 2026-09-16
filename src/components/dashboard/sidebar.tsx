@@ -6,7 +6,7 @@ import {
   LayoutDashboard, Package, MapPin, Calendar, Users, Building2,
   Car, DollarSign, Wallet, AlertCircle, CheckCircle, BarChart3, Bell,
   Settings, ChevronLeft, ChevronRight, Send, HelpCircle, ArrowLeftRight,
-  Megaphone, Trophy
+  Megaphone, Trophy, Mail
 } from "lucide-react"
 import { useState, useEffect } from "react"
 
@@ -68,6 +68,7 @@ const navSections: NavSection[] = [
     items: [
       { name: "Reports & Insights", href: "/dashboard/reports", icon: BarChart3 },
       { name: "Notifications", href: "/dashboard/notifications", icon: Bell },
+      { name: "Email Campaigns", href: "/dashboard/email-campaigns", icon: Mail },
     ],
   },
   {

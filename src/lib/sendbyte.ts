@@ -13,6 +13,9 @@ interface SendByteResponse {
 
 const API_BASE = "https://api.sendbyte.africa/v1";
 
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://lglmkxczxeorxhzwcdjv.supabase.co";
+const LOGO_URL = `${SUPABASE_URL}/storage/v1/object/public/order-photos/branding/sendme-icon.png`;
+
 export async function sendEmail({
   to,
   subject,
@@ -64,32 +67,43 @@ export async function sendEmail({
 export function buildEmailTemplate(title: string, body: string): string {
   return `
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f4f4f4; margin: 0; padding: 0; }
-    .container { max-width: 560px; margin: 40px auto; background: #fff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
-    .header { background: #158A5E; padding: 32px 24px; text-align: center; }
-    .header h1 { color: #fff; margin: 0; font-size: 22px; font-weight: 700; }
-    .content { padding: 32px 24px; color: #333; line-height: 1.6; }
-    .footer { background: #fafafa; padding: 24px; text-align: center; color: #888; font-size: 12px; }
-    .badge { display: inline-block; padding: 6px 16px; border-radius: 20px; font-size: 13px; font-weight: 600; }
-    .badge-success { background: #E8F5E9; color: #158A5E; }
+    body { margin: 0; padding: 0; background: #F1F5F9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #0F172A; }
+    .wrapper { width: 100%; background: #F1F5F9; padding: 32px 16px; }
+    .container { max-width: 600px; margin: 0 auto; background: #FFFFFF; border-radius: 20px; overflow: hidden; box-shadow: 0 10px 40px rgba(15, 23, 42, 0.08); }
+    .header { padding: 28px 24px 20px; text-align: center; border-bottom: 1px solid #EEF2F6; }
+    .logo { height: 56px; width: auto; display: block; margin: 0 auto; border: 0; border-radius: 14px; }
+    .accent { height: 4px; background: linear-gradient(90deg, #158A5E, #22C55E); }
+    .content { padding: 32px 28px; line-height: 1.65; color: #334155; }
+    .title { font-size: 20px; font-weight: 700; color: #0F172A; margin: 0 0 16px; }
+    .content p { margin: 0 0 16px; }
+    .footer { padding: 24px 28px; background: #F8FAFC; text-align: center; border-top: 1px solid #EEF2F6; }
+    .footer .brand { font-weight: 700; color: #158A5E; margin: 0; font-size: 13px; }
+    .footer .muted { color: #94A3B8; font-size: 12px; margin: 6px 0 0; }
+    .badge { display: inline-block; padding: 6px 16px; border-radius: 999px; font-size: 13px; font-weight: 600; }
+    .badge-success { background: #E8F7EF; color: #158A5E; }
     .badge-error { background: #FFEBEE; color: #C62828; }
   </style>
 </head>
 <body>
-  <div class="container">
-    <div class="header">
-      <h1>SendMe</h1>
-    </div>
-    <div class="content">
-      <h2 style="font-size: 18px; color: #000; margin-bottom: 16px;">${title}</h2>
-      ${body}
-    </div>
-    <div class="footer">
-      &copy; ${new Date().getFullYear()} SendMe Delivery. All rights reserved.
+  <div class="wrapper">
+    <div class="container">
+      <div class="header">
+        <img class="logo" src="${LOGO_URL}" alt="SendMe" />
+      </div>
+      <div class="accent"></div>
+      <div class="content">
+        <h2 class="title">${title}</h2>
+        ${body}
+      </div>
+      <div class="footer">
+        <p class="brand">SendMe</p>
+        <p class="muted">&copy; ${new Date().getFullYear()} SendMe Delivery. All rights reserved.</p>
+      </div>
     </div>
   </div>
 </body>
@@ -389,4 +403,56 @@ export function buildPayoutRejectedEmail(data: {
       <p>Please try again or contact support if you need assistance.</p>
     `),
   };
+}
+
+export function getCampaignFromAddress(senderName: string): string {
+  const email = process.env.SENDBYTE_FROM_EMAIL || "noreply@senndme.com";
+  return `${senderName} <${email}>`;
+}
+
+export function buildCampaignEmailHtml(senderName: string, messageHtml: string): string {
+  const safeSender = senderName
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+  return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body { margin: 0; padding: 0; background: #F1F5F9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #0F172A; }
+    .wrapper { width: 100%; background: #F1F5F9; padding: 32px 16px; }
+    .container { max-width: 600px; margin: 0 auto; background: #FFFFFF; border-radius: 20px; overflow: hidden; box-shadow: 0 10px 40px rgba(15, 23, 42, 0.08); }
+    .header { padding: 28px 24px 20px; text-align: center; border-bottom: 1px solid #EEF2F6; }
+    .logo { height: 56px; width: auto; display: block; margin: 0 auto; border: 0; border-radius: 14px; }
+    .accent { height: 4px; background: linear-gradient(90deg, #158A5E, #22C55E); }
+    .content { padding: 32px 28px; line-height: 1.65; color: #334155; }
+    .from { display: inline-block; background: #E8F7EF; border: 1px solid #D1F0DD; color: #158A5E; border-radius: 999px; padding: 6px 14px; font-size: 13px; font-weight: 600; margin-bottom: 20px; }
+    .content p { margin: 0 0 16px; }
+    .footer { padding: 24px 28px; background: #F8FAFC; text-align: center; border-top: 1px solid #EEF2F6; }
+    .footer .brand { font-weight: 700; color: #158A5E; margin: 0; font-size: 13px; }
+    .footer .muted { color: #94A3B8; font-size: 12px; margin: 6px 0 0; }
+  </style>
+</head>
+<body>
+  <div class="wrapper">
+    <div class="container">
+      <div class="header">
+        <img class="logo" src="${LOGO_URL}" alt="SendMe" />
+      </div>
+      <div class="accent"></div>
+      <div class="content">
+        <div class="from">${safeSender} from SendMe</div>
+        ${messageHtml}
+      </div>
+      <div class="footer">
+        <p class="brand">SendMe</p>
+        <p class="muted">&copy; ${new Date().getFullYear()} SendMe Delivery. All rights reserved.</p>
+      </div>
+    </div>
+  </div>
+</body>
+</html>`;
 }

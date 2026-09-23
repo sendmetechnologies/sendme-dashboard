@@ -5,6 +5,7 @@ import { Card } from "@/components/ui/card"
 import { formatCardValue } from "@/lib/format"
 import { DriverDetail } from "@/components/dashboard/driver-detail"
 import { DriverForm } from "@/components/dashboard/forms"
+import { FilterSelect, StateFilter } from "@/components/dashboard/filters"
 import { OtpUnlockModal } from "@/components/ui/otp-unlock-modal"
 import { useKycUnlock } from "@/hooks/use-kyc-unlock"
 import { usePageRefresh } from "@/hooks/use-page-refresh"
@@ -44,6 +45,8 @@ export default function DriversPage() {
   const [tabCounts, setTabCounts] = useState<Record<string, number>>({})
   const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, totalPages: 1 })
   const [searchQuery, setSearchQuery] = useState("")
+  const [statusFilter, setStatusFilter] = useState("")
+  const [stateFilter, setStateFilter] = useState("")
   const kyc = useKycUnlock()
 
   const fetchData = (page: number, search: string) => {
@@ -52,6 +55,8 @@ export default function DriversPage() {
     params.set("page", String(page))
     params.set("limit", "20")
     if (search) params.set("search", search)
+    if (statusFilter) params.set("status", statusFilter)
+    if (stateFilter) params.set("state", stateFilter)
 
     fetch(`/api/dashboard/drivers?${params.toString()}`)
       .then((r) => r.json())
@@ -74,6 +79,16 @@ export default function DriversPage() {
   const handleSearch = (q: string) => {
     setSearchQuery(q)
     fetchData(1, q)
+  }
+
+  const handleStatusChange = (v: string) => {
+    setStatusFilter(v)
+    fetchData(1, searchQuery)
+  }
+
+  const handleStateChange = (v: string) => {
+    setStateFilter(v)
+    fetchData(1, searchQuery)
   }
 
   const handlePageChange = (page: number) => {
@@ -113,18 +128,19 @@ export default function DriversPage() {
 
           {/* Top Filters */}
           <div className="flex items-center gap-2 flex-wrap">
-            <button className="flex items-center gap-2 bg-white border border-border-default rounded-lg px-3 py-2 text-xs font-medium text-text-primary hover:bg-surface-hover transition-colors">
-              All Status <ChevronDown size={14} className="text-text-muted" />
-            </button>
-            <button className="flex items-center gap-2 bg-white border border-border-default rounded-lg px-3 py-2 text-xs font-medium text-text-primary hover:bg-surface-hover transition-colors">
-              All Cities <ChevronDown size={14} className="text-text-muted" />
-            </button>
-            <button className="flex items-center gap-2 bg-white border border-border-default rounded-lg px-3 py-2 text-xs font-medium text-text-primary hover:bg-surface-hover transition-colors">
-              All Driver Types <ChevronDown size={14} className="text-text-muted" />
-            </button>
-            <button className="flex items-center gap-2 bg-white border border-border-default rounded-lg px-3 py-2 text-xs font-medium text-text-primary hover:bg-surface-hover transition-colors">
-              All Organizations <ChevronDown size={14} className="text-text-muted" />
-            </button>
+            <FilterSelect
+              value={statusFilter}
+              onChange={handleStatusChange}
+              placeholder="All Status"
+              options={[
+                { value: "Approved", label: "Approved" },
+                { value: "Pending Review", label: "Pending Review" },
+                { value: "Rejected", label: "Rejected" },
+                { value: "Suspended", label: "Suspended" },
+                { value: "Deactivated", label: "Deactivated" },
+              ]}
+            />
+            <StateFilter value={stateFilter} onChange={handleStateChange} />
             <div className="flex-1 min-w-[200px] flex items-center gap-2 bg-white border border-border-default rounded-lg px-3 py-2">
               <Search size={14} className="text-text-muted shrink-0" />
               <input

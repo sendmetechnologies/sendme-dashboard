@@ -3,9 +3,10 @@
 import { toast } from "sonner"
 import { useState, useEffect } from "react"
 import { formatCardValue } from "@/lib/format"
+import { EditProfileForm } from "./forms/edit-profile-form"
 import {
   X, Phone, MessageCircle, Package, Clock,
-  Eye, Loader2, AlertTriangle, Trash2, Ban, DollarSign
+  Eye, Loader2, AlertTriangle, Trash2, Ban, DollarSign, Pencil
 } from "lucide-react"
 
 interface SenderDetailProps {
@@ -19,6 +20,7 @@ interface SenderData {
     name: string
     phone: string
     email: string
+    state: string
     avatar: string
     status: string
     statusColor: string
@@ -167,6 +169,7 @@ export function SenderDetail({ senderId, onClose }: SenderDetailProps) {
   const [showCreditModal, setShowCreditModal] = useState(false)
   const [creditAmount, setCreditAmount] = useState("")
   const [creditNote, setCreditNote] = useState("")
+  const [showEdit, setShowEdit] = useState(false)
 
   useEffect(() => {
     if (!senderId) return
@@ -240,6 +243,21 @@ export function SenderDetail({ senderId, onClose }: SenderDetailProps) {
     }
   }
 
+  const handleSave = async (values: Record<string, string>) => {
+    const res = await fetch(`/api/dashboard/senders/${senderId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(values),
+    })
+    const result = await res.json()
+    if (!result.success) throw new Error(result.error || "Failed to save changes")
+    toast.success("Details updated")
+    setShowEdit(false)
+    const r = await fetch(`/api/dashboard/senders/${senderId}`)
+    const updated = await r.json()
+    setData(updated)
+  }
+
   return (
     <div className="w-[340px] bg-white border-l border-border-default flex flex-col shrink-0 h-full overflow-hidden">
       {/* Header */}
@@ -273,6 +291,15 @@ export function SenderDetail({ senderId, onClose }: SenderDetailProps) {
               </>
             ) : null}
           </div>
+          {!loading && data && (
+            <button
+              onClick={() => setShowEdit(true)}
+              className="p-1 text-text-muted hover:text-text-primary transition-colors"
+              title="Edit details"
+            >
+              <Pencil size={14} />
+            </button>
+          )}
           <button onClick={onClose} className="p-1 text-text-muted hover:text-text-primary transition-colors">
             <X size={16} />
           </button>
@@ -404,6 +431,26 @@ export function SenderDetail({ senderId, onClose }: SenderDetailProps) {
             </div>
           )}
         </div>
+      )}
+
+      {showEdit && data && (
+        <EditProfileForm
+          title="Edit Sender Details"
+          fields={[
+            { key: "full_name", label: "Full Name" },
+            { key: "email", label: "Email Address" },
+            { key: "phone", label: "Phone Number" },
+            { key: "state", label: "State" },
+          ]}
+          initialValues={{
+            full_name: data.sender.name === "—" ? "" : data.sender.name,
+            email: data.sender.email === "—" ? "" : data.sender.email,
+            phone: data.sender.phone === "—" ? "" : data.sender.phone,
+            state: data.sender.state || "",
+          }}
+          onSubmit={handleSave}
+          onClose={() => setShowEdit(false)}
+        />
       )}
     </div>
   )

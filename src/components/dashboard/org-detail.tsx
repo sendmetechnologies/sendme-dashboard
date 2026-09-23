@@ -4,10 +4,12 @@ import { toast } from "sonner"
 import { useState, useEffect } from "react"
 import { formatCardValue } from "@/lib/format"
 import { DocumentPreviewModal } from "@/components/ui/document-preview-modal"
+import { EditProfileForm } from "./forms/edit-profile-form"
+import { DocumentUploadButton } from "./document-upload-button"
 import {
   X, CheckCircle, Clock, Package, Users, Edit,
   MessageCircle, Wallet, AlertTriangle, Eye, Building2, FileText,
-  Loader2, DollarSign, Ban, Trash2, Shield
+  Loader2, DollarSign, Ban, Trash2, Shield, Pencil
 } from "lucide-react"
 
 interface OrganizationDetailProps {
@@ -181,11 +183,13 @@ const orgStorageFolderLabels: Record<string, string> = {
   tax_certificate: "Tax Certificate (stored)",
 }
 
-function DocumentsTab({ data, onPreview, kycLocked, onRequestUnlock }: {
+function DocumentsTab({ data, onPreview, kycLocked, onRequestUnlock, orgId, onUploaded }: {
   data: OrgData
   onPreview: (url: string, label: string) => void
   kycLocked?: boolean
   onRequestUnlock?: () => void
+  orgId: string
+  onUploaded: () => void
 }) {
   const docs = Object.entries(data.organization.verificationDocuments || {}).filter(([, v]) => isDocUrl(v))
   const storageDocs = data.storageDocs || []
@@ -198,11 +202,22 @@ function DocumentsTab({ data, onPreview, kycLocked, onRequestUnlock }: {
   return (
     <div className="space-y-5">
       <div>
-        <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center justify-between mb-2 gap-2">
           <h4 className="text-xs font-semibold text-text-primary">Verification Documents</h4>
-          {docs.length > 0 && (
-            <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-surface-secondary text-text-muted">{docs.length}</span>
-          )}
+          <div className="flex items-center gap-1.5 shrink-0">
+            <DocumentUploadButton
+              endpoint={`/api/dashboard/organizations/${orgId}/documents`}
+              docKey="business_registration"
+              label="Business Reg"
+              onUploaded={onUploaded}
+            />
+            <DocumentUploadButton
+              endpoint={`/api/dashboard/organizations/${orgId}/documents`}
+              docKey="tax_certificate"
+              label="Tax Cert"
+              onUploaded={onUploaded}
+            />
+          </div>
         </div>
         {docs.length > 0 ? (
           <div className="space-y-2">
@@ -210,15 +225,8 @@ function DocumentsTab({ data, onPreview, kycLocked, onRequestUnlock }: {
               <DocumentCard key={k} url={v as string} label={docLabels[k] || k.replace(/_/g, " ")} onPreview={onPreview} />
             ))}
           </div>
-        ) : storageDocs.length > 0 ? null : (
-          <div className="flex flex-col items-center justify-center h-40 text-center px-6">
-            <FileText size={24} className="text-text-muted/40 mb-2" />
-            <p className="text-xs text-text-muted">
-              {isIncomplete
-                ? "Registration incomplete — this organization hasn't submitted its verification documents yet"
-                : "No verification documents uploaded by this organization yet"}
-            </p>
-          </div>
+        ) : (
+          <p className="text-[11px] text-text-muted py-2">None uploaded yet</p>
         )}
       </div>
 
@@ -239,6 +247,12 @@ function DocumentsTab({ data, onPreview, kycLocked, onRequestUnlock }: {
             ))}
           </div>
         </div>
+      )}
+
+      {isIncomplete && (
+        <p className="text-[10px] text-text-muted bg-surface-secondary rounded-lg p-2.5">
+          Registration incomplete — you can upload verification documents on behalf of this organization.
+        </p>
       )}
     </div>
   )
@@ -426,6 +440,7 @@ export function OrganizationDetail({ orgId, onClose, kycLocked = false, onReques
   const [showRejectModal, setShowRejectModal] = useState(false)
   const [rejectReason, setRejectReason] = useState("")
   const [previewDoc, setPreviewDoc] = useState<{ url: string; label: string } | null>(null)
+  const [showEdit, setShowEdit] = useState(false)
 
   const handlePreview = (url: string, label: string) => setPreviewDoc({ url, label })
 
@@ -529,6 +544,19 @@ export function OrganizationDetail({ orgId, onClose, kycLocked = false, onReques
 
   const isVerified = data?.organization?.statusRaw === "verified"
 
+  const handleSave = async (values: Record<string, string>) => {
+    const res = await fetch(`/api/dashboard/organizations/${orgId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(values),
+    })
+    const result = await res.json()
+    if (!result.success) throw new Error(result.error || "Failed to save changes")
+    toast.success("Details updated")
+    setShowEdit(false)
+    fetchData()
+  }
+
   return (
     <div className="w-[340px] bg-white border-l border-border-default flex flex-col shrink-0 h-full overflow-hidden">
       {/* Header */}
@@ -562,6 +590,15 @@ export function OrganizationDetail({ orgId, onClose, kycLocked = false, onReques
               </>
             ) : null}
           </div>
+          {!loading && data && (
+            <button
+              onClick={() => setShowEdit(true)}
+              className="p-1 text-text-muted hover:text-text-primary transition-colors"
+              title="Edit details"
+            >
+              <Pencil size={14} />
+            </button>
+          )}
           <button onClick={onClose} className="p-1 text-text-muted hover:text-text-primary transition-colors">
             <X size={16} />
           </button>
@@ -597,7 +634,7 @@ export function OrganizationDetail({ orgId, onClose, kycLocked = false, onReques
         ) : (
           <>
             {activeTab === "Overview" && <OverviewTab data={data} onPreview={handlePreview} kycLocked={kycLocked} onRequestUnlock={onRequestUnlock} />}
-            {activeTab === "Documents" && <DocumentsTab data={data} onPreview={handlePreview} kycLocked={kycLocked} onRequestUnlock={onRequestUnlock} />}
+            {activeTab === "Documents" && <DocumentsTab data={data} onPreview={handlePreview} kycLocked={kycLocked} onRequestUnlock={onRequestUnlock} orgId={orgId} onUploaded={fetchData} />}
             {activeTab === "Orders" && <OrdersTab data={data} />}
             {activeTab === "Activity" && <ActivityTab />}
           </>
@@ -747,6 +784,30 @@ export function OrganizationDetail({ orgId, onClose, kycLocked = false, onReques
       {/* Document Preview Modal */}
       {previewDoc && (
         <DocumentPreviewModal url={previewDoc.url} label={previewDoc.label} onClose={() => setPreviewDoc(null)} />
+      )}
+
+      {showEdit && data && (
+        <EditProfileForm
+          title="Edit Organization Details"
+          fields={[
+            { key: "business_name", label: "Business Name" },
+            { key: "contact_person_name", label: "Contact Person" },
+            { key: "contact_person_phone", label: "Contact Phone" },
+            { key: "business_email", label: "Business Email" },
+            { key: "city", label: "City" },
+            { key: "state", label: "State" },
+          ]}
+          initialValues={{
+            business_name: data.organization.name === "—" ? "" : data.organization.name,
+            contact_person_name: data.organization.contactName === "—" ? "" : data.organization.contactName,
+            contact_person_phone: data.organization.contactPhone === "—" ? "" : data.organization.contactPhone,
+            business_email: data.organization.contactEmail === "—" ? "" : data.organization.contactEmail,
+            city: data.organization.city === "—" ? "" : data.organization.city,
+            state: data.organization.state === "—" ? "" : data.organization.state,
+          }}
+          onSubmit={handleSave}
+          onClose={() => setShowEdit(false)}
+        />
       )}
     </div>
   )

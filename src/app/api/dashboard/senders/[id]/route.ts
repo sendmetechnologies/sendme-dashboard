@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
+import { getSession } from "@/lib/auth"
 
 export async function GET(
   req: NextRequest,
@@ -77,6 +78,7 @@ export async function GET(
         name: sender.full_name || "—",
         phone: sender.phone || "—",
         email: sender.email || "—",
+        state: sender.state || "",
         avatar: (sender.full_name || "?")[0],
         status: (sender as any).is_suspended ? "Suspended" : "Active",
         statusColor: (sender as any).is_suspended ? "bg-warning-light text-warning" : "bg-sendme-50 text-sendme",
@@ -114,4 +116,36 @@ export async function GET(
     console.error("[Sender Detail] Error:", err)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
+}
+
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const session = await getSession()
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+
+  const { id } = await params
+  const body = await req.json().catch(() => ({}))
+
+  const patch: Record<string, any> = {}
+  if (body.full_name !== undefined) patch.full_name = String(body.full_name).trim()
+  if (body.email !== undefined) patch.email = String(body.email).trim().toLowerCase()
+  if (body.phone !== undefined) patch.phone = String(body.phone).trim()
+  if (body.state !== undefined) patch.state = String(body.state).trim()
+
+  if (Object.keys(patch).length === 0) {
+    return NextResponse.json({ error: "No fields to update" }, { status: 400 })
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from("users")
+    .update(patch)
+    .eq("id", id)
+    .select("id, full_name, phone, email, state")
+    .single()
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  return NextResponse.json({ success: true, sender: data })
 }

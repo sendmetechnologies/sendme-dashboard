@@ -13,11 +13,12 @@ const topTabs = ["Bid Activity", "Price Control", "Route Pricing", "Overrides", 
 
 // Canonical Nigerian states (+ FCT). Used as the state-pricing key so it always
 // matches the app's detected state names exactly (the app detects title-case
-// names like "Benue"); a free-text field previously let admins store "BENUE",
-// which silently failed to match and fell back to global pricing.
+// names like "Benue" and the capital as "FCT"). A free-text field previously
+// let admins store "BENUE" or "FCT - Abuja", which silently failed to match and
+// fell back to global pricing.
 const NIGERIAN_STATES = [
   "Abia", "Adamawa", "Akwa Ibom", "Anambra", "Bauchi", "Bayelsa", "Benue", "Borno",
-  "Cross River", "Delta", "Ebonyi", "Edo", "Ekiti", "Enugu", "FCT - Abuja", "Gombe",
+  "Cross River", "Delta", "Ebonyi", "Edo", "Ekiti", "Enugu", "FCT", "Gombe",
   "Imo", "Jigawa", "Kaduna", "Kano", "Katsina", "Kebbi", "Kogi", "Kwara", "Lagos",
   "Nasarawa", "Niger", "Ogun", "Ondo", "Osun", "Oyo", "Plateau", "Rivers", "Sokoto",
   "Taraba", "Yobe", "Zamfara",

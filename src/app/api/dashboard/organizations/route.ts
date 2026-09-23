@@ -8,6 +8,8 @@ export async function GET(req: NextRequest) {
     const limit = Math.min(50, Math.max(1, parseInt(searchParams.get("limit") || "20")))
     const statusFilter = searchParams.get("status") || null
     const search = searchParams.get("search") || null
+    const state = searchParams.get("state") || null
+    const industry = searchParams.get("industry") || null
     const offset = (page - 1) * limit
 
     // ── Total orgs from users table ──
@@ -65,10 +67,18 @@ export async function GET(req: NextRequest) {
           q = q.eq("organization_profiles.is_verified", true)
         } else if (statusFilter === "Unverified") {
           q = q.or("organization_profiles.is_verified.eq.false,organization_profiles.is_verified.is.null")
+        } else if (statusFilter === "Suspended") {
+          q = q.eq("organization_profiles.is_suspended", true)
         }
       }
+      if (state) {
+        q = q.eq("organization_profiles.state", state)
+      }
+      if (industry) {
+        q = q.eq("organization_profiles.industry", industry)
+      }
       if (search) {
-        q = q.or(`full_name.ilike.%${search}%,phone.ilike.%${search}%,email.ilike.%${search}%`)
+        q = q.or(`full_name.ilike.%${search}%,phone.ilike.%${search}%,email.ilike.%${search}%,organization_profiles.business_name.ilike.%${search}%,organization_profiles.contact_person_name.ilike.%${search}%`)
       }
       return q.range(offset, offset + limit - 1)
     }
@@ -208,7 +218,20 @@ export async function GET(req: NextRequest) {
       }
     })
 
-    const totalPages = Math.ceil((totalOrgs || 0) / limit)
+    // ── Filtered count for pagination (mirrors the list filters) ──
+    let countQuery = supabaseAdmin
+      .from("users")
+      .select("id, organization_profiles(is_verified, is_suspended, state, industry)", { count: "exact", head: true })
+      .eq("role", "organization")
+    if (statusFilter && statusFilter !== "All Organizations") {
+      if (statusFilter === "Verified") countQuery = countQuery.eq("organization_profiles.is_verified", true)
+      else if (statusFilter === "Unverified") countQuery = countQuery.or("organization_profiles.is_verified.eq.false,organization_profiles.is_verified.is.null")
+      else if (statusFilter === "Suspended") countQuery = countQuery.eq("organization_profiles.is_suspended", true)
+    }
+    if (state) countQuery = countQuery.eq("organization_profiles.state", state)
+    if (industry) countQuery = countQuery.eq("organization_profiles.industry", industry)
+    if (search) countQuery = countQuery.or(`full_name.ilike.%${search}%,phone.ilike.%${search}%,email.ilike.%${search}%,organization_profiles.business_name.ilike.%${search}%,organization_profiles.contact_person_name.ilike.%${search}%`)
+    const { count: filteredTotal } = await countQuery
 
     return NextResponse.json({
       stats: {
@@ -221,7 +244,7 @@ export async function GET(req: NextRequest) {
       },
       tabCounts,
       organizations: formatted,
-      pagination: { page, limit, total: totalOrgs || 0, totalPages },
+      pagination: { page, limit, total: filteredTotal || 0, totalPages: Math.ceil((filteredTotal || 0) / limit) },
     })
   } catch (err) {
     console.error("[Organizations] Error:", err)

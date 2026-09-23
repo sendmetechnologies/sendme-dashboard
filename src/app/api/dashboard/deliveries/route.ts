@@ -8,6 +8,11 @@ export async function GET(req: NextRequest) {
     const limit = Math.min(50, Math.max(1, parseInt(searchParams.get("limit") || "20")))
     const statusFilter = searchParams.get("status") || null
     const search = searchParams.get("search") || null
+    const vehicleType = searchParams.get("vehicle_type") || null
+    const paymentMethod = searchParams.get("payment_method") || null
+    const state = searchParams.get("state") || null
+    const from = searchParams.get("from") || null
+    const to = searchParams.get("to") || null
     const offset = (page - 1) * limit
 
     // ── Status tab counts ──
@@ -65,38 +70,55 @@ export async function GET(req: NextRequest) {
     }
 
     // ── Build query ──
-    let query = supabaseAdmin
-      .from("orders")
-      .select(`
-        id, status, final_price, pickup_address, dropoff_address,
-        payment_method, vehicle_type, created_at, updated_at,
-        customer_id, accepted_driver_id, pin_enabled,
-        sender_name, sender_phone, receiver_name, receiver_phone,
-        item_details, item_value, is_scheduled, scheduled_date,
-        customer:users!orders_customer_id_fkey(full_name, email, phone),
-        driver:users!orders_accepted_driver_id_fkey(full_name, phone)
-      `)
-      .order("created_at", { ascending: false })
-
-    // Apply status filter from tab
-    if (statusFilter === "Scheduled") {
-      query = query.eq("is_scheduled", true)
-    } else if (statusFilter && tabToStatuses[statusFilter]) {
-      const statuses = tabToStatuses[statusFilter]
-      if (statuses.length > 0) {
-        query = query.in("status", statuses)
+    const applyFilters = (q: any) => {
+      if (statusFilter === "Scheduled") {
+        q = q.eq("is_scheduled", true)
+      } else if (statusFilter && tabToStatuses[statusFilter]) {
+        const statuses = tabToStatuses[statusFilter]
+        if (statuses.length > 0) {
+          q = q.in("status", statuses)
+        }
       }
+      if (search) {
+        q = q.or(`id.ilike.%${search}%,sender_name.ilike.%${search}%,receiver_name.ilike.%${search}%,pickup_address.ilike.%${search}%,dropoff_address.ilike.%${search}%`)
+      }
+      if (vehicleType) {
+        q = q.eq("vehicle_type", vehicleType)
+      }
+      if (paymentMethod) {
+        q = q.eq("payment_method", paymentMethod)
+      }
+      if (state) {
+        q = q.eq("pickup_state", state)
+      }
+      if (from) {
+        q = q.gte("created_at", from)
+      }
+      if (to) {
+        q = q.lte("created_at", to)
+      }
+      return q
     }
 
-    // Apply search filter
-    if (search) {
-      query = query.or(`id.ilike.%${search}%,sender_name.ilike.%${search}%,receiver_name.ilike.%${search}%,pickup_address.ilike.%${search}%,dropoff_address.ilike.%${search}%`)
-    }
+    let query = applyFilters(
+      supabaseAdmin
+        .from("orders")
+        .select(`
+          id, status, final_price, pickup_address, dropoff_address,
+          payment_method, vehicle_type, created_at, updated_at,
+          customer_id, accepted_driver_id, pin_enabled,
+          sender_name, sender_phone, receiver_name, receiver_phone,
+          item_details, item_value, is_scheduled, scheduled_date,
+          customer:users!orders_customer_id_fkey(full_name, email, phone),
+          driver:users!orders_accepted_driver_id_fkey(full_name, phone)
+        `)
+        .order("created_at", { ascending: false })
+    )
 
-    // Count for pagination
-    const { count: filteredCount } = await supabaseAdmin
-      .from("orders")
-      .select("id", { count: "exact", head: true })
+    // Count for pagination (mirrors the list filters)
+    const { count: filteredCount } = await applyFilters(
+      supabaseAdmin.from("orders").select("id", { count: "exact", head: true })
+    )
 
     // Fetch page
     const { data: orders, error } = await query.range(offset, offset + limit - 1)
@@ -108,7 +130,7 @@ export async function GET(req: NextRequest) {
 
     // ── Fetch delivery PINs (pin_code lives in order_pins, not orders) ──
     const pinMap: Record<string, string> = {}
-    const pinEnabledIds = (orders || []).filter((o) => o.pin_enabled).map((o) => o.id)
+    const pinEnabledIds = (orders || []).filter((o: any) => o.pin_enabled).map((o: any) => o.id)
     if (pinEnabledIds.length > 0) {
       const { data: pins } = await supabaseAdmin
         .from("order_pins")
@@ -120,7 +142,7 @@ export async function GET(req: NextRequest) {
     }
 
     // ── Format response ──
-    const deliveries = (orders || []).map((o) => {
+    const deliveries = (orders || []).map((o: any) => {
       const customer = o.customer as any
       const driver = o.driver as any
       const itemDetails = o.item_details as any

@@ -8,7 +8,14 @@ export async function GET(req: NextRequest) {
     const limit = Math.min(50, Math.max(1, parseInt(searchParams.get("limit") || "20")))
     const statusFilter = searchParams.get("status") || null
     const search = searchParams.get("search") || null
+    const state = searchParams.get("state") || null
     const offset = (page - 1) * limit
+
+    const statusMap: Record<string, string[]> = {
+      "Approved": ["verified"],
+      "Pending Review": ["pending", "under_review"],
+      "Rejected": ["rejected"],
+    }
 
     // ── Total riders from users table (source of truth) ──
     const { count: totalRiders } = await supabaseAdmin
@@ -55,20 +62,24 @@ export async function GET(req: NextRequest) {
       .order("created_at", { ascending: false })
 
     if (statusFilter && statusFilter !== "All Drivers") {
-      const statusMap: Record<string, string[]> = {
-        "Approved": ["verified"],
-        "Pending Review": ["pending", "under_review"],
-        "Suspended": ["rejected"],
-        "Blocked": ["rejected"],
-      }
-      const dbStatuses = statusMap[statusFilter]
-      if (dbStatuses) {
-        query = query.in("driver_profiles.verification_status", dbStatuses)
+      if (statusFilter === "Suspended") {
+        query = query.eq("driver_profiles.is_suspended", true)
+      } else if (statusFilter === "Deactivated") {
+        query = query.eq("driver_profiles.is_deleted", true)
+      } else {
+        const dbStatuses = statusMap[statusFilter]
+        if (dbStatuses) {
+          query = query.in("driver_profiles.verification_status", dbStatuses)
+        }
       }
     }
 
+    if (state) {
+      query = query.eq("state", state)
+    }
+
     if (search) {
-      query = query.or(`full_name.ilike.%${search}%,phone.ilike.%${search}%`)
+      query = query.or(`full_name.ilike.%${search}%,phone.ilike.%${search}%,email.ilike.%${search}%,id.ilike.%${search}%`)
     }
 
     const { data: drivers, error } = await query.range(offset, offset + limit - 1)
@@ -162,7 +173,19 @@ export async function GET(req: NextRequest) {
       }
     })
 
-    const totalPages = Math.ceil((totalRiders || 0) / limit)
+    // ── Filtered count for pagination (mirrors the list filters) ──
+    let countQuery = supabaseAdmin
+      .from("users")
+      .select("id, driver_profiles(verification_status, is_suspended, is_deleted)", { count: "exact", head: true })
+      .eq("role", "driver")
+    if (statusFilter && statusFilter !== "All Drivers") {
+      if (statusFilter === "Suspended") countQuery = countQuery.eq("driver_profiles.is_suspended", true)
+      else if (statusFilter === "Deactivated") countQuery = countQuery.eq("driver_profiles.is_deleted", true)
+      else { const dbStatuses = statusMap[statusFilter]; if (dbStatuses) countQuery = countQuery.in("driver_profiles.verification_status", dbStatuses) }
+    }
+    if (state) countQuery = countQuery.eq("state", state)
+    if (search) countQuery = countQuery.or(`full_name.ilike.%${search}%,phone.ilike.%${search}%,email.ilike.%${search}%,id.ilike.%${search}%`)
+    const { count: filteredTotal } = await countQuery
 
     return NextResponse.json({
       stats: {
@@ -177,7 +200,7 @@ export async function GET(req: NextRequest) {
       },
       tabCounts,
       drivers: formatted,
-      pagination: { page, limit, total: totalRiders || 0, totalPages },
+      pagination: { page, limit, total: filteredTotal || 0, totalPages: Math.ceil((filteredTotal || 0) / limit) },
     })
   } catch (err) {
     console.error("[Drivers] Error:", err)

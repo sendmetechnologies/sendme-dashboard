@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
+import { getSession } from "@/lib/auth"
 
 interface StorageDoc {
   folder: string
@@ -164,6 +165,7 @@ export async function GET(
         reviewReason: profile?.review_reason || null,
         type: "Independent Driver",
         city: (driver as any).state || "—",
+        state: (driver as any).state || "",
         memberSince,
         memberDuration,
         created_at: driver.created_at,
@@ -223,4 +225,36 @@ export async function GET(
     console.error("[Driver Detail] Error:", err)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
+}
+
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const session = await getSession()
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+
+  const { id } = await params
+  const body = await req.json().catch(() => ({}))
+
+  const patch: Record<string, any> = {}
+  if (body.full_name !== undefined) patch.full_name = String(body.full_name).trim()
+  if (body.email !== undefined) patch.email = String(body.email).trim().toLowerCase()
+  if (body.phone !== undefined) patch.phone = String(body.phone).trim()
+  if (body.state !== undefined) patch.state = String(body.state).trim()
+
+  if (Object.keys(patch).length === 0) {
+    return NextResponse.json({ error: "No fields to update" }, { status: 400 })
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from("users")
+    .update(patch)
+    .eq("id", id)
+    .select("id, full_name, phone, email, state")
+    .single()
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  return NextResponse.json({ success: true, driver: data })
 }

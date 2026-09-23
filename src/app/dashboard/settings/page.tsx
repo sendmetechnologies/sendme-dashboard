@@ -609,6 +609,7 @@ function HelpTopicsTab() {
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState<HelpTopic | null>(null)
   const [saving, setSaving] = useState(false)
+  const [error, setError] = useState("")
   const [form, setForm] = useState({ topic: "", video_url: "", duration: "", description: "", target_role: "all", sort_order: 0 })
 
   const fetchTopics = useCallback(async () => {
@@ -635,7 +636,12 @@ function HelpTopicsTab() {
   }
 
   const handleSave = async () => {
+    setError("")
     if (!form.topic || !form.video_url) return
+    if (!extractVideoId(form.video_url)) {
+      setError("Enter a valid YouTube URL (e.g. https://www.youtube.com/watch?v=...)")
+      return
+    }
     setSaving(true)
     try {
       if (editing) {
@@ -644,9 +650,13 @@ function HelpTopicsTab() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ id: editing.id, ...form }),
         })
-        if (res.ok) {
-          setTopics((prev) => prev.map((t) => t.id === editing.id ? { ...t, ...form } : t).sort((a, b) => a.sort_order - b.sort_order))
+        const data = await res.json()
+        if (!res.ok || data.error) {
+          setError(data.error || "Failed to update topic.")
+          setSaving(false)
+          return
         }
+        setTopics((prev) => prev.map((t) => t.id === editing.id ? { ...t, ...form } : t).sort((a, b) => a.sort_order - b.sort_order))
       } else {
         const res = await fetch("/api/admin/help-topics", {
           method: "POST",
@@ -654,13 +664,20 @@ function HelpTopicsTab() {
           body: JSON.stringify(form),
         })
         const data = await res.json()
+        if (!res.ok || data.error) {
+          setError(data.error || "Failed to create topic.")
+          setSaving(false)
+          return
+        }
         if (data.topic) {
           setTopics((prev) => [...prev, data.topic].sort((a, b) => a.sort_order - b.sort_order))
         }
       }
       setShowForm(false)
       setEditing(null)
-    } catch { /* ignore */ }
+    } catch (err) {
+      setError(`Network error: ${err instanceof Error ? err.message : "Please try again."}`)
+    }
     setSaving(false)
   }
 
@@ -809,6 +826,11 @@ function HelpTopicsTab() {
                 <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} rows={2} placeholder="Brief description of what this tutorial covers"
                   className="w-full text-sm text-text-primary placeholder:text-text-muted bg-white border border-border-default rounded-lg px-3 py-2 focus:outline-none focus:border-sendme transition-colors resize-none" />
               </div>
+              {error && (
+                <div className="flex items-start gap-1.5 text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                  <AlertTriangle size={14} className="shrink-0 mt-0.5" />{error}
+                </div>
+              )}
             </div>
             <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-border-light">
               <button onClick={() => { setShowForm(false); setEditing(null) }} className="px-4 py-2 text-xs font-medium text-text-muted hover:text-text-primary border border-border-default rounded-lg transition-colors">Cancel</button>

@@ -7,6 +7,8 @@ export async function GET(req: NextRequest) {
     const page = Math.max(1, parseInt(searchParams.get("page") || "1"))
     const limit = Math.min(50, Math.max(1, parseInt(searchParams.get("limit") || "20")))
     const search = searchParams.get("search") || null
+    const status = searchParams.get("status") || null
+    const state = searchParams.get("state") || null
     const offset = (page - 1) * limit
 
     // ── Total count ──
@@ -47,7 +49,17 @@ export async function GET(req: NextRequest) {
         .eq("role", "customer")
         .order("created_at", { ascending: false })
       if (search) {
-        q = q.or(`full_name.ilike.%${search}%,phone.ilike.%${search}%`)
+        q = q.or(`full_name.ilike.%${search}%,phone.ilike.%${search}%,email.ilike.%${search}%`)
+      }
+      if (state) {
+        q = q.eq("state", state)
+      }
+      if (status === "suspended") {
+        q = q.eq("is_suspended", true)
+      } else if (status === "deactivated") {
+        q = q.eq("is_deleted", true)
+      } else if (status === "active") {
+        q = q.not("is_suspended", "is", true).not("is_deleted", "is", true)
       }
       return q.range(offset, offset + limit - 1)
     }
@@ -130,7 +142,17 @@ export async function GET(req: NextRequest) {
       }
     })
 
-    const totalPages = Math.ceil((totalSenders || 0) / limit)
+    // ── Filtered count for pagination (mirrors the list filters) ──
+    let countQuery = supabaseAdmin
+      .from("users")
+      .select("id", { count: "exact", head: true })
+      .eq("role", "customer")
+    if (search) countQuery = countQuery.or(`full_name.ilike.%${search}%,phone.ilike.%${search}%,email.ilike.%${search}%`)
+    if (state) countQuery = countQuery.eq("state", state)
+    if (status === "suspended") countQuery = countQuery.eq("is_suspended", true)
+    else if (status === "deactivated") countQuery = countQuery.eq("is_deleted", true)
+    else if (status === "active") countQuery = countQuery.not("is_suspended", "is", true).not("is_deleted", "is", true)
+    const { count: filteredTotal } = await countQuery
 
     // ── Total wallet balance across all senders ──
     const senderUserIds = (senders || []).map((s) => s.id)
@@ -152,7 +174,7 @@ export async function GET(req: NextRequest) {
         totalBalanceFormatted: `₦${totalBalance.toLocaleString()}`,
       },
       senders: formatted,
-      pagination: { page, limit, total: totalSenders || 0, totalPages },
+      pagination: { page, limit, total: filteredTotal || 0, totalPages: Math.ceil((filteredTotal || 0) / limit) },
     })
   } catch (err) {
     console.error("[Senders] Error:", err)

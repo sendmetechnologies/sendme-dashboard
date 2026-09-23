@@ -4,6 +4,7 @@ import { useState, useEffect } from "react"
 import { Card } from "@/components/ui/card"
 import { formatCardValue } from "@/lib/format"
 import { SenderDetail } from "@/components/dashboard/sender-detail"
+import { FilterSelect, StateFilter } from "@/components/dashboard/filters"
 import {
   Users, Package, DollarSign, ChevronDown,
   Search, Download, MoreHorizontal, ArrowUpDown, Filter,
@@ -19,6 +20,8 @@ interface SenderRow {
   orders: number
   totalSpent: number
   totalSpentFormatted: string
+  status: string
+  statusColor: string
   joined: string
   joinedNote: string
 }
@@ -30,6 +33,8 @@ export default function SendersPage() {
   const [stats, setStats] = useState({ total: 0, active: 0, newThisMonth: 0, totalBalance: 0, totalBalanceFormatted: "₦0" })
   const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, totalPages: 1 })
   const [searchQuery, setSearchQuery] = useState("")
+  const [statusFilter, setStatusFilter] = useState("")
+  const [stateFilter, setStateFilter] = useState("")
 
   const fetchData = (page: number, search: string) => {
     setLoading(true)
@@ -37,6 +42,8 @@ export default function SendersPage() {
     params.set("page", String(page))
     params.set("limit", "20")
     if (search) params.set("search", search)
+    if (statusFilter) params.set("status", statusFilter)
+    if (stateFilter) params.set("state", stateFilter)
 
     fetch(`/api/dashboard/senders?${params.toString()}`)
       .then((r) => r.json())
@@ -56,6 +63,16 @@ export default function SendersPage() {
   const handleSearch = (q: string) => {
     setSearchQuery(q)
     fetchData(1, q)
+  }
+
+  const handleStatusChange = (v: string) => {
+    setStatusFilter(v)
+    fetchData(1, searchQuery)
+  }
+
+  const handleStateChange = (v: string) => {
+    setStateFilter(v)
+    fetchData(1, searchQuery)
   }
 
   const handlePageChange = (page: number) => {
@@ -84,12 +101,17 @@ export default function SendersPage() {
 
           {/* Top Filters */}
           <div className="flex items-center gap-2 flex-wrap">
-            <button className="flex items-center gap-2 bg-white border border-border-default rounded-lg px-3 py-2 text-xs font-medium text-text-primary hover:bg-surface-hover transition-colors">
-              All Status <ChevronDown size={14} className="text-text-muted" />
-            </button>
-            <button className="flex items-center gap-2 bg-white border border-border-default rounded-lg px-3 py-2 text-xs font-medium text-text-primary hover:bg-surface-hover transition-colors">
-              All Cities <ChevronDown size={14} className="text-text-muted" />
-            </button>
+            <FilterSelect
+              value={statusFilter}
+              onChange={handleStatusChange}
+              placeholder="All Status"
+              options={[
+                { value: "active", label: "Active" },
+                { value: "suspended", label: "Suspended" },
+                { value: "deactivated", label: "Deactivated" },
+              ]}
+            />
+            <StateFilter value={stateFilter} onChange={handleStateChange} />
             <div className="flex-1 min-w-[200px] flex items-center gap-2 bg-white border border-border-default rounded-lg px-3 py-2">
               <Search size={14} className="text-text-muted shrink-0" />
               <input
@@ -163,6 +185,7 @@ export default function SendersPage() {
                       <th className="px-4 py-3 font-semibold">Phone</th>
                       <th className="px-4 py-3 font-semibold">Orders</th>
                       <th className="px-4 py-3 font-semibold">Total Spent</th>
+                      <th className="px-4 py-3 font-semibold">Status</th>
                       <th className="px-4 py-3 font-semibold">Joined</th>
                       <th className="px-4 py-3 font-semibold text-right">Actions</th>
                     </tr>
@@ -197,6 +220,9 @@ export default function SendersPage() {
                         </td>
                         <td className="px-4 py-3">
                           <span className="text-xs font-semibold text-text-primary">{s.totalSpentFormatted}</span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${s.statusColor}`}>{s.status}</span>
                         </td>
                         <td className="px-4 py-3">
                           <p className="text-xs font-medium text-text-primary">{s.joined}</p>

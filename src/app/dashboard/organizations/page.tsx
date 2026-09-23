@@ -5,6 +5,7 @@ import { Card } from "@/components/ui/card"
 import { formatCardValue } from "@/lib/format"
 import { OrganizationDetail } from "@/components/dashboard/org-detail"
 import { OrganizationForm } from "@/components/dashboard/forms"
+import { StateFilter } from "@/components/dashboard/filters"
 import { OtpUnlockModal } from "@/components/ui/otp-unlock-modal"
 import { useKycUnlock } from "@/hooks/use-kyc-unlock"
 import { usePageRefresh } from "@/hooks/use-page-refresh"
@@ -50,6 +51,7 @@ export default function OrganizationsPage() {
   const [tabCounts, setTabCounts] = useState<Record<string, number>>({})
   const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, totalPages: 1 })
   const [searchQuery, setSearchQuery] = useState("")
+  const [stateFilter, setStateFilter] = useState("")
   const kyc = useKycUnlock()
 
   const fetchData = (page: number, search: string) => {
@@ -59,6 +61,7 @@ export default function OrganizationsPage() {
     params.set("limit", "20")
     if (search) params.set("search", search)
     if (activeTab !== "All Organizations") params.set("status", activeTab)
+    if (stateFilter) params.set("state", stateFilter)
 
     fetch(`/api/dashboard/organizations?${params.toString()}`)
       .then((r) => r.json())
@@ -83,6 +86,11 @@ export default function OrganizationsPage() {
     fetchData(1, q)
   }
 
+  const handleStateChange = (v: string) => {
+    setStateFilter(v)
+    fetchData(1, searchQuery)
+  }
+
   const handlePageChange = (page: number) => {
     fetchData(page, searchQuery)
   }
@@ -95,6 +103,7 @@ export default function OrganizationsPage() {
     params.set("page", "1")
     params.set("limit", "20")
     if (tab !== "All Organizations") params.set("status", tab)
+    if (stateFilter) params.set("state", stateFilter)
 
     fetch(`/api/dashboard/organizations?${params.toString()}`)
       .then((r) => r.json())
@@ -159,6 +168,7 @@ export default function OrganizationsPage() {
 
           {/* Search & Filters */}
           <div className="flex items-center gap-2 flex-wrap">
+            <StateFilter value={stateFilter} onChange={handleStateChange} />
             <div className="flex-1 min-w-[200px] flex items-center gap-2 bg-white border border-border-default rounded-lg px-3 py-2">
               <Search size={14} className="text-text-muted shrink-0" />
               <input

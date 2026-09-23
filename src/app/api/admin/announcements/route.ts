@@ -2,6 +2,59 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { supabaseAdmin } from "@/lib/supabase";
 
+// Send an Expo push to a batch of tokens. Returns per-token success/failure
+// counts so the announcement can report push delivery separately from the
+// in-app `messages` insert.
+async function sendExpoPush(
+  tokens: string[],
+  title: string,
+  body: string,
+  data: Record<string, unknown>,
+): Promise<{ success: number; failure: number }> {
+  let success = 0;
+  let failure = 0;
+  const CHUNK = 100;
+
+  for (let i = 0; i < tokens.length; i += CHUNK) {
+    const chunk = tokens.slice(i, i + CHUNK);
+    try {
+      const res = await fetch("https://exp.host/--/api/v2/push/send", {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Accept-encoding": "gzip, deflate",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          to: chunk,
+          sound: "default",
+          title,
+          body,
+          data,
+          priority: "high",
+        }),
+      });
+
+      const result = await res.json();
+      // When `to` is an array, Expo returns one entry per token (in order).
+      const per = Array.isArray(result?.data) ? result.data : [];
+
+      for (const item of per) {
+        if (item?.status === "ok") success += 1;
+        else failure += 1;
+      }
+      // Tokens with no corresponding per-item entry (e.g. a global request
+      // error) are counted as failures.
+      failure += Math.max(0, chunk.length - per.length);
+    } catch (err) {
+      console.error("[Announcements] Expo push request failed:", err);
+      failure += chunk.length;
+    }
+  }
+
+  return { success, failure };
+}
+
 // GET: List announcements + notification stats
 export async function GET() {
   try {
@@ -135,7 +188,7 @@ export async function POST(req: NextRequest) {
       type: type || "ADMIN",
       priority: priority || "MEDIUM",
       status: "UNREAD",
-      channels: JSON.stringify(["in_app"]),
+      channels: JSON.stringify(["in_app", "push"]),
       related_id: announcement.id,
       related_type: "announcement",
     }));
@@ -156,7 +209,46 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 4. Update announcement record
+    // 4. Send Expo push to each target user's active push token(s).
+    //    This is what actually shows the OS notification banner — without it,
+    //    the announcement only ever lands in the in-app `messages` table.
+    const userIds = targetUsers.map((u) => u.id);
+    const pushData: Record<string, unknown> = {
+      type: type || "ADMIN",
+      priority: priority || "MEDIUM",
+      relatedType: "announcement",
+      relatedId: announcement.id,
+    };
+    let pushSuccessCount = 0;
+    let pushFailureCount = 0;
+
+    const TOKEN_BATCH = 500;
+    for (let i = 0; i < userIds.length; i += TOKEN_BATCH) {
+      const idBatch = userIds.slice(i, i + TOKEN_BATCH);
+      const { data: tokenRows, error: tokenError } = await supabaseAdmin
+        .from("user_push_tokens")
+        .select("token")
+        .in("user_id", idBatch)
+        .eq("is_active", true);
+
+      if (tokenError) {
+        console.error("[Announcements] Push token fetch error:", tokenError);
+        continue;
+      }
+
+      const tokens = Array.from(
+        new Set(
+          (tokenRows || []).map((r: { token: string }) => r.token).filter(Boolean),
+        ),
+      );
+      if (tokens.length === 0) continue;
+
+      const pushResult = await sendExpoPush(tokens, title, content, pushData);
+      pushSuccessCount += pushResult.success;
+      pushFailureCount += pushResult.failure;
+    }
+
+    // 5. Update announcement record
     await supabaseAdmin
       .from("announcements")
       .update({
@@ -166,9 +258,21 @@ export async function POST(req: NextRequest) {
       })
       .eq("id", announcement.id);
 
+    // Mark the fanned-out messages as push-dispatched when at least one push
+    // succeeded, so the read/unread stats reflect that a banner was attempted.
+    if (pushSuccessCount > 0) {
+      await supabaseAdmin
+        .from("messages")
+        .update({ push_sent: true, push_sent_at: new Date().toISOString() })
+        .eq("related_id", announcement.id)
+        .eq("related_type", "announcement");
+    }
+
     return NextResponse.json({
       announcement: { ...announcement, status: "sent", total_count: insertedCount },
       sentCount: insertedCount,
+      pushSuccessCount,
+      pushFailureCount,
     });
   } catch (err) {
     console.error("[Announcements] Error:", err);

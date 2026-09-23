@@ -5,9 +5,10 @@ import { Card } from "@/components/ui/card"
 import { formatCardValue } from "@/lib/format"
 import { OrderDetail } from "@/components/dashboard/order-detail"
 import { OrderForm } from "@/components/dashboard/forms"
+import { FilterSelect, StateFilter } from "@/components/dashboard/filters"
 import {
-  Package, Users, Calendar, Clock, AlertTriangle, ChevronDown,
-  Search, Download, Plus, MoreHorizontal, ArrowUpDown, Filter,
+  Package, Users, Calendar, Clock, AlertTriangle,
+  Search, Download, Plus, MoreHorizontal, ArrowUpDown,
   ChevronLeft, ChevronRight, Loader2
 } from "lucide-react"
 
@@ -57,6 +58,9 @@ export default function DeliveriesPage() {
   const [tabCounts, setTabCounts] = useState<Record<string, number>>({})
   const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, totalPages: 1 })
   const [searchQuery, setSearchQuery] = useState("")
+  const [vehicleTypeFilter, setVehicleTypeFilter] = useState("")
+  const [paymentMethodFilter, setPaymentMethodFilter] = useState("")
+  const [stateFilter, setStateFilter] = useState("")
 
   const fetchData = (page: number, status: string, search: string) => {
     setLoading(true)
@@ -65,6 +69,9 @@ export default function DeliveriesPage() {
     params.set("limit", "20")
     if (status) params.set("status", status)
     if (search) params.set("search", search)
+    if (vehicleTypeFilter) params.set("vehicle_type", vehicleTypeFilter)
+    if (paymentMethodFilter) params.set("payment_method", paymentMethodFilter)
+    if (stateFilter) params.set("state", stateFilter)
 
     fetch(`/api/dashboard/deliveries?${params.toString()}`)
       .then((r) => r.json())
@@ -96,6 +103,21 @@ export default function DeliveriesPage() {
     fetchData(page, tabToStatus[activeTab] || "", searchQuery)
   }
 
+  const handleStateChange = (v: string) => {
+    setStateFilter(v)
+    fetchData(1, tabToStatus[activeTab] || "", searchQuery)
+  }
+
+  const handleVehicleTypeChange = (v: string) => {
+    setVehicleTypeFilter(v)
+    fetchData(1, tabToStatus[activeTab] || "", searchQuery)
+  }
+
+  const handlePaymentMethodChange = (v: string) => {
+    setPaymentMethodFilter(v)
+    fetchData(1, tabToStatus[activeTab] || "", searchQuery)
+  }
+
   const statCards = [
     { label: "Active Orders", value: stats.active, subtitle: "Currently in progress", icon: Package, color: "text-sendme", bg: "bg-sendme-50" },
     { label: "Unassigned", value: stats.unassigned, subtitle: "Waiting for driver", icon: Users, color: "text-warning", bg: "bg-warning-light" },
@@ -105,8 +127,6 @@ export default function DeliveriesPage() {
   ]
 
   const statusTabNames = ["All Orders", "Active", "Open for Bids", "Scheduled", "Completed", "Failed", "Disputed", "Cancelled"]
-
-  const filters = ["Status", "Vehicle Type", "Payment Method", "Customer Type", "Delivery Type"]
 
   return (
     <div className="flex h-full">
@@ -129,15 +149,29 @@ export default function DeliveriesPage() {
 
           {/* Top Filters */}
           <div className="flex items-center gap-2 flex-wrap">
-            <button className="flex items-center gap-2 bg-white border border-border-default rounded-lg px-3 py-2 text-xs font-medium text-text-primary hover:bg-surface-hover transition-colors">
-              <Calendar size={14} className="text-text-muted" /> Today <ChevronDown size={14} className="text-text-muted" />
-            </button>
-            <button className="flex items-center gap-2 bg-white border border-border-default rounded-lg px-3 py-2 text-xs font-medium text-text-primary hover:bg-surface-hover transition-colors">
-              <span className="w-2 h-2 rounded-full bg-sendme" /> All Cities <ChevronDown size={14} className="text-text-muted" />
-            </button>
-            <button className="flex items-center gap-2 bg-white border border-border-default rounded-lg px-3 py-2 text-xs font-medium text-text-primary hover:bg-surface-hover transition-colors">
-              All Delivery Types <ChevronDown size={14} className="text-text-muted" />
-            </button>
+            <StateFilter value={stateFilter} onChange={handleStateChange} />
+            <FilterSelect
+              value={vehicleTypeFilter}
+              onChange={handleVehicleTypeChange}
+              placeholder="All Vehicle Types"
+              options={[
+                { value: "bicycle", label: "Bicycle" },
+                { value: "motorcycle", label: "Motorcycle" },
+                { value: "car", label: "Car" },
+                { value: "van", label: "Van" },
+                { value: "truck", label: "Truck" },
+              ]}
+            />
+            <FilterSelect
+              value={paymentMethodFilter}
+              onChange={handlePaymentMethodChange}
+              placeholder="All Payment Methods"
+              options={[
+                { value: "cash", label: "Cash" },
+                { value: "card", label: "Card" },
+                { value: "transfer", label: "Transfer" },
+              ]}
+            />
             <div className="flex-1 min-w-[200px] flex items-center gap-2 bg-white border border-border-default rounded-lg px-3 py-2">
               <Search size={14} className="text-text-muted shrink-0" />
               <input
@@ -194,18 +228,6 @@ export default function DeliveriesPage() {
                 )}
               </button>
             ))}
-          </div>
-
-          {/* Filter Row */}
-          <div className="flex items-center gap-2 flex-wrap">
-            {filters.map((f) => (
-              <button key={f} className="flex items-center gap-1.5 bg-white border border-border-default rounded-lg px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-surface-hover transition-colors">
-                {f} <ChevronDown size={12} className="text-text-muted" />
-              </button>
-            ))}
-            <button className="flex items-center gap-1.5 bg-white border border-border-default rounded-lg px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-surface-hover transition-colors">
-              <Filter size={12} className="text-text-muted" /> More Filters
-            </button>
           </div>
 
           {/* Orders Table */}

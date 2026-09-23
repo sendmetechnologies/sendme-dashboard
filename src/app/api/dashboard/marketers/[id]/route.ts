@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
+import { getSession } from "@/lib/auth"
 
 export async function GET(
   req: NextRequest,
@@ -42,15 +43,21 @@ export async function GET(
           .single()
         walletBalance = Number(wallet?.balance) || 0
 
+        // Exact referral count (accurate beyond any list limit)
+        const { count } = await supabaseAdmin
+          .from("referrals")
+          .select("id", { count: "exact", head: true })
+          .eq("marketer_id", mk.id)
+        referralCount = count || 0
+
         const { data: refData } = await supabaseAdmin
           .from("referrals")
-          .select("id, referred_user_id, referred_user_role, status, created_at")
+          .select("id, referred_user_id, referred_user_role, status, converted_at, commission_amount, commission_paid, created_at")
           .eq("marketer_id", mk.id)
           .order("created_at", { ascending: false })
-          .limit(20)
+          .limit(50)
 
         const refs = refData || []
-        referralCount = refs.length
 
         // Enrich referrals with referred user details
         const userIds = refs.map((r: any) => r.referred_user_id).filter(Boolean)
@@ -71,7 +78,10 @@ export async function GET(
             email: u?.email || "—",
             phone: u?.phone || "—",
             role: r.referred_user_role || u?.role || "—",
-            status: r.status,
+            status: r.status || "—",
+            convertedAt: r.converted_at,
+            commissionAmount: Number(r.commission_amount) || 0,
+            commissionPaid: r.commission_paid === true,
             joined: new Date(r.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
           }
         })
@@ -123,17 +133,49 @@ export async function GET(
         memberDuration,
         created_at: profile.created_at,
       },
-      referrals: referrals.map((r) => ({
-        id: r.id,
-        name: r.full_name || "—",
-        email: r.email || "—",
-        phone: r.phone || "—",
-        role: r.role,
-        joined: new Date(r.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
-      })),
+      referrals,
     })
   } catch (err) {
     console.error("[Marketer Detail] Error:", err)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
+}
+
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const session = await getSession()
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+
+  const { id } = await params
+  const body = await req.json().catch(() => ({}))
+
+  const userPatch: Record<string, any> = {}
+  if (body.full_name !== undefined) userPatch.full_name = String(body.full_name).trim()
+  if (body.email !== undefined) userPatch.email = String(body.email).trim().toLowerCase()
+  if (body.phone !== undefined) userPatch.phone = String(body.phone).trim()
+  if (body.state !== undefined) userPatch.state = String(body.state).trim()
+
+  const profilePatch: Record<string, any> = {}
+  if (body.phone !== undefined) profilePatch.phone = String(body.phone).trim()
+  if (body.state !== undefined) profilePatch.state = String(body.state).trim()
+  if (body.city !== undefined) profilePatch.city = String(body.city).trim()
+  if (body.occupation !== undefined) profilePatch.occupation = String(body.occupation).trim()
+
+  if (Object.keys(userPatch).length === 0 && Object.keys(profilePatch).length === 0) {
+    return NextResponse.json({ error: "No fields to update" }, { status: 400 })
+  }
+
+  if (Object.keys(userPatch).length > 0) {
+    const { error } = await supabaseAdmin.from("users").update(userPatch).eq("id", id)
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+
+  if (Object.keys(profilePatch).length > 0) {
+    const { error } = await supabaseAdmin.from("marketer_profiles").update(profilePatch).eq("user_id", id)
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+
+  return NextResponse.json({ success: true })
 }

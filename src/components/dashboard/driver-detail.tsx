@@ -4,9 +4,11 @@ import { toast } from "sonner"
 import { useState, useEffect } from "react"
 import { formatCardValue } from "@/lib/format"
 import { DocumentPreviewModal } from "@/components/ui/document-preview-modal"
+import { EditProfileForm } from "./forms/edit-profile-form"
+import { DocumentUploadButton } from "./document-upload-button"
 import {
   X, Phone, MessageCircle, Star, CheckCircle, Clock, Truck,
-  Eye, Loader2, AlertTriangle, Trash2, Ban, Shield, DollarSign, CreditCard, FileText
+  Eye, Loader2, AlertTriangle, Trash2, Ban, Shield, DollarSign, CreditCard, FileText, Pencil
 } from "lucide-react"
 
 interface DriverDetailProps {
@@ -23,6 +25,7 @@ interface DriverData {
     id: string
     name: string
     phone: string
+    email: string
     avatar: string
     status: string
     statusColor: string
@@ -31,6 +34,7 @@ interface DriverData {
     reviewReason: string | null
     type: string
     city: string
+    state: string
     memberSince: string
     memberDuration: string
     created_at: string
@@ -213,18 +217,16 @@ const storageFolderLabels: Record<string, string> = {
   mot: "MOT Certificate (stored)",
 }
 
-function DocumentsTab({ data, onPreview, kycLocked, onRequestUnlock }: {
+function DocumentsTab({ data, onPreview, kycLocked, onRequestUnlock, driverId, onUploaded }: {
   data: DriverData
   onPreview: (url: string, label: string) => void
   kycLocked?: boolean
   onRequestUnlock?: () => void
+  driverId: string
+  onUploaded: () => void
 }) {
   const idDocs = docEntries(data.idDetails || {})
   const vehicleDocs = docEntries(data.vehicleInfo || {})
-  const sections = [
-    { title: "ID Documents", docs: idDocs },
-    { title: "Vehicle Documents", docs: vehicleDocs },
-  ].filter((s) => s.docs.length > 0)
   const storageDocs = data.storageDocs || []
   const isIncomplete = data.driver.submissionStatus === "incomplete"
 
@@ -232,34 +234,44 @@ function DocumentsTab({ data, onPreview, kycLocked, onRequestUnlock }: {
     return <KycLockedCard onRequestUnlock={onRequestUnlock} />
   }
 
-  if (sections.length === 0 && storageDocs.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center h-40 text-center px-6">
-        <FileText size={24} className="text-text-muted/40 mb-2" />
-        <p className="text-xs text-text-muted">
-          {isIncomplete
-            ? "Registration incomplete — this rider hasn't submitted their documents yet"
-            : "No documents uploaded by this rider yet"}
-        </p>
+  const renderSection = (title: string, docs: [string, unknown][], uploads: { docKey: string; label: string }[]) => (
+    <div>
+      <div className="flex items-center justify-between mb-2 gap-2">
+        <h4 className="text-xs font-semibold text-text-primary">{title}</h4>
+        <div className="flex items-center gap-1.5 shrink-0">
+          {uploads.map((u) => (
+            <DocumentUploadButton
+              key={u.docKey}
+              endpoint={`/api/dashboard/drivers/${driverId}/documents`}
+              docKey={u.docKey}
+              label={u.label}
+              onUploaded={onUploaded}
+            />
+          ))}
+        </div>
       </div>
-    )
-  }
+      {docs.length > 0 ? (
+        <div className="space-y-2">
+          {docs.map(([k, v]) => (
+            <DocumentCard key={k} url={v as string} label={docLabels[k] || k.replace(/_/g, " ")} onPreview={onPreview} />
+          ))}
+        </div>
+      ) : (
+        <p className="text-[11px] text-text-muted py-2">None uploaded yet</p>
+      )}
+    </div>
+  )
 
   return (
     <div className="space-y-5">
-      {sections.map((section) => (
-        <div key={section.title}>
-          <div className="flex items-center justify-between mb-2">
-            <h4 className="text-xs font-semibold text-text-primary">{section.title}</h4>
-            <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-surface-secondary text-text-muted">{section.docs.length}</span>
-          </div>
-          <div className="space-y-2">
-            {section.docs.map(([k, v]) => (
-              <DocumentCard key={k} url={v as string} label={docLabels[k] || k.replace(/_/g, " ")} onPreview={onPreview} />
-            ))}
-          </div>
-        </div>
-      ))}
+      {renderSection("ID Documents", idDocs, [
+        { docKey: "id_documents", label: "ID" },
+        { docKey: "licenses", label: "License" },
+      ])}
+      {renderSection("Vehicle Documents", vehicleDocs, [
+        { docKey: "vehicle_papers", label: "Papers" },
+        { docKey: "mot", label: "MOT" },
+      ])}
 
       {storageDocs.length > 0 && (
         <div>
@@ -278,6 +290,12 @@ function DocumentsTab({ data, onPreview, kycLocked, onRequestUnlock }: {
             ))}
           </div>
         </div>
+      )}
+
+      {isIncomplete && (
+        <p className="text-[10px] text-text-muted bg-surface-secondary rounded-lg p-2.5">
+          Registration incomplete — you can upload documents on behalf of this rider.
+        </p>
       )}
     </div>
   )
@@ -639,6 +657,7 @@ export function DriverDetail({ driverId, onClose, kycLocked = false, onRequestUn
   const [previewDoc, setPreviewDoc] = useState<{ url: string; label: string } | null>(null)
   const [showKycModal, setShowKycModal] = useState(false)
   const [kycSaving, setKycSaving] = useState(false)
+  const [showEdit, setShowEdit] = useState(false)
 
   const handlePreview = (url: string, label: string) => setPreviewDoc({ url, label })
 
@@ -744,6 +763,19 @@ export function DriverDetail({ driverId, onClose, kycLocked = false, onRequestUn
     await handleAction("process_payout", { payout_id: payoutId, payout_action: action })
   }
 
+  const handleSave = async (values: Record<string, string>) => {
+    const res = await fetch(`/api/dashboard/drivers/${driverId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(values),
+    })
+    const result = await res.json()
+    if (!result.success) throw new Error(result.error || "Failed to save changes")
+    toast.success("Details updated")
+    setShowEdit(false)
+    fetchData()
+  }
+
   const isVerified = data?.driver?.statusRaw === "verified"
 
   return (
@@ -779,6 +811,15 @@ export function DriverDetail({ driverId, onClose, kycLocked = false, onRequestUn
               </>
             ) : null}
           </div>
+          {!loading && data && (
+            <button
+              onClick={() => setShowEdit(true)}
+              className="p-1 text-text-muted hover:text-text-primary transition-colors"
+              title="Edit details"
+            >
+              <Pencil size={14} />
+            </button>
+          )}
           <button onClick={onClose} className="p-1 text-text-muted hover:text-text-primary transition-colors">
             <X size={16} />
           </button>
@@ -822,7 +863,7 @@ export function DriverDetail({ driverId, onClose, kycLocked = false, onRequestUn
                 onEditKyc={() => setShowKycModal(true)}
               />
             )}
-            {activeTab === "Documents" && <DocumentsTab data={data} onPreview={handlePreview} kycLocked={kycLocked} onRequestUnlock={onRequestUnlock} />}
+            {activeTab === "Documents" && <DocumentsTab data={data} onPreview={handlePreview} kycLocked={kycLocked} onRequestUnlock={onRequestUnlock} driverId={driverId} onUploaded={fetchData} />}
             {activeTab === "Vehicle" && <VehicleTab data={data} kycLocked={kycLocked} onRequestUnlock={onRequestUnlock} />}
             {activeTab === "Trips" && <TripsTab data={data} />}
             {activeTab === "Payouts" && <PayoutsTab data={data} onProcessPayout={handleProcessPayout} />}
@@ -974,6 +1015,26 @@ export function DriverDetail({ driverId, onClose, kycLocked = false, onRequestUn
       {/* Document Preview Modal */}
       {previewDoc && (
         <DocumentPreviewModal url={previewDoc.url} label={previewDoc.label} onClose={() => setPreviewDoc(null)} />
+      )}
+
+      {showEdit && data && (
+        <EditProfileForm
+          title="Edit Rider Details"
+          fields={[
+            { key: "full_name", label: "Full Name" },
+            { key: "email", label: "Email Address" },
+            { key: "phone", label: "Phone Number" },
+            { key: "state", label: "State" },
+          ]}
+          initialValues={{
+            full_name: data.driver.name === "—" ? "" : data.driver.name,
+            email: data.driver.email === "—" ? "" : data.driver.email,
+            phone: data.driver.phone === "—" ? "" : data.driver.phone,
+            state: data.driver.state || "",
+          }}
+          onSubmit={handleSave}
+          onClose={() => setShowEdit(false)}
+        />
       )}
 
       {/* Add/Edit KYC Modal */}

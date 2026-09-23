@@ -3,10 +3,12 @@
 import { toast } from "sonner"
 import { useState, useEffect } from "react"
 import { formatCardValue } from "@/lib/format"
+import { EditProfileForm } from "./forms/edit-profile-form"
+import { ReferralTreeModal } from "./referral-tree"
 import {
   X, Phone, Mail, MapPin, Briefcase, Target, Star,
   Loader2, AlertTriangle, Trash2, Ban, ShieldCheck,
-  CheckCircle, Clock, RotateCcw, Users
+  CheckCircle, Clock, RotateCcw, Users, Pencil, GitBranch
 } from "lucide-react"
 
 interface MarketerDetailProps {
@@ -44,6 +46,10 @@ interface MarketerData {
     email: string
     phone: string
     role: string
+    status: string
+    convertedAt: string | null
+    commissionAmount: number
+    commissionPaid: boolean
     joined: string
   }[]
 }
@@ -58,6 +64,8 @@ export function MarketerDetail({ marketerId, onClose }: MarketerDetailProps) {
   const [confirmAction, setConfirmAction] = useState<string | null>(null)
   const [showRejectModal, setShowRejectModal] = useState(false)
   const [rejectReason, setRejectReason] = useState("")
+  const [showEdit, setShowEdit] = useState(false)
+  const [showTree, setShowTree] = useState(false)
 
   useEffect(() => {
     if (!marketerId) return
@@ -106,6 +114,21 @@ export function MarketerDetail({ marketerId, onClose }: MarketerDetailProps) {
     handleAction("reject", { reason: rejectReason })
   }
 
+  const handleSave = async (values: Record<string, string>) => {
+    const res = await fetch(`/api/dashboard/marketers/${marketerId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(values),
+    })
+    const result = await res.json()
+    if (!result.success) throw new Error(result.error || "Failed to save changes")
+    toast.success("Details updated")
+    setShowEdit(false)
+    const r = await fetch(`/api/dashboard/marketers/${marketerId}`)
+    const updated = await r.json()
+    setData(updated)
+  }
+
   return (
     <div className="w-[340px] bg-white border-l border-border-default flex flex-col shrink-0 h-full overflow-hidden">
       {/* Header */}
@@ -141,6 +164,15 @@ export function MarketerDetail({ marketerId, onClose }: MarketerDetailProps) {
               </>
             ) : null}
           </div>
+          {!loading && data && (
+            <button
+              onClick={() => setShowEdit(true)}
+              className="p-1 text-text-muted hover:text-text-primary transition-colors"
+              title="Edit details"
+            >
+              <Pencil size={14} />
+            </button>
+          )}
           <button onClick={onClose} className="p-1 text-text-muted hover:text-text-primary transition-colors">
             <X size={16} />
           </button>
@@ -240,9 +272,17 @@ export function MarketerDetail({ marketerId, onClose }: MarketerDetailProps) {
         ) : (
           /* Referrals Tab */
           <div className="space-y-4">
-            <h4 className="text-xs font-semibold text-text-primary">
-              Referrals ({data.referrals.length})
-            </h4>
+            <div className="flex items-center justify-between">
+              <h4 className="text-xs font-semibold text-text-primary">
+                Referrals ({data.referrals.length})
+              </h4>
+              <button
+                onClick={() => setShowTree(true)}
+                className="px-2 py-1 border border-sendme/30 bg-sendme-50 rounded-lg text-[10px] font-semibold text-sendme hover:bg-sendme/10 transition-colors flex items-center gap-1"
+              >
+                <GitBranch size={10} /> View tree
+              </button>
+            </div>
             {data.referrals.length === 0 ? (
               <div className="flex items-center justify-center h-32">
                 <div className="text-center">
@@ -253,23 +293,35 @@ export function MarketerDetail({ marketerId, onClose }: MarketerDetailProps) {
             ) : (
               <div className="space-y-2">
                 {data.referrals.map((ref) => (
-                  <div key={ref.id} className="flex items-center justify-between py-2.5 border-b border-border-light last:border-0">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-7 h-7 bg-sendme-50 rounded-lg flex items-center justify-center shrink-0">
-                        <span className="text-[10px] font-bold text-sendme">{(ref.name || "?")[0]}</span>
+                  <div key={ref.id} className="py-2.5 border-b border-border-light last:border-0">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-7 h-7 bg-sendme-50 rounded-lg flex items-center justify-center shrink-0">
+                          <span className="text-[10px] font-bold text-sendme">{(ref.name || "?")[0]}</span>
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-[11px] font-semibold text-text-primary truncate">{ref.name}</p>
+                          <p className="text-[9px] text-text-muted truncate">{ref.email}{ref.phone ? ` • ${ref.phone}` : ""}</p>
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-[11px] font-semibold text-text-primary">{ref.name}</p>
-                        <p className="text-[9px] text-text-muted">{ref.email}</p>
-                      </div>
+                      <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full shrink-0 ${
+                        ref.role === "driver" ? "bg-blue-50 text-blue-700" :
+                        ref.role === "organization" ? "bg-purple-50 text-purple-700" :
+                        "bg-green-50 text-green-700"
+                      }`}>
+                        {ref.role === "driver" ? "Courier" : ref.role === "organization" ? "Org" : "Customer"}
+                      </span>
                     </div>
-                    <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${
-                      ref.role === "driver" ? "bg-blue-50 text-blue-700" :
-                      ref.role === "organization" ? "bg-purple-50 text-purple-700" :
-                      "bg-green-50 text-green-700"
-                    }`}>
-                      {ref.role === "driver" ? "Courier" : ref.role === "organization" ? "Org" : "Customer"}
-                    </span>
+                    {(ref.status && ref.status !== "converted" || ref.commissionAmount > 0) && (
+                      <div className="flex items-center gap-1.5 mt-1 pl-9">
+                        {ref.status && ref.status !== "converted" && (
+                          <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-warning-light text-warning">{ref.status}</span>
+                        )}
+                        {ref.commissionAmount > 0 && (
+                          <span className="text-[9px] font-medium text-sendme">₦{ref.commissionAmount.toLocaleString()}</span>
+                        )}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -396,6 +448,34 @@ export function MarketerDetail({ marketerId, onClose }: MarketerDetailProps) {
             </div>
           )}
         </div>
+      )}
+
+      {showEdit && data && (
+        <EditProfileForm
+          title="Edit Marketer Details"
+          fields={[
+            { key: "full_name", label: "Full Name" },
+            { key: "email", label: "Email Address" },
+            { key: "phone", label: "Phone Number" },
+            { key: "state", label: "State" },
+            { key: "city", label: "City" },
+            { key: "occupation", label: "Occupation" },
+          ]}
+          initialValues={{
+            full_name: data.marketer.name === "—" ? "" : data.marketer.name,
+            email: data.marketer.email === "—" ? "" : data.marketer.email,
+            phone: data.marketer.phone === "—" ? "" : data.marketer.phone,
+            state: data.marketer.state === "—" ? "" : data.marketer.state,
+            city: data.marketer.city === "—" ? "" : data.marketer.city,
+            occupation: data.marketer.occupation === "—" ? "" : data.marketer.occupation,
+          }}
+          onSubmit={handleSave}
+          onClose={() => setShowEdit(false)}
+        />
+      )}
+
+      {showTree && (
+        <ReferralTreeModal marketerId={marketerId} onClose={() => setShowTree(false)} />
       )}
     </div>
   )

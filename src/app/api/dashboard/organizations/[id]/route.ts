@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
+import { getSession } from "@/lib/auth"
 
 interface OrgStorageDoc {
   folder: string
@@ -227,4 +228,45 @@ export async function GET(
     console.error("[Org Detail] Error:", err)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
+}
+
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const session = await getSession()
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+
+  const { id } = await params
+  const body = await req.json().catch(() => ({}))
+
+  const userPatch: Record<string, any> = {}
+  if (body.full_name !== undefined) userPatch.full_name = String(body.full_name).trim()
+  if (body.email !== undefined) userPatch.email = String(body.email).trim().toLowerCase()
+  if (body.phone !== undefined) userPatch.phone = String(body.phone).trim()
+  if (body.state !== undefined) userPatch.state = String(body.state).trim()
+
+  const profilePatch: Record<string, any> = {}
+  if (body.business_name !== undefined) profilePatch.business_name = String(body.business_name).trim()
+  if (body.contact_person_name !== undefined) profilePatch.contact_person_name = String(body.contact_person_name).trim()
+  if (body.contact_person_phone !== undefined) profilePatch.contact_person_phone = String(body.contact_person_phone).trim()
+  if (body.business_email !== undefined) profilePatch.business_email = String(body.business_email).trim().toLowerCase()
+  if (body.city !== undefined) profilePatch.city = String(body.city).trim()
+  if (body.state !== undefined) profilePatch.state = String(body.state).trim()
+
+  if (Object.keys(userPatch).length === 0 && Object.keys(profilePatch).length === 0) {
+    return NextResponse.json({ error: "No fields to update" }, { status: 400 })
+  }
+
+  if (Object.keys(userPatch).length > 0) {
+    const { error } = await supabaseAdmin.from("users").update(userPatch).eq("id", id)
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+
+  if (Object.keys(profilePatch).length > 0) {
+    const { error } = await supabaseAdmin.from("organization_profiles").update(profilePatch).eq("id", id)
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+
+  return NextResponse.json({ success: true })
 }

@@ -45,7 +45,7 @@ export async function POST(req: NextRequest) {
       .upsert({
         state,
         label,
-        per_km: per_km || { bicycle: 200, motorcycle: 300, car: 500, truck: 1000 },
+        per_km: per_km || { bicycle: 200, motorcycle: 300, tricycle: 500, car: 500, truck: 1000 },
         base_fare: base_fare ?? null,
         per_minute: per_minute ?? null,
         minimum_fare: minimum_fare ?? null,

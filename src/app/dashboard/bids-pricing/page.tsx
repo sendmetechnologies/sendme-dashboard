@@ -190,10 +190,12 @@ function PriceControlView({ onSelect, showCreate, onCreateHandled }: { onSelect:
     base_fare: '',
     bicycle_per_km: '',
     motorcycle_per_km: '',
+    tricycle_per_km: '',
     car_per_km: '',
     truck_per_km: '',
     bicycle_per_min: '',
     motorcycle_per_min: '',
+    tricycle_per_min: '',
     car_per_min: '',
     truck_per_min: '',
   })
@@ -224,12 +226,14 @@ function PriceControlView({ onSelect, showCreate, onCreateHandled }: { onSelect:
         per_km: {
           bicycle: Number(form.bicycle_per_km) || 200,
           motorcycle: Number(form.motorcycle_per_km) || 300,
+          tricycle: Number(form.tricycle_per_km) || 500,
           car: Number(form.car_per_km) || 500,
           truck: Number(form.truck_per_km) || 1000,
         },
         per_minute: {
           bicycle: Number(form.bicycle_per_min) || null,
           motorcycle: Number(form.motorcycle_per_min) || null,
+          tricycle: Number(form.tricycle_per_min) || null,
           car: Number(form.car_per_min) || null,
           truck: Number(form.truck_per_min) || null,
         },
@@ -244,7 +248,7 @@ function PriceControlView({ onSelect, showCreate, onCreateHandled }: { onSelect:
       if (data.error) throw new Error(data.error)
       setShowAddModal(false)
       setEditingState(null)
-      setForm({ state: '', label: '', base_fare: '', bicycle_per_km: '', motorcycle_per_km: '', car_per_km: '', truck_per_km: '', bicycle_per_min: '', motorcycle_per_min: '', car_per_min: '', truck_per_min: '' })
+      setForm({ state: '', label: '', base_fare: '', bicycle_per_km: '', motorcycle_per_km: '', tricycle_per_km: '', car_per_km: '', truck_per_km: '', bicycle_per_min: '', motorcycle_per_min: '', tricycle_per_min: '', car_per_min: '', truck_per_min: '' })
       fetchStates()
     } catch (e: any) {
       alert('Error: ' + e.message)
@@ -286,10 +290,12 @@ function PriceControlView({ onSelect, showCreate, onCreateHandled }: { onSelect:
       base_fare: s.base_fare?.toString() || '',
       bicycle_per_km: s.per_km?.bicycle?.toString() || '',
       motorcycle_per_km: s.per_km?.motorcycle?.toString() || '',
+      tricycle_per_km: s.per_km?.tricycle?.toString() || '',
       car_per_km: s.per_km?.car?.toString() || '',
       truck_per_km: s.per_km?.truck?.toString() || '',
       bicycle_per_min: s.per_minute?.bicycle?.toString() || '',
       motorcycle_per_min: s.per_minute?.motorcycle?.toString() || '',
+      tricycle_per_min: s.per_minute?.tricycle?.toString() || '',
       car_per_min: s.per_minute?.car?.toString() || '',
       truck_per_min: s.per_minute?.truck?.toString() || '',
     })
@@ -353,6 +359,7 @@ function PriceControlView({ onSelect, showCreate, onCreateHandled }: { onSelect:
   const vehicles = [
     { key: 'bicycle', label: 'Bicycle' },
     { key: 'motorcycle', label: 'Motorcycle' },
+    { key: 'tricycle', label: 'Tricycle' },
     { key: 'car', label: 'Car' },
     { key: 'truck', label: 'Truck' },
   ]
@@ -373,7 +380,7 @@ function PriceControlView({ onSelect, showCreate, onCreateHandled }: { onSelect:
 
       <div className="flex items-center justify-between">
         <p className="text-xs text-text-muted">Per-kilometre rates by state. States without pricing use the global fallback.</p>
-        <button onClick={() => { setEditingState(null); setForm({ state: '', label: '', base_fare: '', bicycle_per_km: '', motorcycle_per_km: '', car_per_km: '', truck_per_km: '', bicycle_per_min: '', motorcycle_per_min: '', car_per_min: '', truck_per_min: '' }); setShowAddModal(true) }} className="flex items-center gap-1.5 bg-sendme text-white px-3 py-1.5 rounded-lg text-[11px] font-semibold"><Plus size={14}/> Add State</button>
+        <button onClick={() => { setEditingState(null); setForm({ state: '', label: '', base_fare: '', bicycle_per_km: '', motorcycle_per_km: '', tricycle_per_km: '', car_per_km: '', truck_per_km: '', bicycle_per_min: '', motorcycle_per_min: '', tricycle_per_min: '', car_per_min: '', truck_per_min: '' }); setShowAddModal(true) }} className="flex items-center gap-1.5 bg-sendme text-white px-3 py-1.5 rounded-lg text-[11px] font-semibold"><Plus size={14}/> Add State</button>
       </div>
 
       {loading ? (
@@ -390,6 +397,7 @@ function PriceControlView({ onSelect, showCreate, onCreateHandled }: { onSelect:
                   <th className="px-3 py-2">Label</th>
                   <th className="px-3 py-2">Bicycle/km</th>
                   <th className="px-3 py-2">Motorcycle/km</th>
+                  <th className="px-3 py-2">Tricycle/km</th>
                   <th className="px-3 py-2">Car/km</th>
                   <th className="px-3 py-2">Truck/km</th>
                   <th className="px-3 py-2">Base Fare</th>
@@ -404,6 +412,7 @@ function PriceControlView({ onSelect, showCreate, onCreateHandled }: { onSelect:
                     <td className="px-3 py-2.5"><p className="text-[11px] font-medium text-text-primary">{s.label}</p></td>
                     <td className="px-3 py-2.5"><p className="text-[11px] text-text-primary">₦{s.per_km?.bicycle || '—'}</p></td>
                     <td className="px-3 py-2.5"><p className="text-[11px] font-medium text-text-primary">₦{s.per_km?.motorcycle || '—'}</p></td>
+                    <td className="px-3 py-2.5"><p className="text-[11px] text-text-primary">₦{s.per_km?.tricycle || '—'}</p></td>
                     <td className="px-3 py-2.5"><p className="text-[11px] text-text-primary">₦{s.per_km?.car || '—'}</p></td>
                     <td className="px-3 py-2.5"><p className="text-[11px] text-text-primary">₦{s.per_km?.truck || '—'}</p></td>
                     <td className="px-3 py-2.5"><p className="text-[11px] text-text-primary">{s.base_fare ? `₦${s.base_fare}` : '—'}</p></td>
@@ -455,7 +464,7 @@ function PriceControlView({ onSelect, showCreate, onCreateHandled }: { onSelect:
               </div>
               <div>
                 <p className="text-[10px] font-semibold text-text-muted uppercase tracking-wide mb-2">Per-KM Rates (₦/km)</p>
-                <div className="grid grid-cols-4 gap-2">
+                <div className="grid grid-cols-5 gap-2">
                   <div>
                     <label className="text-[9px] text-text-muted">Bicycle</label>
                     <input value={form.bicycle_per_km} onChange={e => setForm(f => ({ ...f, bicycle_per_km: e.target.value }))} className="w-full mt-1 px-2 py-1.5 border border-border-default rounded-lg text-xs" type="number" placeholder="200" />
@@ -463,6 +472,10 @@ function PriceControlView({ onSelect, showCreate, onCreateHandled }: { onSelect:
                   <div>
                     <label className="text-[9px] text-text-muted">Motorcycle</label>
                     <input value={form.motorcycle_per_km} onChange={e => setForm(f => ({ ...f, motorcycle_per_km: e.target.value }))} className="w-full mt-1 px-2 py-1.5 border border-border-default rounded-lg text-xs" type="number" placeholder="300" />
+                  </div>
+                  <div>
+                    <label className="text-[9px] text-text-muted">Tricycle</label>
+                    <input value={form.tricycle_per_km} onChange={e => setForm(f => ({ ...f, tricycle_per_km: e.target.value }))} className="w-full mt-1 px-2 py-1.5 border border-border-default rounded-lg text-xs" type="number" placeholder="500" />
                   </div>
                   <div>
                     <label className="text-[9px] text-text-muted">Car</label>

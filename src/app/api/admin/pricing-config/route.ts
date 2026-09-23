@@ -6,15 +6,15 @@ import { supabaseAdmin } from "@/lib/supabase";
 // always shows sensible values even before any config is saved.
 const DEFAULT_PRICING = {
   baseFare: 400,
-  perKm: { bicycle: 200, motorcycle: 400, car: 600, truck: 1200 },
-  perMinute: { bicycle: 10, motorcycle: 18, car: 28, truck: 42 },
+  perKm: { bicycle: 200, motorcycle: 400, tricycle: 500, car: 600, truck: 1200 },
+  perMinute: { bicycle: 10, motorcycle: 18, tricycle: 22, car: 28, truck: 42 },
   urgencyMultiplier: { normal: 1.0, fast: 1.2, immediate: 1.4, express: 1.7 },
-  vehicleSpeedKmh: { bicycle: 12, motorcycle: 25, car: 20, truck: 16 },
+  vehicleSpeedKmh: { bicycle: 12, motorcycle: 25, tricycle: 22, car: 20, truck: 16 },
   pickupBufferMin: 4,
   dropoffBufferMin: 4,
 };
 
-const VEHICLES = ["bicycle", "motorcycle", "car", "truck"] as const;
+const VEHICLES = ["bicycle", "motorcycle", "tricycle", "car", "truck"] as const;
 const URGENCIES = ["normal", "fast", "immediate", "express"] as const;
 
 function isValidConfig(cfg: any): boolean {

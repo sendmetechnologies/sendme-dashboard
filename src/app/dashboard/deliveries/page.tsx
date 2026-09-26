@@ -6,10 +6,12 @@ import { formatCardValue } from "@/lib/format"
 import { OrderDetail } from "@/components/dashboard/order-detail"
 import { OrderForm } from "@/components/dashboard/forms"
 import { FilterSelect, StateFilter } from "@/components/dashboard/filters"
+import { NearbyRidersModal } from "@/components/dashboard/nearby-riders-modal"
+import { PAGE_REFRESH_EVENT } from "@/hooks/use-page-refresh"
 import {
   Package, Users, Calendar, Clock, AlertTriangle,
   Search, Download, Plus, MoreHorizontal, ArrowUpDown,
-  ChevronLeft, ChevronRight, Loader2
+  ChevronLeft, ChevronRight, Loader2, MapPin, Phone, MessageCircle
 } from "lucide-react"
 
 interface DeliveryOrder {
@@ -61,17 +63,61 @@ export default function DeliveriesPage() {
   const [vehicleTypeFilter, setVehicleTypeFilter] = useState("")
   const [paymentMethodFilter, setPaymentMethodFilter] = useState("")
   const [stateFilter, setStateFilter] = useState("")
+  const [nearbyOrder, setNearbyOrder] = useState<DeliveryOrder | null>(null)
+  const [nearbyOrderInfo, setNearbyOrderInfo] = useState<any | null>(null)
+  const [nearbyRiders, setNearbyRiders] = useState<any[]>([])
+  const [nearbySummary, setNearbySummary] = useState<any | null>(null)
+  const [nearbyLoading, setNearbyLoading] = useState(false)
+  const [nearbyRadius, setNearbyRadius] = useState(30)
 
-  const fetchData = (page: number, status: string, search: string) => {
+  const fetchNearbyRiders = async (orderId: string, radius: number) => {
+    setNearbyLoading(true)
+    try {
+      const res = await fetch(`/api/dashboard/deliveries/${orderId}/nearby-riders?radius=${radius}`)
+      const data = await res.json()
+      if (data.error) throw new Error(data.error)
+      setNearbyRiders(data.riders || [])
+      setNearbySummary(data.summary || null)
+      if (data.order) setNearbyOrderInfo(data.order)
+    } catch (e: any) {
+      alert("Error: " + e.message)
+    } finally {
+      setNearbyLoading(false)
+    }
+  }
+
+  const openNearbyRiders = (order: DeliveryOrder) => {
+    setNearbyOrder(order)
+    setNearbyOrderInfo({
+      id: order.fullId,
+      pickupAddress: order.fromAddr || order.from,
+      dropoffAddress: order.to,
+      fare: order.fare,
+      vehicleType: order.type,
+    })
+    setNearbyRadius(30)
+    fetchNearbyRiders(order.fullId, 30)
+  }
+
+  const fetchData = (
+    page: number,
+    status: string,
+    search: string,
+    overrides?: { state?: string; vehicleType?: string; paymentMethod?: string }
+  ) => {
     setLoading(true)
+    const effectiveState = overrides?.state !== undefined ? overrides.state : stateFilter
+    const effectiveVehicle = overrides?.vehicleType !== undefined ? overrides.vehicleType : vehicleTypeFilter
+    const effectivePayment = overrides?.paymentMethod !== undefined ? overrides.paymentMethod : paymentMethodFilter
+
     const params = new URLSearchParams()
     params.set("page", String(page))
     params.set("limit", "20")
     if (status) params.set("status", status)
     if (search) params.set("search", search)
-    if (vehicleTypeFilter) params.set("vehicle_type", vehicleTypeFilter)
-    if (paymentMethodFilter) params.set("payment_method", paymentMethodFilter)
-    if (stateFilter) params.set("state", stateFilter)
+    if (effectiveVehicle) params.set("vehicle_type", effectiveVehicle)
+    if (effectivePayment) params.set("payment_method", effectivePayment)
+    if (effectiveState) params.set("state", effectiveState)
 
     fetch(`/api/dashboard/deliveries?${params.toString()}`)
       .then((r) => r.json())
@@ -89,6 +135,12 @@ export default function DeliveriesPage() {
     fetchData(1, "", "")
   }, [])
 
+  useEffect(() => {
+    const handleRefresh = () => fetchData(pagination.page, tabToStatus[activeTab] || "", searchQuery)
+    window.addEventListener(PAGE_REFRESH_EVENT, handleRefresh)
+    return () => window.removeEventListener(PAGE_REFRESH_EVENT, handleRefresh)
+  }, [pagination.page, activeTab, searchQuery, stateFilter, vehicleTypeFilter, paymentMethodFilter])
+
   const handleTabChange = (tab: string) => {
     setActiveTab(tab)
     fetchData(1, tabToStatus[tab] || "", searchQuery)
@@ -105,17 +157,45 @@ export default function DeliveriesPage() {
 
   const handleStateChange = (v: string) => {
     setStateFilter(v)
-    fetchData(1, tabToStatus[activeTab] || "", searchQuery)
+    fetchData(1, tabToStatus[activeTab] || "", searchQuery, { state: v })
   }
 
   const handleVehicleTypeChange = (v: string) => {
     setVehicleTypeFilter(v)
-    fetchData(1, tabToStatus[activeTab] || "", searchQuery)
+    fetchData(1, tabToStatus[activeTab] || "", searchQuery, { vehicleType: v })
   }
 
   const handlePaymentMethodChange = (v: string) => {
     setPaymentMethodFilter(v)
-    fetchData(1, tabToStatus[activeTab] || "", searchQuery)
+    fetchData(1, tabToStatus[activeTab] || "", searchQuery, { paymentMethod: v })
+  }
+
+  const handleExport = () => {
+    if (!deliveries.length) {
+      alert("No deliveries found to export.")
+      return
+    }
+    const headers = ["Order ID", "Date", "Status", "Customer", "Driver", "Vehicle", "Fare", "Payment", "Pickup Address", "Dropoff Address"]
+    const rows = deliveries.map((d) => [
+      d.fullId,
+      d.created_at,
+      d.status,
+      `"${(d.customer || "").replace(/"/g, '""')}"`,
+      `"${(d.driver || "Unassigned").replace(/"/g, '""')}"`,
+      d.type,
+      d.fare,
+      d.payment,
+      `"${(d.fromAddr || d.from || "").replace(/"/g, '""')}"`,
+      `"${(d.to || "").replace(/"/g, '""')}"`,
+    ])
+    const csvContent = "data:text/csv;charset=utf-8," + [headers, ...rows].map((e) => e.join(",")).join("\n")
+    const encodedUri = encodeURI(csvContent)
+    const link = document.createElement("a")
+    link.setAttribute("href", encodedUri)
+    link.setAttribute("download", `deliveries-${activeTab.toLowerCase().replace(/\s+/g, "-")}-${stateFilter || "all"}-${new Date().toISOString().slice(0, 10)}.csv`)
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
   }
 
   const statCards = [
@@ -169,6 +249,7 @@ export default function DeliveriesPage() {
               options={[
                 { value: "cash", label: "Cash" },
                 { value: "card", label: "Card" },
+                { value: "wallet", label: "Wallet" },
                 { value: "transfer", label: "Transfer" },
               ]}
             />
@@ -182,7 +263,10 @@ export default function DeliveriesPage() {
                 onChange={(e) => handleSearch(e.target.value)}
               />
             </div>
-            <button className="flex items-center gap-2 bg-white border border-border-default rounded-lg px-3 py-2 text-xs font-medium text-text-primary hover:bg-surface-hover transition-colors">
+            <button
+              onClick={handleExport}
+              className="flex items-center gap-2 bg-white border border-border-default rounded-lg px-3 py-2 text-xs font-medium text-text-primary hover:bg-surface-hover transition-colors"
+            >
               <Download size={14} className="text-text-muted" /> Export
             </button>
           </div>
@@ -316,7 +400,14 @@ export default function DeliveriesPage() {
                           <p className="text-[10px] font-medium text-text-muted">{order.etaStatus}</p>
                         </td>
                         <td className="px-4 py-3 text-right">
-                          <button className="p-1 text-text-muted hover:text-text-primary transition-colors">
+                          <button
+                              onClick={(e) => { e.stopPropagation(); openNearbyRiders(order) }}
+                              className="p-1 text-text-muted hover:text-sendme transition-colors"
+                              title="Find nearby riders"
+                            >
+                              <MapPin size={16} />
+                            </button>
+                            <button className="p-1 text-text-muted hover:text-text-primary transition-colors">
                             <MoreHorizontal size={16} />
                           </button>
                         </td>
@@ -387,6 +478,28 @@ export default function DeliveriesPage() {
 
       {/* Order Form Modal */}
       <OrderForm isOpen={isOrderFormOpen} onClose={() => setIsOrderFormOpen(false)} />
+
+      {/* Nearby Riders Modal */}
+      {nearbyOrder && nearbyOrderInfo && (
+        <NearbyRidersModal
+          orderInfo={nearbyOrderInfo}
+          riders={nearbyRiders}
+          summary={nearbySummary}
+          loading={nearbyLoading}
+          radius={nearbyRadius}
+          onRadiusChange={(r) => {
+            setNearbyRadius(r)
+            fetchNearbyRiders(nearbyOrder.fullId, r)
+          }}
+          onClose={() => {
+            setNearbyOrder(null)
+            setNearbyOrderInfo(null)
+            setNearbyRiders([])
+            setNearbySummary(null)
+          }}
+          onRefresh={() => fetchNearbyRiders(nearbyOrder.fullId, nearbyRadius)}
+        />
+      )}
     </div>
   )
 }

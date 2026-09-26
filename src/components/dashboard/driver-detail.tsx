@@ -811,6 +811,26 @@ export function DriverDetail({ driverId, onClose, kycLocked = false, onRequestUn
               </>
             ) : null}
           </div>
+          {!loading && data && data.driver.phone && data.driver.phone !== "—" && (
+            <>
+              <a
+                href={`tel:${data.driver.phone}`}
+                className="p-1 text-text-muted hover:text-sendme transition-colors"
+                title="Call rider"
+              >
+                <Phone size={14} />
+              </a>
+              <a
+                href={`https://wa.me/${data.driver.phone.replace(/\D/g, "")}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="p-1 text-text-muted hover:text-sendme transition-colors"
+                title="WhatsApp rider"
+              >
+                <MessageCircle size={14} />
+              </a>
+            </>
+          )}
           {!loading && data && (
             <button
               onClick={() => setShowEdit(true)}

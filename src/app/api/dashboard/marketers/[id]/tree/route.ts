@@ -11,6 +11,8 @@ interface TreeNode {
   email: string
   phone: string
   role: string
+  state: string | null
+  username: string | null
   referralStatus: string | null
   verificationStatus: string | null
   convertedAt: string | null
@@ -38,7 +40,7 @@ async function buildTree(marketersId: string, visited: Set<string>, depth: numbe
   if (userIds.length === 0) return []
 
   const [usersRes, profilesRes, driversRes, orgsRes] = await Promise.all([
-    supabaseAdmin.from("users").select("id, full_name, email, phone, role").in("id", userIds),
+    supabaseAdmin.from("users").select("id, full_name, email, phone, role, state, username").in("id", userIds),
     supabaseAdmin.from("marketer_profiles").select("user_id, marketer_id, status").in("user_id", userIds),
     supabaseAdmin.from("driver_profiles").select("id, verification_status").in("id", userIds),
     supabaseAdmin.from("organization_profiles").select("id, verification_status, is_verified").in("id", userIds),
@@ -91,6 +93,8 @@ async function buildTree(marketersId: string, visited: Set<string>, depth: numbe
       email: u.email || "—",
       phone: u.phone || "—",
       role,
+      state: u.state || null,
+      username: u.username || null,
       referralStatus: r.status || null,
       verificationStatus,
       convertedAt: r.converted_at,

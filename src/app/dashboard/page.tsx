@@ -3,9 +3,12 @@
 import { useState, useEffect, useCallback } from "react"
 import { Card } from "@/components/ui/card"
 import { formatCardValue } from "@/lib/format"
+import { FilterSelect, StateFilter } from "@/components/dashboard/filters"
+import { PAGE_REFRESH_EVENT } from "@/hooks/use-page-refresh"
 import {
   Users, Truck, Building2, DollarSign, Package,
-  ArrowRight, TrendingUp, TrendingDown, Loader2, Calendar
+  ArrowRight, TrendingUp, TrendingDown, Loader2, Calendar,
+  Search, Download, RefreshCw
 } from "lucide-react"
 
 interface DashboardStats {
@@ -117,6 +120,8 @@ function ComparisonBadge({ d, label }: { d: Delta; label?: string }) {
 export default function DashboardOverview() {
   const [activeTab, setActiveTab] = useState<Tab>("deliveries")
   const [period, setPeriod] = useState<Period>("this_week")
+  const [stateFilter, setStateFilter] = useState("")
+  const [searchQuery, setSearchQuery] = useState("")
   const [customFrom, setCustomFrom] = useState("")
   const [customTo, setCustomTo] = useState("")
   const [loading, setLoading] = useState(true)
@@ -126,10 +131,16 @@ export default function DashboardOverview() {
   const [charts, setCharts] = useState<ChartData | null>(null)
   const [recent, setRecent] = useState<RecentData | null>(null)
 
-  const fetchData = useCallback(() => {
+  const fetchData = useCallback((overrides?: { period?: Period; state?: string; search?: string }) => {
     setLoading(true)
-    const params = new URLSearchParams({ period })
-    if (period === "custom") {
+    const effectivePeriod = overrides?.period ?? period
+    const effectiveState = overrides?.state !== undefined ? overrides.state : stateFilter
+    const effectiveSearch = overrides?.search !== undefined ? overrides.search : searchQuery
+
+    const params = new URLSearchParams({ period: effectivePeriod })
+    if (effectiveState) params.set("state", effectiveState)
+    if (effectiveSearch) params.set("search", effectiveSearch)
+    if (effectivePeriod === "custom") {
       if (customFrom) params.set("from", customFrom)
       if (customTo) params.set("to", customTo)
     }
@@ -144,11 +155,58 @@ export default function DashboardOverview() {
         setLoading(false)
       })
       .catch(() => setLoading(false))
-  }, [period, customFrom, customTo])
+  }, [period, stateFilter, searchQuery, customFrom, customTo])
 
-  useEffect(() => { fetchData() }, [fetchData])
+  useEffect(() => {
+    fetchData()
+  }, [fetchData])
 
-  if (loading) {
+  useEffect(() => {
+    const handleRefresh = () => fetchData()
+    window.addEventListener(PAGE_REFRESH_EVENT, handleRefresh)
+    return () => window.removeEventListener(PAGE_REFRESH_EVENT, handleRefresh)
+  }, [fetchData])
+
+  const handleStateChange = (v: string) => {
+    setStateFilter(v)
+    fetchData({ state: v })
+  }
+
+  const handlePeriodChange = (p: string) => {
+    const newPeriod = p as Period
+    setPeriod(newPeriod)
+    fetchData({ period: newPeriod })
+  }
+
+  const handleSearch = (q: string) => {
+    setSearchQuery(q)
+    fetchData({ search: q })
+  }
+
+  const handleExport = () => {
+    if (!stats) return
+    const lines = [
+      ["Metric", "Total", "Sub 1", "Sub 2", "Sub 3"],
+      ["Deliveries", stats.deliveries.total, `Completed: ${stats.deliveries.completed}`, `Searching: ${stats.deliveries.searching}`, `In-Transit: ${stats.deliveries.inTransit}`],
+      ["Senders", stats.senders.total, `Active: ${stats.senders.active}`, `Verified: ${stats.senders.verified}`, `Suspended: ${stats.senders.suspended}`],
+      ["Riders", stats.riders.total, `Verified: ${stats.riders.verified}`, `Pending: ${stats.riders.pending}`, `Suspended: ${stats.riders.suspended}`],
+      ["Organizations", stats.organizations.total, `Verified: ${stats.organizations.verified}`, `Pending: ${stats.organizations.pending}`, ""],
+      ["Payouts (NGN)", stats.payouts.totalRequests, `Total Funds: ${stats.payouts.totalFunds}`, `Pending Requests: ${stats.payouts.pending}`, ""],
+      [],
+      ["Recent Deliveries ID", "Status", "From", "To", "Price", "Created At"],
+      ...(recent?.deliveries || []).map((d) => [d.id, d.status, `"${d.from.replace(/"/g, '""')}"`, `"${d.to.replace(/"/g, '""')}"`, d.price, d.created_at]),
+    ]
+    const csvContent = "data:text/csv;charset=utf-8," + lines.map((r) => r.join(",")).join("\n")
+    const encodedUri = encodeURI(csvContent)
+    const link = document.createElement("a")
+    link.setAttribute("href", encodedUri)
+    link.setAttribute("download", `sendme-overview-${period}-${stateFilter || "all-states"}-${new Date().toISOString().slice(0, 10)}.csv`)
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+  }
+
+  if (loading && !stats) {
     return (
       <div className="h-[60vh] flex items-center justify-center">
         <Loader2 size={32} className="animate-spin text-sendme" />
@@ -189,6 +247,89 @@ export default function DashboardOverview() {
   return (
     <div className="space-y-5 animate-in fade-in duration-500">
 
+      {/* ── Page Header ── */}
+      <div className="flex items-center justify-between flex-wrap gap-4">
+        <div>
+          <h1 className="text-xl font-bold text-text-primary">Operations Overview</h1>
+          <p className="text-sm text-text-muted mt-0.5">Real-time metrics, fleet activity, and revenue breakdown.</p>
+        </div>
+        <div className="flex items-center gap-2">
+          {periodInfo && (
+            <span className="hidden sm:inline-block text-xs font-medium text-text-secondary bg-surface-secondary border border-border-default px-3 py-1.5 rounded-lg">
+              Comparing: <strong className="text-text-primary">{periodInfo.current}</strong> vs {periodInfo.previous}
+            </span>
+          )}
+          <button
+            onClick={() => fetchData()}
+            className="flex items-center gap-1.5 bg-white border border-border-default rounded-lg px-3 py-2 text-xs font-semibold text-text-secondary hover:bg-surface-hover transition-colors shadow-sm"
+          >
+            <RefreshCw size={14} className={loading ? "animate-spin text-sendme" : ""} /> Refresh
+          </button>
+        </div>
+      </div>
+
+      {/* ── Top Filters Bar ── */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <StateFilter value={stateFilter} onChange={handleStateChange} />
+
+        <FilterSelect
+          value={period}
+          onChange={handlePeriodChange}
+          options={[
+            { value: "today", label: "Today" },
+            { value: "yesterday", label: "Yesterday" },
+            { value: "this_week", label: "This Week" },
+            { value: "last_week", label: "Last Week" },
+            { value: "this_month", label: "This Month" },
+            { value: "last_month", label: "Last Month" },
+            { value: "this_year", label: "This Year" },
+            { value: "custom", label: "Custom Range" },
+          ]}
+        />
+
+        {period === "custom" && (
+          <div className="flex items-center gap-2 bg-white border border-border-default rounded-lg px-2.5 py-1.5 shadow-sm">
+            <input
+              type="date"
+              value={customFrom}
+              onChange={(e) => setCustomFrom(e.target.value)}
+              className="text-xs text-text-primary bg-transparent focus:outline-none"
+            />
+            <span className="text-xs text-text-muted">to</span>
+            <input
+              type="date"
+              value={customTo}
+              onChange={(e) => setCustomTo(e.target.value)}
+              className="text-xs text-text-primary bg-transparent focus:outline-none"
+            />
+            <button
+              onClick={() => fetchData()}
+              className="bg-sendme text-white px-2 py-0.5 rounded text-[10px] font-semibold"
+            >
+              Apply
+            </button>
+          </div>
+        )}
+
+        <div className="flex-1 min-w-[200px] flex items-center gap-2 bg-white border border-border-default rounded-lg px-3 py-2 shadow-sm">
+          <Search size={14} className="text-text-muted shrink-0" />
+          <input
+            type="text"
+            placeholder="Search deliveries, riders, senders..."
+            className="flex-1 text-xs text-text-primary placeholder:text-text-muted focus:outline-none bg-transparent"
+            value={searchQuery}
+            onChange={(e) => handleSearch(e.target.value)}
+          />
+        </div>
+
+        <button
+          onClick={handleExport}
+          className="flex items-center gap-2 bg-white border border-border-default rounded-lg px-3 py-2 text-xs font-medium text-text-primary hover:bg-surface-hover transition-colors shadow-sm"
+        >
+          <Download size={14} className="text-text-muted" /> Export
+        </button>
+      </div>
+
       {/* ── Stats Cards ── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         <StatCard label="Senders" icon={Users} total={stats.senders.total} subs={[
@@ -218,47 +359,6 @@ export default function DashboardOverview() {
           { label: "failed", value: stats.deliveries.failed, color: "text-danger" },
         ]} />
       </div>
-
-      {/* ── Period Selector ── */}
-      <Card className="p-4">
-        <div className="flex items-center gap-3 flex-wrap">
-          <div className="flex items-center gap-1.5 text-text-muted">
-            <Calendar size={14} />
-            <span className="text-xs font-semibold">Period:</span>
-          </div>
-          {periods.map((p) => (
-            <button
-              key={p.id}
-              onClick={() => setPeriod(p.id)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-                period === p.id ? "bg-sendme text-white" : "bg-surface-secondary text-text-muted hover:text-text-primary hover:bg-border-light"
-              }`}
-            >
-              {p.label}
-            </button>
-          ))}
-          <button
-            onClick={() => setPeriod(period === "custom" ? "this_week" : "custom")}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-              period === "custom" ? "bg-sendme text-white" : "bg-surface-secondary text-text-muted hover:text-text-primary hover:bg-border-light"
-            }`}
-          >
-            Custom
-          </button>
-          {period === "custom" && (
-            <div className="flex items-center gap-2 ml-2">
-              <input type="date" value={customFrom} onChange={(e) => setCustomFrom(e.target.value)} className="border border-border-light rounded-lg px-2.5 py-1.5 text-xs text-text-primary bg-white" />
-              <span className="text-xs text-text-muted">to</span>
-              <input type="date" value={customTo} onChange={(e) => setCustomTo(e.target.value)} className="border border-border-light rounded-lg px-2.5 py-1.5 text-xs text-text-primary bg-white" />
-            </div>
-          )}
-          {periodInfo && (
-            <span className="text-[11px] text-text-muted ml-auto">
-              {periodInfo.current} vs {periodInfo.previous}
-            </span>
-          )}
-        </div>
-      </Card>
 
       {/* ── Comparison Summary ── */}
       {comparison && (

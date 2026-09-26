@@ -12,7 +12,7 @@ import { usePageRefresh } from "@/hooks/use-page-refresh"
 import {
   Users, CheckCircle, Clock, AlertTriangle, Ban, Wifi, ChevronDown,
   Search, Download, Plus, MoreHorizontal, ArrowUpDown, Filter,
-  ChevronLeft, ChevronRight, Star, Loader2, DollarSign
+  ChevronLeft, ChevronRight, Star, Loader2, DollarSign, MapPin, Phone, MessageCircle
 } from "lucide-react"
 
 interface DriverRow {
@@ -25,7 +25,9 @@ interface DriverRow {
   vehicle: string
   vehiclePlate: string
   city: string
-  area: string
+  latitude: number | null
+  longitude: number | null
+  locationLabel: string | null
   status: string
   statusColor: string
   online: boolean
@@ -47,6 +49,7 @@ export default function DriversPage() {
   const [searchQuery, setSearchQuery] = useState("")
   const [statusFilter, setStatusFilter] = useState("")
   const [stateFilter, setStateFilter] = useState("")
+  const [onlineFilter, setOnlineFilter] = useState("")
   const kyc = useKycUnlock()
 
   const fetchData = (page: number, search: string) => {
@@ -57,6 +60,7 @@ export default function DriversPage() {
     if (search) params.set("search", search)
     if (statusFilter) params.set("status", statusFilter)
     if (stateFilter) params.set("state", stateFilter)
+    if (onlineFilter) params.set("online", onlineFilter)
 
     fetch(`/api/dashboard/drivers?${params.toString()}`)
       .then((r) => r.json())
@@ -88,6 +92,11 @@ export default function DriversPage() {
 
   const handleStateChange = (v: string) => {
     setStateFilter(v)
+    fetchData(1, searchQuery)
+  }
+
+  const handleOnlineChange = (v: string) => {
+    setOnlineFilter(v)
     fetchData(1, searchQuery)
   }
 
@@ -141,6 +150,15 @@ export default function DriversPage() {
               ]}
             />
             <StateFilter value={stateFilter} onChange={handleStateChange} />
+            <FilterSelect
+              value={onlineFilter}
+              onChange={handleOnlineChange}
+              placeholder="All Riders"
+              options={[
+                { value: "online", label: "Online" },
+                { value: "offline", label: "Offline" },
+              ]}
+            />
             <div className="flex-1 min-w-[200px] flex items-center gap-2 bg-white border border-border-default rounded-lg px-3 py-2">
               <Search size={14} className="text-text-muted shrink-0" />
               <input
@@ -223,7 +241,7 @@ export default function DriversPage() {
                       <th className="px-4 py-3 font-semibold">Driver <ArrowUpDown size={10} className="inline ml-1" /></th>
                       <th className="px-4 py-3 font-semibold">Driver Type</th>
                       <th className="px-4 py-3 font-semibold">Vehicle</th>
-                      <th className="px-4 py-3 font-semibold">City / Area</th>
+                      <th className="px-4 py-3 font-semibold">State / Location</th>
                       <th className="px-4 py-3 font-semibold">Status</th>
                       <th className="px-4 py-3 font-semibold">Rating</th>
                       <th className="px-4 py-3 font-semibold">Trips</th>
@@ -260,7 +278,24 @@ export default function DriversPage() {
                         </td>
                         <td className="px-4 py-3">
                           <p className="text-xs font-medium text-text-primary">{d.city}</p>
-                          <p className="text-[10px] text-text-muted">{d.area}</p>
+                          {d.locationLabel ? (
+                            <p className="text-[10px] font-medium text-text-primary flex items-center gap-1 mt-0.5">
+                              <MapPin size={10} className="text-sendme shrink-0" /> {d.locationLabel}
+                            </p>
+                          ) : null}
+                          {d.latitude != null && d.longitude != null ? (
+                            <a
+                              href={`https://www.google.com/maps?q=${d.latitude},${d.longitude}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-[10px] text-sendme hover:underline"
+                              title="Open in Google Maps"
+                            >
+                              View on map
+                            </a>
+                          ) : (
+                            <p className="text-[10px] text-text-muted">No location</p>
+                          )}
                         </td>
                         <td className="px-4 py-3">
                           <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${d.statusColor}`}>{d.status}</span>
@@ -288,9 +323,33 @@ export default function DriversPage() {
                           <p className="text-[10px] text-text-muted">{d.joinedNote}</p>
                         </td>
                         <td className="px-4 py-3 text-right">
-                          <button className="p-1 text-text-muted hover:text-text-primary transition-colors">
-                            <MoreHorizontal size={16} />
-                          </button>
+                          <div className="flex items-center justify-end gap-1">
+                            {d.phone && d.phone !== "—" && (
+                              <>
+                                <a
+                                  href={`tel:${d.phone}`}
+                                  className="p-1.5 text-text-muted hover:text-sendme transition-colors"
+                                  title="Call rider"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  <Phone size={14} />
+                                </a>
+                                <a
+                                  href={`https://wa.me/${d.phone.replace(/\D/g, "")}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="p-1.5 text-text-muted hover:text-sendme transition-colors"
+                                  title="WhatsApp rider"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  <MessageCircle size={14} />
+                                </a>
+                              </>
+                            )}
+                            <button className="p-1 text-text-muted hover:text-text-primary transition-colors">
+                              <MoreHorizontal size={16} />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}

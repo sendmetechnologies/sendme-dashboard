@@ -6,29 +6,24 @@ import { supabaseAdmin } from "@/lib/supabase";
 // always shows sensible values even before any config is saved.
 const DEFAULT_PRICING = {
   baseFare: 400,
-  perKm: { bicycle: 200, motorcycle: 400, tricycle: 500, car: 600, truck: 1200 },
-  perMinute: { bicycle: 10, motorcycle: 18, tricycle: 22, car: 28, truck: 42 },
-  urgencyMultiplier: { normal: 1.0, fast: 1.2, immediate: 1.4, express: 1.7 },
-  vehicleSpeedKmh: { bicycle: 12, motorcycle: 25, tricycle: 22, car: 20, truck: 16 },
+  perKm: { bicycle: 200, motorcycle: 400, tricycle: 500, car: 600, van: 900, truck: 1200 },
+  vehicleSpeedKmh: { bicycle: 12, motorcycle: 25, tricycle: 22, car: 20, van: 18, truck: 16 },
   pickupBufferMin: 4,
   dropoffBufferMin: 4,
+  expressMultiplier: 1.05,
 };
 
-const VEHICLES = ["bicycle", "motorcycle", "tricycle", "car", "truck"] as const;
-const URGENCIES = ["normal", "fast", "immediate", "express"] as const;
+const VEHICLES = ["bicycle", "motorcycle", "tricycle", "car", "van", "truck"] as const;
 
 function isValidConfig(cfg: any): boolean {
   if (!cfg || typeof cfg !== "object") return false;
   if (typeof cfg.baseFare !== "number" || cfg.baseFare < 0) return false;
   for (const v of VEHICLES) {
     if (typeof cfg.perKm?.[v] !== "number" || cfg.perKm[v] < 0) return false;
-    if (typeof cfg.perMinute?.[v] !== "number" || cfg.perMinute[v] < 0) return false;
     // Optional: vehicle speeds (km/h) — positive only
     if (cfg.vehicleSpeedKmh?.[v] !== undefined && (typeof cfg.vehicleSpeedKmh[v] !== "number" || cfg.vehicleSpeedKmh[v] <= 0)) return false;
   }
-  for (const u of URGENCIES) {
-    if (typeof cfg.urgencyMultiplier?.[u] !== "number" || cfg.urgencyMultiplier[u] <= 0) return false;
-  }
+  if (cfg.expressMultiplier !== undefined && (typeof cfg.expressMultiplier !== "number" || cfg.expressMultiplier <= 0)) return false;
   // Optional: ETA buffers (minutes) — non-negative
   if (cfg.pickupBufferMin !== undefined && (typeof cfg.pickupBufferMin !== "number" || cfg.pickupBufferMin < 0)) return false;
   if (cfg.dropoffBufferMin !== undefined && (typeof cfg.dropoffBufferMin !== "number" || cfg.dropoffBufferMin < 0)) return false;
@@ -90,7 +85,7 @@ export async function PUT(req: NextRequest) {
       {
         key: "pricing_config",
         value: JSON.stringify(config),
-        description: "General (fallback) delivery pricing: base fare, per-km, per-minute, minimum fare, urgency multipliers",
+        description: "General (fallback) delivery pricing: base fare, per-km, express multiplier",
         updated_at: new Date().toISOString(),
       },
       { onConflict: "key" }

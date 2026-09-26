@@ -15,16 +15,41 @@ export async function GET(req: NextRequest) {
     const to = searchParams.get("to") || null
     const offset = (page - 1) * limit
 
-    // ── Status tab counts ──
-    // "scheduled" is not an orders.status value — scheduled orders are marked
-    // by is_scheduled = true (scheduled_status holds the confirmation state).
+    // ── Parent filters helper (applies search, vehicle, payment, state, date) ──
+    const applyParentFilters = (q: any) => {
+      if (search) {
+        q = q.or(`id.ilike.%${search}%,sender_name.ilike.%${search}%,receiver_name.ilike.%${search}%,pickup_address.ilike.%${search}%,dropoff_address.ilike.%${search}%`)
+      }
+      if (vehicleType) {
+        q = q.eq("vehicle_type", vehicleType)
+      }
+      if (paymentMethod) {
+        q = q.eq("payment_method", paymentMethod)
+      }
+      if (state) {
+        if (state.toLowerCase().includes("abuja") || state.toLowerCase().includes("fct")) {
+          q = q.or(`pickup_state.ilike.%Abuja%,pickup_state.ilike.%FCT%,pickup_address.ilike.%Abuja%,pickup_address.ilike.%FCT%,pickup_address.ilike.%Federal Capital Territory%`)
+        } else {
+          q = q.or(`pickup_state.ilike.%${state}%,pickup_address.ilike.%${state}%`)
+        }
+      }
+      if (from) {
+        q = q.gte("created_at", from)
+      }
+      if (to) {
+        q = q.lte("created_at", to)
+      }
+      return q
+    }
+
+    // ── Status tab counts with parent filters applied ──
     const allStatuses = ["searching", "bidding", "accepted", "picked_up", "delivered", "canceled"] as const
 
     const statusCountResults = await Promise.all([
-      supabaseAdmin.from("orders").select("id", { count: "exact", head: true }).eq("is_scheduled", true),
-      supabaseAdmin.from("orders").select("id", { count: "exact", head: true }),
+      applyParentFilters(supabaseAdmin.from("orders").select("id", { count: "exact", head: true }).eq("is_scheduled", true)),
+      applyParentFilters(supabaseAdmin.from("orders").select("id", { count: "exact", head: true })),
       ...allStatuses.map((s) =>
-        supabaseAdmin.from("orders").select("id", { count: "exact", head: true }).eq("status", s)
+        applyParentFilters(supabaseAdmin.from("orders").select("id", { count: "exact", head: true }).eq("status", s))
       ),
     ])
 
@@ -38,10 +63,10 @@ export async function GET(req: NextRequest) {
 
     const totalCount = totalCountQuery.count || 0
 
-    // ── Stat card values ──
+    // ── Stat card values (filtered by parent filters) ──
     const activeOrders = statusCounts.searching + statusCounts.bidding + statusCounts.accepted + statusCounts.picked_up
     const unassigned = statusCounts.searching + statusCounts.bidding
-    const scheduledToday = statusCounts.scheduled // approximate — filtered by date if needed
+    const scheduledToday = statusCounts.scheduled
     const completed = statusCounts.delivered
     const failed = statusCounts.canceled
     const cancelled = statusCounts.canceled
@@ -71,6 +96,7 @@ export async function GET(req: NextRequest) {
 
     // ── Build query ──
     const applyFilters = (q: any) => {
+      q = applyParentFilters(q)
       if (statusFilter === "Scheduled") {
         q = q.eq("is_scheduled", true)
       } else if (statusFilter && tabToStatuses[statusFilter]) {
@@ -78,24 +104,6 @@ export async function GET(req: NextRequest) {
         if (statuses.length > 0) {
           q = q.in("status", statuses)
         }
-      }
-      if (search) {
-        q = q.or(`id.ilike.%${search}%,sender_name.ilike.%${search}%,receiver_name.ilike.%${search}%,pickup_address.ilike.%${search}%,dropoff_address.ilike.%${search}%`)
-      }
-      if (vehicleType) {
-        q = q.eq("vehicle_type", vehicleType)
-      }
-      if (paymentMethod) {
-        q = q.eq("payment_method", paymentMethod)
-      }
-      if (state) {
-        q = q.eq("pickup_state", state)
-      }
-      if (from) {
-        q = q.gte("created_at", from)
-      }
-      if (to) {
-        q = q.lte("created_at", to)
       }
       return q
     }
@@ -105,6 +113,7 @@ export async function GET(req: NextRequest) {
         .from("orders")
         .select(`
           id, status, final_price, pickup_address, dropoff_address,
+          pickup_lat, pickup_lng,
           payment_method, vehicle_type, created_at, updated_at,
           customer_id, accepted_driver_id, pin_enabled,
           sender_name, sender_phone, receiver_name, receiver_phone,
@@ -209,6 +218,8 @@ export async function GET(req: NextRequest) {
       return {
         id: o.id.slice(0, 8).toUpperCase(),
         fullId: o.id,
+        pickupLat: o.pickup_lat ?? null,
+        pickupLng: o.pickup_lng ?? null,
         time: timeLabel,
         from: extractArea(o.pickup_address),
         to: extractArea(o.dropoff_address),

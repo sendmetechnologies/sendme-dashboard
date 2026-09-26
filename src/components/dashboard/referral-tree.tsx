@@ -1,8 +1,9 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import { toast } from "sonner"
 import { Modal } from "@/components/ui/modal"
-import { Loader2, ChevronRight, Users } from "lucide-react"
+import { Loader2, ChevronRight, Users, Copy } from "lucide-react"
 
 interface TreeNode {
   id: string
@@ -11,6 +12,8 @@ interface TreeNode {
   email: string
   phone: string
   role: string
+  state: string | null
+  username: string | null
   referralStatus: string | null
   verificationStatus: string | null
   convertedAt: string | null
@@ -59,16 +62,44 @@ function formatDate(iso: string | null) {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
 }
 
+async function copyText(value: string) {
+  try {
+    await navigator.clipboard.writeText(value)
+    toast.success("Copied to clipboard")
+  } catch {
+    toast.error("Copy failed")
+  }
+}
+
+function waLink(phone: string) {
+  let digits = (phone || "").replace(/\D/g, "")
+  if (digits.startsWith("0")) digits = "234" + digits.slice(1)
+  else if (digits.length === 10) digits = "234" + digits
+  return `https://wa.me/${digits}`
+}
+
+function WhatsAppIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z" />
+    </svg>
+  )
+}
+
 function TreeNodeView({ node, depth }: { node: TreeNode; depth: number }) {
   const [expanded, setExpanded] = useState(depth < 2)
+  const [detailsOpen, setDetailsOpen] = useState(false)
   const hasChildren = node.children.length > 0
 
   return (
     <div>
-      <div className={`flex items-center gap-2.5 py-2 ${depth > 0 ? "border-l-2 border-border-light pl-3 ml-2" : ""}`}>
+      <div
+        className={`flex items-center gap-2.5 py-2 rounded-lg cursor-pointer hover:bg-surface-secondary/50 transition-colors ${depth > 0 ? "border-l-2 border-border-light pl-3 ml-2" : ""}`}
+        onClick={() => setDetailsOpen(!detailsOpen)}
+      >
         <button
           type="button"
-          onClick={() => hasChildren && setExpanded(!expanded)}
+          onClick={(e) => { e.stopPropagation(); if (hasChildren) setExpanded(!expanded) }}
           className={`w-4 h-4 flex items-center justify-center text-text-muted shrink-0 ${hasChildren ? "" : "opacity-0 pointer-events-none"}`}
         >
           <ChevronRight size={14} className={`transition-transform ${expanded ? "rotate-90" : ""}`} />
@@ -107,6 +138,68 @@ function TreeNodeView({ node, depth }: { node: TreeNode; depth: number }) {
           )}
         </div>
       </div>
+
+      {detailsOpen && (
+        <div className="mb-2 ml-6 p-3 bg-surface-secondary rounded-lg space-y-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <p className="text-[9px] text-text-muted mb-0.5">Email</p>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] font-medium text-text-primary truncate">{node.email}</span>
+                <button
+                  type="button"
+                  onClick={() => copyText(node.email)}
+                  className="p-1 text-text-muted hover:text-text-primary rounded hover:bg-border-light transition-colors shrink-0"
+                  title="Copy email"
+                >
+                  <Copy size={12} />
+                </button>
+              </div>
+            </div>
+            <div>
+              <p className="text-[9px] text-text-muted mb-0.5">Phone</p>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] font-medium text-text-primary truncate">{node.phone}</span>
+                <button
+                  type="button"
+                  onClick={() => copyText(node.phone)}
+                  className="p-1 text-text-muted hover:text-text-primary rounded hover:bg-border-light transition-colors shrink-0"
+                  title="Copy phone"
+                >
+                  <Copy size={12} />
+                </button>
+                <a
+                  href={waLink(node.phone)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="p-1.5 rounded-lg bg-sendme-50 text-sendme hover:bg-sendme/20 transition-colors shrink-0"
+                  title="Message on WhatsApp"
+                >
+                  <WhatsAppIcon size={14} />
+                </a>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-text-muted">
+            <span>Role: <span className="font-semibold text-text-primary">{roleLabel(node.role)}</span></span>
+            {verificationLabel(node.verificationStatus) && (
+              <span>Verification: <span className="font-semibold text-text-primary">{verificationLabel(node.verificationStatus)}</span></span>
+            )}
+            {node.state && <span>State: <span className="font-semibold text-text-primary">{node.state}</span></span>}
+            {node.username && <span>Username: <span className="font-semibold text-text-primary">{node.username}</span></span>}
+            <span>Joined: <span className="font-semibold text-text-primary">{formatDate(node.joinedAt)}</span></span>
+            {node.convertedAt && <span>Converted: <span className="font-semibold text-text-primary">{formatDate(node.convertedAt)}</span></span>}
+            {node.commissionAmount > 0 && (
+              <span>
+                Commission: <span className="font-semibold text-sendme">₦{node.commissionAmount.toLocaleString()}</span>
+                <span className="text-text-muted"> ({node.commissionPaid ? "paid" : "unpaid"})</span>
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
       {expanded && hasChildren && (
         <div>
           {node.children.map((child) => (

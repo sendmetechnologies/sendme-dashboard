@@ -42,7 +42,7 @@ export function StateFilter({ value, onChange }: { value: string; onChange: (v: 
       value={value}
       onChange={onChange}
       placeholder="All States"
-      options={NIGERIAN_STATES.map((s) => ({ value: s, label: s }))}
+      options={NIGERIAN_STATES.map((s) => ({ value: s, label: s === "FCT" ? "FCT - Abuja" : s }))}
     />
   )
 }

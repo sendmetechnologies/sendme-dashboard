@@ -1,6 +1,7 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, Suspense } from "react"
+import { useSearchParams } from "next/navigation"
 import { Card } from "@/components/ui/card"
 import {
   Mail, Send, X, Loader2, Users, CheckCircle, AlertTriangle,
@@ -78,7 +79,8 @@ const recipientStatusColor: Record<string, string> = {
   queued: "bg-gray-100 text-gray-500",
 }
 
-export default function EmailCampaignsPage() {
+function EmailCampaignsContent() {
+  const searchParams = useSearchParams()
   const [campaigns, setCampaigns] = useState<Campaign[]>([])
   const [audiences, setAudiences] = useState<AudienceData>({})
   const [loading, setLoading] = useState(true)
@@ -96,6 +98,24 @@ export default function EmailCampaignsPage() {
   const [formTarget, setFormTarget] = useState("all")
   const [formSub, setFormSub] = useState("all")
   const [formEmails, setFormEmails] = useState("")
+
+  useEffect(() => {
+    const target = searchParams.get("target")
+    const emails = searchParams.get("emails")
+    const name = searchParams.get("name")
+    const message = searchParams.get("message")
+    const sender = searchParams.get("senderName")
+
+    if (target || emails) {
+      setShowCreate(true)
+      if (target) setFormTarget(target)
+      if (emails) setFormEmails(emails)
+      if (name) setFormName(name)
+      if (message) setFormMessage(message)
+      if (sender) setFormSenderName(sender)
+      else setFormSenderName("SendMe Dispatch")
+    }
+  }, [searchParams])
 
   const fetchCampaigns = useCallback(async () => {
     try {
@@ -454,5 +474,13 @@ export default function EmailCampaignsPage() {
         </div>
       )}
     </div>
+  )
+}
+
+export default function EmailCampaignsPage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-center"><Loader2 size={24} className="animate-spin text-sendme mx-auto" /></div>}>
+      <EmailCampaignsContent />
+    </Suspense>
   )
 }

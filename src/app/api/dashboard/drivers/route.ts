@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
+import { reverseGeocodeArea } from "@/lib/geocode"
 
 export async function GET(req: NextRequest) {
   try {
@@ -9,6 +10,7 @@ export async function GET(req: NextRequest) {
     const statusFilter = searchParams.get("status") || null
     const search = searchParams.get("search") || null
     const state = searchParams.get("state") || null
+    const online = searchParams.get("online") || null
     const offset = (page - 1) * limit
 
     const statusMap: Record<string, string[]> = {
@@ -56,7 +58,7 @@ export async function GET(req: NextRequest) {
       .from("users")
       .select(`
         id, full_name, phone, email, state, created_at, is_onboarded,
-        driver_profiles(verification_status, rating, vehicle_info, is_online, review_reason, trips_count, id_details, is_suspended, is_deleted)
+        driver_profiles(verification_status, rating, vehicle_info, is_online, review_reason, trips_count, id_details, is_suspended, is_deleted, current_lat, current_lng)
       `)
       .eq("role", "driver")
       .order("created_at", { ascending: false })
@@ -76,6 +78,12 @@ export async function GET(req: NextRequest) {
 
     if (state) {
       query = query.eq("state", state)
+    }
+
+    if (online === "online") {
+      query = query.eq("driver_profiles.is_online", true)
+    } else if (online === "offline") {
+      query = query.not("driver_profiles.is_online", "is", true)
     }
 
     if (search) {
@@ -162,7 +170,9 @@ export async function GET(req: NextRequest) {
         vehicle: vehicleType,
         vehiclePlate,
         city: (d as any).state || "—",
-        area: "—",
+        latitude: profile?.current_lat ?? null,
+        longitude: profile?.current_lng ?? null,
+        locationLabel: null as string | null,
         status: statusLabel,
         statusColor,
         online: isOnline,
@@ -173,10 +183,22 @@ export async function GET(req: NextRequest) {
       }
     })
 
+    // Reverse-geocode riders with a current location into a short human-readable
+    // area (e.g. "Ikeja, Lagos") so admins can see where online riders are.
+    const located = formatted.filter((d) => d.latitude != null && d.longitude != null)
+    if (located.length > 0) {
+      const geoResults = await Promise.all(
+        located.map((d) => reverseGeocodeArea(d.latitude as number, d.longitude as number)),
+      )
+      located.forEach((d, i) => {
+        d.locationLabel = geoResults[i]
+      })
+    }
+
     // ── Filtered count for pagination (mirrors the list filters) ──
     let countQuery = supabaseAdmin
       .from("users")
-      .select("id, driver_profiles(verification_status, is_suspended, is_deleted)", { count: "exact", head: true })
+      .select("id, driver_profiles(verification_status, is_suspended, is_deleted, is_online)", { count: "exact", head: true })
       .eq("role", "driver")
     if (statusFilter && statusFilter !== "All Drivers") {
       if (statusFilter === "Suspended") countQuery = countQuery.eq("driver_profiles.is_suspended", true)
@@ -184,6 +206,8 @@ export async function GET(req: NextRequest) {
       else { const dbStatuses = statusMap[statusFilter]; if (dbStatuses) countQuery = countQuery.in("driver_profiles.verification_status", dbStatuses) }
     }
     if (state) countQuery = countQuery.eq("state", state)
+    if (online === "online") countQuery = countQuery.eq("driver_profiles.is_online", true)
+    else if (online === "offline") countQuery = countQuery.not("driver_profiles.is_online", "is", true)
     if (search) countQuery = countQuery.or(`full_name.ilike.%${search}%,phone.ilike.%${search}%,email.ilike.%${search}%,id.ilike.%${search}%`)
     const { count: filteredTotal } = await countQuery
 

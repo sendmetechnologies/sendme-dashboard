@@ -114,9 +114,43 @@ function fmtAmt(v: number) {
 export async function GET(req: NextRequest) {
   try {
     const { cs, ce, ps, pe, g, pl, ppl } = parsePeriod(req)
+    const sp = new URL(req.url).searchParams
+    const state = sp.get("state")?.trim() || ""
+    const search = sp.get("search")?.trim() || ""
+
     const cSI = cs.toISOString(), cEI = ce.toISOString()
     const pSI = ps.toISOString(), pEI = pe.toISOString()
     const cSl = slots(cs, ce, g), pSl = slots(ps, pe, g)
+
+    const applyOrderState = (q: any) => {
+      if (!state) return q
+      if (state.toLowerCase().includes("abuja") || state.toLowerCase().includes("fct")) {
+        return q.or(`pickup_state.ilike.%Abuja%,pickup_state.ilike.%FCT%,pickup_address.ilike.%Abuja%,pickup_address.ilike.%FCT%,pickup_address.ilike.%Federal Capital Territory%`)
+      }
+      return q.or(`pickup_state.ilike.%${state}%,pickup_address.ilike.%${state}%`)
+    }
+
+    let rOrdersQuery = applyOrderState(
+      supabaseAdmin.from("orders").select("id, status, final_price, pickup_address, dropoff_address, created_at, customer_id, accepted_driver_id, sender_name, receiver_name")
+    )
+    if (search) {
+      rOrdersQuery = rOrdersQuery.or(`id.ilike.%${search}%,sender_name.ilike.%${search}%,receiver_name.ilike.%${search}%,pickup_address.ilike.%${search}%,dropoff_address.ilike.%${search}%`)
+    }
+
+    let rRidersQuery = supabaseAdmin.from("users").select("id, full_name, phone, email, created_at, driver_profiles(verification_status, rating, vehicle_info)").eq("role", "driver")
+    if (search) {
+      rRidersQuery = rRidersQuery.or(`full_name.ilike.%${search}%,phone.ilike.%${search}%,email.ilike.%${search}%`)
+    }
+
+    let rSendersQuery = supabaseAdmin.from("users").select("id, full_name, phone, email, created_at").eq("role", "customer")
+    if (search) {
+      rSendersQuery = rSendersQuery.or(`full_name.ilike.%${search}%,phone.ilike.%${search}%,email.ilike.%${search}%`)
+    }
+
+    let rOrgsQuery = supabaseAdmin.from("organization_profiles").select("id, business_name, business_email, contact_person_name, is_verified, created_at")
+    if (search) {
+      rOrgsQuery = rOrgsQuery.or(`business_name.ilike.%${search}%,business_email.ilike.%${search}%,contact_person_name.ilike.%${search}%`)
+    }
 
     const [
       curOrders, prevOrders, curUsers, prevUsers, curTx, prevTx,
@@ -125,13 +159,13 @@ export async function GET(req: NextRequest) {
       rOrders, rRiders, rSenders, rOrgs,
       curOrgs, prevOrgs, curMarketers, prevMarketers,
     ] = await Promise.all([
-      supabaseAdmin.from("orders").select("id, status, final_price, created_at, pickup_address, dropoff_address, customer_id, accepted_driver_id").gte("created_at", cSI).lte("created_at", cEI),
-      supabaseAdmin.from("orders").select("id, status, final_price, created_at").gte("created_at", pSI).lte("created_at", pEI),
+      applyOrderState(supabaseAdmin.from("orders").select("id, status, final_price, created_at, pickup_address, dropoff_address, customer_id, accepted_driver_id").gte("created_at", cSI).lte("created_at", cEI)),
+      applyOrderState(supabaseAdmin.from("orders").select("id, status, final_price, created_at, pickup_address").gte("created_at", pSI).lte("created_at", pEI)),
       supabaseAdmin.from("users").select("id, role, created_at").gte("created_at", cSI).lte("created_at", cEI),
       supabaseAdmin.from("users").select("id, role, created_at").gte("created_at", pSI).lte("created_at", pEI),
       supabaseAdmin.from("transactions").select("amount, created_at").eq("type", "payout").gte("created_at", cSI).lte("created_at", cEI),
       supabaseAdmin.from("transactions").select("amount, created_at").eq("type", "payout").gte("created_at", pSI).lte("created_at", pEI),
-      supabaseAdmin.from("orders").select("id, status, final_price, created_at, pickup_address, dropoff_address, customer_id, accepted_driver_id").order("created_at", { ascending: false }),
+      applyOrderState(supabaseAdmin.from("orders").select("id, status, final_price, created_at, pickup_address, dropoff_address, customer_id, accepted_driver_id").order("created_at", { ascending: false })),
       supabaseAdmin.from("payout_requests").select("id, amount, status"),
       supabaseAdmin.from("wallets").select("balance"),
       supabaseAdmin.from("driver_profiles").select("id", { count: "exact", head: true }).eq("verification_status", "verified"),
@@ -139,20 +173,20 @@ export async function GET(req: NextRequest) {
       supabaseAdmin.from("driver_profiles").select("id", { count: "exact", head: true }).eq("verification_status", "rejected"),
       supabaseAdmin.from("organization_profiles").select("id", { count: "exact", head: true }).eq("is_verified", true),
       supabaseAdmin.from("organization_profiles").select("id", { count: "exact", head: true }).eq("is_verified", false),
-      supabaseAdmin.from("orders").select("id, status, final_price, pickup_address, dropoff_address, created_at, customer_id, accepted_driver_id").order("created_at", { ascending: false }).limit(5),
-      supabaseAdmin.from("users").select("id, full_name, phone, email, created_at, driver_profiles(verification_status, rating, vehicle_info)").eq("role", "driver").order("created_at", { ascending: false }).limit(5),
-      supabaseAdmin.from("users").select("id, full_name, phone, email, created_at").eq("role", "customer").order("created_at", { ascending: false }).limit(5),
-      supabaseAdmin.from("organization_profiles").select("id, business_name, business_email, contact_person_name, is_verified, created_at").order("created_at", { ascending: false }).limit(5),
+      rOrdersQuery.order("created_at", { ascending: false }).limit(8),
+      rRidersQuery.order("created_at", { ascending: false }).limit(8),
+      rSendersQuery.order("created_at", { ascending: false }).limit(8),
+      rOrgsQuery.order("created_at", { ascending: false }).limit(8),
       supabaseAdmin.from("organization_profiles").select("id, created_at").gte("created_at", cSI).lte("created_at", cEI),
       supabaseAdmin.from("organization_profiles").select("id, created_at").gte("created_at", pSI).lte("created_at", pEI),
       supabaseAdmin.from("marketers").select("id, created_at").gte("created_at", cSI).lte("created_at", cEI),
       supabaseAdmin.from("marketers").select("id, created_at").gte("created_at", pSI).lte("created_at", pEI),
     ])
 
-    const cO = curOrders.data || [], pO = prevOrders.data || []
-    const cU = curUsers.data || [], pU = prevUsers.data || []
-    const cT = curTx.data || [], pT = prevTx.data || []
-    const aO = allOrders.data || []
+    const cO: any[] = (curOrders.data as any[]) || [], pO: any[] = (prevOrders.data as any[]) || []
+    const cU: any[] = (curUsers.data as any[]) || [], pU: any[] = (prevUsers.data as any[]) || []
+    const cT: any[] = (curTx.data as any[]) || [], pT: any[] = (prevTx.data as any[]) || []
+    const aO: any[] = (allOrders.data as any[]) || []
 
     const totalSenders = (await supabaseAdmin.from("users").select("id", { count: "exact", head: true }).eq("role", "customer")).count || 0
     const totalRiders = (await supabaseAdmin.from("users").select("id", { count: "exact", head: true }).eq("role", "driver")).count || 0
@@ -166,34 +200,34 @@ export async function GET(req: NextRequest) {
       return `${dayNames[d.getDay()]} ${d.getDate()}`
     }
 
-    const cDel = cnt(cO, o => o.created_at, g, cSl)
-    const pDel = cnt(pO, o => o.created_at, g, pSl)
-    const cRev = sum(cO, o => ({ val: Number(o.final_price) || 0, date: o.created_at }), g, cSl)
-    const pRev = sum(pO, o => ({ val: Number(o.final_price) || 0, date: o.created_at }), g, pSl)
-    const cSend = cnt(cU.filter(u => u.role === "customer"), u => u.created_at, g, cSl)
-    const pSend = cnt(pU.filter(u => u.role === "customer"), u => u.created_at, g, pSl)
-    const cRid = cnt(cU.filter(u => u.role === "driver"), u => u.created_at, g, cSl)
-    const pRid = cnt(pU.filter(u => u.role === "driver"), u => u.created_at, g, pSl)
+    const cDel = cnt(cO, (o: any) => o.created_at, g, cSl)
+    const pDel = cnt(pO, (o: any) => o.created_at, g, pSl)
+    const cRev = sum(cO, (o: any) => ({ val: Number(o.final_price) || 0, date: o.created_at }), g, cSl)
+    const pRev = sum(pO, (o: any) => ({ val: Number(o.final_price) || 0, date: o.created_at }), g, pSl)
+    const cSend = cnt(cU.filter((u: any) => u.role === "customer"), (u: any) => u.created_at, g, cSl)
+    const pSend = cnt(pU.filter((u: any) => u.role === "customer"), (u: any) => u.created_at, g, pSl)
+    const cRid = cnt(cU.filter((u: any) => u.role === "driver"), (u: any) => u.created_at, g, cSl)
+    const pRid = cnt(pU.filter((u: any) => u.role === "driver"), (u: any) => u.created_at, g, pSl)
     const cOrg = cnt(curOrgs.data || [], (o: any) => o.created_at, g, cSl)
     const pOrg = cnt(prevOrgs.data || [], (o: any) => o.created_at, g, pSl)
     const cMkt = cnt(curMarketers.data || [], (m: any) => m.created_at, g, cSl)
     const pMkt = cnt(prevMarketers.data || [], (m: any) => m.created_at, g, pSl)
-    const cPay = sum(cT, t => ({ val: Number(t.amount) || 0, date: t.created_at }), g, cSl)
-    const pPay = sum(pT, t => ({ val: Number(t.amount) || 0, date: t.created_at }), g, pSl)
+    const cPay = sum(cT, (t: any) => ({ val: Number(t.amount) || 0, date: t.created_at }), g, cSl)
+    const pPay = sum(pT, (t: any) => ({ val: Number(t.amount) || 0, date: t.created_at }), g, pSl)
 
     const curDelTotal = cO.length, prevDelTotal = pO.length
-    const curRevTotal = cO.reduce((s, o) => s + (Number(o.final_price) || 0), 0)
-    const prevRevTotal = pO.reduce((s, o) => s + (Number(o.final_price) || 0), 0)
-    const curSendTotal = cU.filter(u => u.role === "customer").length
-    const prevSendTotal = pU.filter(u => u.role === "customer").length
-    const curRidTotal = cU.filter(u => u.role === "driver").length
-    const prevRidTotal = pU.filter(u => u.role === "driver").length
+    const curRevTotal = cO.reduce((s: number, o: any) => s + (Number(o.final_price) || 0), 0)
+    const prevRevTotal = pO.reduce((s: number, o: any) => s + (Number(o.final_price) || 0), 0)
+    const curSendTotal = cU.filter((u: any) => u.role === "customer").length
+    const prevSendTotal = pU.filter((u: any) => u.role === "customer").length
+    const curRidTotal = cU.filter((u: any) => u.role === "driver").length
+    const prevRidTotal = pU.filter((u: any) => u.role === "driver").length
     const curOrgTotal = (curOrgs.data || []).length
     const prevOrgTotal = (prevOrgs.data || []).length
     const curMktTotal = (curMarketers.data || []).length
     const prevMktTotal = (prevMarketers.data || []).length
-    const curPayTotal = cT.reduce((s, t) => s + (Number(t.amount) || 0), 0)
-    const prevPayTotal = pT.reduce((s, t) => s + (Number(t.amount) || 0), 0)
+    const curPayTotal = cT.reduce((s: number, t: any) => s + (Number(t.amount) || 0), 0)
+    const prevPayTotal = pT.reduce((s: number, t: any) => s + (Number(t.amount) || 0), 0)
 
     const comp = {
       deliveries: delta(curDelTotal, prevDelTotal),
@@ -244,10 +278,10 @@ export async function GET(req: NextRequest) {
         payoutTrend: cSl.map((k, i) => ({ label: fmtSlot(k), amount: cPay[k] ?? 0, prevAmount: i < pSl.length ? (pPay[pSl[i]] ?? 0) : 0 })),
       },
       recent: {
-        deliveries: (rOrders.data || []).map(o => ({ id: o.id.slice(0, 8).toUpperCase(), status: o.status, from: o.pickup_address || "—", to: o.dropoff_address || "—", price: o.final_price, created_at: o.created_at })),
+        deliveries: ((rOrders.data || []) as any[]).map((o: any) => ({ id: o.id.slice(0, 8).toUpperCase(), status: o.status, from: o.pickup_address || "—", to: o.dropoff_address || "—", price: o.final_price, created_at: o.created_at })),
         riders: riders.map((r: any) => ({ id: r.id, name: r.full_name || "—", phone: r.phone || "—", status: r.driver_profiles?.verification_status || "pending", rating: r.driver_profiles?.rating || 0, vehicle: r.driver_profiles?.vehicle_info?.type || "—", created_at: r.created_at })),
-        senders: (rSenders.data || []).map(s => ({ id: s.id, name: s.full_name || "—", email: s.email || "—", phone: s.phone || "—", created_at: s.created_at })),
-        organizations: (rOrgs.data || []).map(o => ({ id: o.id, name: o.business_name || "—", contact: o.contact_person_name || "—", email: o.business_email || "—", verified: o.is_verified, created_at: o.created_at })),
+        senders: ((rSenders.data || []) as any[]).map((s: any) => ({ id: s.id, name: s.full_name || "—", email: s.email || "—", phone: s.phone || "—", created_at: s.created_at })),
+        organizations: ((rOrgs.data || []) as any[]).map((o: any) => ({ id: o.id, name: o.business_name || "—", contact: o.contact_person_name || "—", email: o.business_email || "—", verified: o.is_verified, created_at: o.created_at })),
       },
     })
   } catch (err) {

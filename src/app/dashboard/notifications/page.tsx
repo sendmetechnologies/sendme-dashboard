@@ -1,5 +1,6 @@
 "use client"
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, Suspense } from "react"
+import { useSearchParams } from "next/navigation"
 import { Card } from "@/components/ui/card"
 import {
   Bell, Package, DollarSign, Users, Truck, AlertTriangle,
@@ -46,7 +47,8 @@ const priorityColors: Record<string, string> = {
   CRITICAL: "bg-red-100 text-red-600",
 }
 
-export default function NotificationsPage() {
+function NotificationsContent() {
+  const searchParams = useSearchParams()
   const [announcements, setAnnouncements] = useState<Announcement[]>([])
   const [stats, setStats] = useState<NotificationStats>({ totalMessages: 0, unreadMessages: 0, sentToday: 0 })
   const [loading, setLoading] = useState(true)
@@ -63,6 +65,23 @@ export default function NotificationsPage() {
   const [formPriority, setFormPriority] = useState("MEDIUM")
   const [formTargetType, setFormTargetType] = useState("all")
   const [formTargetValue, setFormTargetValue] = useState("")
+
+  useEffect(() => {
+    const targetType = searchParams.get("targetType")
+    const targetValue = searchParams.get("targetValue")
+    const title = searchParams.get("title")
+    const body = searchParams.get("body")
+    const type = searchParams.get("type")
+
+    if (targetType || targetValue || title) {
+      setShowCreate(true)
+      if (targetType) setFormTargetType(targetType)
+      if (targetValue) setFormTargetValue(targetValue)
+      if (title) setFormTitle(title)
+      if (body) setFormBody(body)
+      if (type) setFormType(type)
+    }
+  }, [searchParams])
 
   const fetchData = useCallback(async () => {
     try {
@@ -485,5 +504,13 @@ export default function NotificationsPage() {
         </div>
       )}
     </div>
+  )
+}
+
+export default function NotificationsPage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-center"><Loader2 size={24} className="animate-spin text-sendme mx-auto" /></div>}>
+      <NotificationsContent />
+    </Suspense>
   )
 }

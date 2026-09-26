@@ -159,7 +159,14 @@ export async function POST(req: NextRequest) {
     if (targetType === "role") {
       userQuery = userQuery.eq("role", targetValue);
     } else if (targetType === "email") {
-      userQuery = userQuery.eq("email", targetValue);
+      const emailList = targetValue.split(",").map((e: string) => e.trim().toLowerCase()).filter(Boolean);
+      if (emailList.length === 1) {
+        userQuery = userQuery.eq("email", emailList[0]);
+      } else if (emailList.length > 1) {
+        userQuery = userQuery.in("email", emailList);
+      } else {
+        userQuery = userQuery.eq("email", targetValue);
+      }
     }
 
     const { data: targetUsers, error: userError } = await userQuery;
@@ -181,6 +188,9 @@ export async function POST(req: NextRequest) {
     // 3. Insert into messages for each target user
     //    Store related_id = announcement.id so deletion can clean up exactly
     //    the rows this announcement fanned out to.
+    //    Only urgent announcements (HIGH/CRITICAL) also push; normal ones are
+    //    in-app only.
+    const isUrgent = priority === "HIGH" || priority === "CRITICAL";
     const messageRows = targetUsers.map((u) => ({
       user_id: u.id,
       title,
@@ -188,7 +198,7 @@ export async function POST(req: NextRequest) {
       type: type || "ADMIN",
       priority: priority || "MEDIUM",
       status: "UNREAD",
-      channels: JSON.stringify(["in_app", "push"]),
+      channels: JSON.stringify(isUrgent ? ["in_app", "push"] : ["in_app"]),
       related_id: announcement.id,
       related_type: "announcement",
     }));
@@ -209,43 +219,45 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 4. Send Expo push to each target user's active push token(s).
-    //    This is what actually shows the OS notification banner — without it,
-    //    the announcement only ever lands in the in-app `messages` table.
-    const userIds = targetUsers.map((u) => u.id);
-    const pushData: Record<string, unknown> = {
-      type: type || "ADMIN",
-      priority: priority || "MEDIUM",
-      relatedType: "announcement",
-      relatedId: announcement.id,
-    };
+    // 4. Send Expo push to each target user's active push token(s) — only for
+    //    urgent announcements. This is what actually shows the OS banner.
     let pushSuccessCount = 0;
     let pushFailureCount = 0;
 
-    const TOKEN_BATCH = 500;
-    for (let i = 0; i < userIds.length; i += TOKEN_BATCH) {
-      const idBatch = userIds.slice(i, i + TOKEN_BATCH);
-      const { data: tokenRows, error: tokenError } = await supabaseAdmin
-        .from("user_push_tokens")
-        .select("token")
-        .in("user_id", idBatch)
-        .eq("is_active", true);
+    if (isUrgent) {
+      const userIds = targetUsers.map((u) => u.id);
+      const pushData: Record<string, unknown> = {
+        type: type || "ADMIN",
+        priority: priority || "MEDIUM",
+        relatedType: "announcement",
+        relatedId: announcement.id,
+      };
 
-      if (tokenError) {
-        console.error("[Announcements] Push token fetch error:", tokenError);
-        continue;
+      const TOKEN_BATCH = 500;
+      for (let i = 0; i < userIds.length; i += TOKEN_BATCH) {
+        const idBatch = userIds.slice(i, i + TOKEN_BATCH);
+        const { data: tokenRows, error: tokenError } = await supabaseAdmin
+          .from("user_push_tokens")
+          .select("token")
+          .in("user_id", idBatch)
+          .eq("is_active", true);
+
+        if (tokenError) {
+          console.error("[Announcements] Push token fetch error:", tokenError);
+          continue;
+        }
+
+        const tokens = Array.from(
+          new Set(
+            (tokenRows || []).map((r: { token: string }) => r.token).filter(Boolean),
+          ),
+        );
+        if (tokens.length === 0) continue;
+
+        const pushResult = await sendExpoPush(tokens, title, content, pushData);
+        pushSuccessCount += pushResult.success;
+        pushFailureCount += pushResult.failure;
       }
-
-      const tokens = Array.from(
-        new Set(
-          (tokenRows || []).map((r: { token: string }) => r.token).filter(Boolean),
-        ),
-      );
-      if (tokens.length === 0) continue;
-
-      const pushResult = await sendExpoPush(tokens, title, content, pushData);
-      pushSuccessCount += pushResult.success;
-      pushFailureCount += pushResult.failure;
     }
 
     // 5. Update announcement record

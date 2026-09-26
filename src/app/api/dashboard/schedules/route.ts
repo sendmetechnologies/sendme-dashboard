@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server"
+import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 
 const STATUS_META: Record<string, { label: string; color: string }> = {
@@ -26,19 +26,43 @@ function extractArea(addr: string): string {
   return first || addr
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
-    const { data: orders, error } = await supabaseAdmin
+    const { searchParams } = new URL(req.url)
+    const state = searchParams.get("state")?.trim() || ""
+    const search = searchParams.get("search")?.trim() || ""
+    const vehicleType = searchParams.get("vehicle_type")?.trim() || ""
+    const status = searchParams.get("status")?.trim() || ""
+    const dateRange = searchParams.get("date")?.trim() || ""
+
+    let query = supabaseAdmin
       .from("orders")
       .select(`
         id, status, item_details, sender_name, receiver_name,
-        pickup_address, dropoff_address, payment_method, vehicle_type,
+        pickup_address, dropoff_address, pickup_state, payment_method, vehicle_type,
         is_scheduled, scheduled_date, scheduled_time_start, scheduled_time_end,
         accepted_driver_id, created_at,
         driver:users!orders_accepted_driver_id_fkey(full_name, phone)
       `)
       .eq("is_scheduled", true)
-      .order("scheduled_date", { ascending: false })
+
+    if (state) {
+      if (state.toLowerCase().includes("abuja") || state.toLowerCase().includes("fct")) {
+        query = query.or(`pickup_state.ilike.%Abuja%,pickup_state.ilike.%FCT%,pickup_address.ilike.%Abuja%,pickup_address.ilike.%FCT%,pickup_address.ilike.%Federal Capital Territory%`)
+      } else {
+        query = query.or(`pickup_state.ilike.%${state}%,pickup_address.ilike.%${state}%`)
+      }
+    }
+
+    if (vehicleType) {
+      query = query.eq("vehicle_type", vehicleType)
+    }
+
+    if (search) {
+      query = query.or(`id.ilike.%${search}%,sender_name.ilike.%${search}%,receiver_name.ilike.%${search}%,pickup_address.ilike.%${search}%,dropoff_address.ilike.%${search}%`)
+    }
+
+    const { data: orders, error } = await query.order("scheduled_date", { ascending: false })
 
     if (error) {
       console.error("[Schedules] Query error:", error)
@@ -131,7 +155,11 @@ export async function GET() {
         vehiclePlate: vehicleLabel ? driverPlate : null,
         driverAvatar: driverName ? driverName[0] : null,
         status: STATUS_META[statusKey].label,
+        statusKey,
         statusColor: STATUS_META[statusKey].color,
+        isToday,
+        isTomorrow,
+        inThisWeek,
         payment: o.payment_method ? o.payment_method.charAt(0).toUpperCase() + o.payment_method.slice(1) : "—",
         itemType: itemDetails?.size ? `${itemDetails.size.charAt(0).toUpperCase() + itemDetails.size.slice(1)} Item` : itemDetails?.category || "Standard",
         created_at: o.created_at,
@@ -154,11 +182,37 @@ export async function GET() {
       { label: "Cancelled / At Risk", value: cancelled, icon: "alert" },
     ]
 
+    let filteredSchedules = schedules
+    if (status) {
+      filteredSchedules = filteredSchedules.filter((s) => s.statusKey.toLowerCase() === status.toLowerCase() || s.status.toLowerCase() === status.toLowerCase())
+    }
+    if (dateRange === "today") {
+      filteredSchedules = filteredSchedules.filter((s) => s.isToday)
+    } else if (dateRange === "tomorrow") {
+      filteredSchedules = filteredSchedules.filter((s) => s.isTomorrow)
+    } else if (dateRange === "this_week") {
+      filteredSchedules = filteredSchedules.filter((s) => s.inThisWeek)
+    } else if (dateRange === "next_week") {
+      const nextWeekStart = new Date(endWeek.getTime() + 864e5)
+      const nextWeekEnd = new Date(nextWeekStart.getTime() + 7 * 864e5)
+      filteredSchedules = filteredSchedules.filter((s) => {
+        if (!s.scheduledDate) return false
+        const d = new Date(s.scheduledDate + "T12:00:00")
+        return d >= nextWeekStart && d <= nextWeekEnd
+      })
+    } else if (dateRange === "this_month") {
+      filteredSchedules = filteredSchedules.filter((s) => {
+        if (!s.scheduledDate) return false
+        const d = new Date(s.scheduledDate + "T12:00:00")
+        return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()
+      })
+    }
+
     return NextResponse.json({
       stats,
       statusTabs,
-      schedules,
-      total: schedules.length,
+      schedules: filteredSchedules,
+      total: filteredSchedules.length,
     })
   } catch (err) {
     console.error("[Schedules] Error:", err)

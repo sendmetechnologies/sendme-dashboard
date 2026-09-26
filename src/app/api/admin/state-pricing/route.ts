@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { state, label, per_km, base_fare, per_minute, minimum_fare, is_active } = body;
+    const { state, label, per_km, base_fare, is_active } = body;
 
     if (!state || !label) {
       return NextResponse.json({ error: "Missing state or label" }, { status: 400 });
@@ -45,10 +45,8 @@ export async function POST(req: NextRequest) {
       .upsert({
         state,
         label,
-        per_km: per_km || { bicycle: 200, motorcycle: 300, tricycle: 500, car: 500, truck: 1000 },
+        per_km: per_km || { bicycle: 200, motorcycle: 300, tricycle: 500, car: 500, van: 900, truck: 1000 },
         base_fare: base_fare ?? null,
-        per_minute: per_minute ?? null,
-        minimum_fare: minimum_fare ?? null,
         is_active: is_active !== false,
       }, { onConflict: "state" })
       .select()

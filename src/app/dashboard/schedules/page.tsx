@@ -1,17 +1,17 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { Card } from "@/components/ui/card"
 import { formatCardValue } from "@/lib/format"
 import { ScheduleDetail } from "@/components/dashboard/schedule-detail"
 import { ScheduleForm } from "@/components/dashboard/forms"
+import { FilterSelect, StateFilter } from "@/components/dashboard/filters"
+import { PAGE_REFRESH_EVENT } from "@/hooks/use-page-refresh"
 import {
   Calendar, Clock, AlertTriangle, ChevronDown,
   Search, Download, Plus, MoreHorizontal, ArrowUpDown, Filter,
-  ChevronLeft, ChevronRight, CheckCircle, UserX
+  ChevronLeft, ChevronRight, CheckCircle, UserX, RefreshCw
 } from "lucide-react"
-
-const filters = ["Status", "Vehicle Type", "Customer Type", "Payment Method", "Delivery Type"]
 
 const statIcons: Record<string, any> = {
   calendar: Calendar,
@@ -74,16 +74,37 @@ export default function SchedulesPage() {
   const [statusTabs, setStatusTabs] = useState<{ name: string; count: number }[]>([])
   const [page, setPage] = useState(1)
   const [searchQuery, setSearchQuery] = useState("")
+  const [dateFilter, setDateFilter] = useState("")
+  const [stateFilter, setStateFilter] = useState("")
+  const [statusFilter, setStatusFilter] = useState("")
+  const [vehicleFilter, setVehicleFilter] = useState("")
 
   const pageSize = 8
 
-  useEffect(() => {
-    let cancelled = false
+  const fetchSchedules = useCallback((overrides?: {
+    state?: string
+    search?: string
+    vehicle?: string
+    status?: string
+    date?: string
+  }) => {
     setLoading(true)
-    fetch("/api/dashboard/schedules")
+    const effectiveState = overrides?.state !== undefined ? overrides.state : stateFilter
+    const effectiveSearch = overrides?.search !== undefined ? overrides.search : searchQuery
+    const effectiveVehicle = overrides?.vehicle !== undefined ? overrides.vehicle : vehicleFilter
+    const effectiveStatus = overrides?.status !== undefined ? overrides.status : statusFilter
+    const effectiveDate = overrides?.date !== undefined ? overrides.date : dateFilter
+
+    const params = new URLSearchParams()
+    if (effectiveState) params.set("state", effectiveState)
+    if (effectiveSearch) params.set("search", effectiveSearch)
+    if (effectiveVehicle) params.set("vehicle_type", effectiveVehicle)
+    if (effectiveStatus) params.set("status", effectiveStatus)
+    if (effectiveDate) params.set("date", effectiveDate)
+
+    fetch(`/api/dashboard/schedules?${params.toString()}`)
       .then((r) => r.json())
       .then((data) => {
-        if (cancelled) return
         setSchedules(data.schedules || [])
         setStats(data.stats || [])
         setStatusTabs(data.statusTabs || [])
@@ -92,29 +113,84 @@ export default function SchedulesPage() {
         if ((data.schedules || []).length > 0) setSelectedSchedule(data.schedules[0].id)
       })
       .catch(() => {
-        if (!cancelled) {
-          setError("Failed to load schedules")
-          setLoading(false)
-        }
+        setError("Failed to load schedules")
+        setLoading(false)
       })
-    return () => {
-      cancelled = true
+  }, [stateFilter, searchQuery, vehicleFilter, statusFilter, dateFilter])
+
+  useEffect(() => {
+    fetchSchedules()
+  }, [fetchSchedules])
+
+  useEffect(() => {
+    const onRefresh = () => fetchSchedules()
+    window.addEventListener(PAGE_REFRESH_EVENT, onRefresh)
+    return () => window.removeEventListener(PAGE_REFRESH_EVENT, onRefresh)
+  }, [fetchSchedules])
+
+  const handleStateChange = (v: string) => {
+    setStateFilter(v)
+    setPage(1)
+    fetchSchedules({ state: v })
+  }
+
+  const handleDateChange = (v: string) => {
+    setDateFilter(v)
+    setPage(1)
+    fetchSchedules({ date: v })
+  }
+
+  const handleStatusChange = (v: string) => {
+    setStatusFilter(v)
+    setPage(1)
+    fetchSchedules({ status: v })
+  }
+
+  const handleVehicleChange = (v: string) => {
+    setVehicleFilter(v)
+    setPage(1)
+    fetchSchedules({ vehicle: v })
+  }
+
+  const handleSearch = (q: string) => {
+    setSearchQuery(q)
+    setPage(1)
+    fetchSchedules({ search: q })
+  }
+
+  const handleExport = () => {
+    if (!filtered.length) {
+      alert("No schedules found to export.")
+      return
     }
-  }, [])
+    const headers = ["Schedule ID", "Order ID", "Date", "Window", "Status", "Customer", "Driver", "Vehicle", "From", "To"]
+    const rows = filtered.map((s) => [
+      s.id,
+      s.fullId,
+      s.date,
+      `"${s.window}"`,
+      s.status,
+      `"${s.customer.replace(/"/g, '""')}"`,
+      `"${(s.driver || "Unassigned").replace(/"/g, '""')}"`,
+      `"${s.vehicle.replace(/"/g, '""')}"`,
+      `"${(s.fromAddr || s.from).replace(/"/g, '""')}"`,
+      `"${s.to.replace(/"/g, '""')}"`,
+    ])
+    const csvContent = "data:text/csv;charset=utf-8," + [headers, ...rows].map((e) => e.join(",")).join("\n")
+    const encodedUri = encodeURI(csvContent)
+    const link = document.createElement("a")
+    link.setAttribute("href", encodedUri)
+    link.setAttribute("download", `schedules-${stateFilter || "all"}-${dateFilter || "all"}-${new Date().toISOString().slice(0, 10)}.csv`)
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+  }
 
   const tabCount = (name: string) => statusTabs.find((t) => t.name === name)?.count ?? 0
 
   const filtered = schedules.filter((s) => {
     if (!inBucket(s.scheduledDate, activeTab)) return false
-    if (!searchQuery) return true
-    const q = searchQuery.toLowerCase()
-    return (
-      s.id.toLowerCase().includes(q) ||
-      s.customer.toLowerCase().includes(q) ||
-      (s.driver || "").toLowerCase().includes(q) ||
-      s.from.toLowerCase().includes(q) ||
-      s.to.toLowerCase().includes(q)
-    )
+    return true
   })
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize))
@@ -125,40 +201,79 @@ export default function SchedulesPage() {
     <div className="flex h-full">
       <div className="flex-1 overflow-y-auto">
         <div className="space-y-5 p-4 lg:p-6 animate-in fade-in duration-500">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between flex-wrap gap-4">
             <div>
               <h1 className="text-xl font-bold text-text-primary">Schedules</h1>
               <p className="text-sm text-text-muted mt-0.5">Manage and monitor all scheduled deliveries and upcoming pickups.</p>
             </div>
-            <button
-              onClick={() => setIsScheduleFormOpen(true)}
-              className="flex items-center gap-2 bg-sendme text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-sendme-dark transition-colors"
-            >
-              <Plus size={16} /> Create Schedule
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => fetchSchedules()}
+                className="flex items-center gap-1.5 bg-white border border-border-default rounded-lg px-3 py-2 text-xs font-semibold text-text-secondary hover:bg-surface-hover transition-colors shadow-sm"
+              >
+                <RefreshCw size={14} className={loading ? "animate-spin text-sendme" : ""} /> Refresh
+              </button>
+              <button
+                onClick={() => setIsScheduleFormOpen(true)}
+                className="flex items-center gap-2 bg-sendme text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-sendme-dark transition-colors shadow-sm"
+              >
+                <Plus size={16} /> Create Schedule
+              </button>
+            </div>
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
-            <button className="flex items-center gap-2 bg-white border border-border-default rounded-lg px-3 py-2 text-xs font-medium text-text-primary hover:bg-surface-hover transition-colors">
-              <Calendar size={14} className="text-text-muted" /> All Dates <ChevronDown size={14} className="text-text-muted" />
-            </button>
-            <button className="flex items-center gap-2 bg-white border border-border-default rounded-lg px-3 py-2 text-xs font-medium text-text-primary hover:bg-surface-hover transition-colors">
-              <span className="w-2 h-2 rounded-full bg-sendme" /> All Cities <ChevronDown size={14} className="text-text-muted" />
-            </button>
-            <button className="flex items-center gap-2 bg-white border border-border-default rounded-lg px-3 py-2 text-xs font-medium text-text-primary hover:bg-surface-hover transition-colors">
-              All Statuses <ChevronDown size={14} className="text-text-muted" />
-            </button>
-            <div className="flex-1 min-w-[200px] flex items-center gap-2 bg-white border border-border-default rounded-lg px-3 py-2">
+            <FilterSelect
+              value={dateFilter}
+              onChange={handleDateChange}
+              placeholder="All Dates"
+              options={[
+                { value: "today", label: "Today" },
+                { value: "tomorrow", label: "Tomorrow" },
+                { value: "this_week", label: "This Week" },
+                { value: "next_week", label: "Next Week" },
+                { value: "this_month", label: "This Month" },
+              ]}
+            />
+            <StateFilter value={stateFilter} onChange={handleStateChange} />
+            <FilterSelect
+              value={statusFilter}
+              onChange={handleStatusChange}
+              placeholder="All Statuses"
+              options={[
+                { value: "confirmed", label: "Confirmed" },
+                { value: "pending", label: "Confirmation Pending" },
+                { value: "unassigned", label: "Unassigned" },
+                { value: "completed", label: "Completed" },
+                { value: "cancelled", label: "Cancelled / At Risk" },
+              ]}
+            />
+            <FilterSelect
+              value={vehicleFilter}
+              onChange={handleVehicleChange}
+              placeholder="All Vehicles"
+              options={[
+                { value: "bicycle", label: "Bicycle" },
+                { value: "motorcycle", label: "Motorcycle" },
+                { value: "car", label: "Car" },
+                { value: "van", label: "Van" },
+                { value: "truck", label: "Truck" },
+              ]}
+            />
+            <div className="flex-1 min-w-[200px] flex items-center gap-2 bg-white border border-border-default rounded-lg px-3 py-2 shadow-sm">
               <Search size={14} className="text-text-muted shrink-0" />
               <input
                 type="text"
                 value={searchQuery}
-                onChange={(e) => { setSearchQuery(e.target.value); setPage(1) }}
-                placeholder="Search by ID, customer, driver..."
+                onChange={(e) => handleSearch(e.target.value)}
+                placeholder="Search by ID, customer, driver, address..."
                 className="flex-1 text-xs text-text-primary placeholder:text-text-muted focus:outline-none bg-transparent"
               />
             </div>
-            <button className="flex items-center gap-2 bg-white border border-border-default rounded-lg px-3 py-2 text-xs font-medium text-text-primary hover:bg-surface-hover transition-colors">
+            <button
+              onClick={handleExport}
+              className="flex items-center gap-2 bg-white border border-border-default rounded-lg px-3 py-2 text-xs font-medium text-text-primary hover:bg-surface-hover transition-colors shadow-sm"
+            >
               <Download size={14} className="text-text-muted" /> Export
             </button>
           </div>
@@ -188,16 +303,29 @@ export default function SchedulesPage() {
             ))}
           </div>
 
-          <div className="flex items-center gap-2 flex-wrap">
-            {filters.map((f) => (
-              <button key={f} className="flex items-center gap-1.5 bg-white border border-border-default rounded-lg px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-surface-hover transition-colors">
-                {f} <ChevronDown size={12} className="text-text-muted" />
+          {(stateFilter || dateFilter || statusFilter || vehicleFilter || searchQuery) && (
+            <div className="flex items-center gap-2 flex-wrap text-xs text-text-muted">
+              <span className="font-semibold text-text-primary">Active filters:</span>
+              {stateFilter && <span className="bg-sendme-50 text-sendme px-2 py-0.5 rounded-full font-medium text-[11px]">State: {stateFilter}</span>}
+              {dateFilter && <span className="bg-sendme-50 text-sendme px-2 py-0.5 rounded-full font-medium text-[11px]">Date: {dateFilter}</span>}
+              {statusFilter && <span className="bg-sendme-50 text-sendme px-2 py-0.5 rounded-full font-medium text-[11px]">Status: {statusFilter}</span>}
+              {vehicleFilter && <span className="bg-sendme-50 text-sendme px-2 py-0.5 rounded-full font-medium text-[11px]">Vehicle: {vehicleFilter}</span>}
+              {searchQuery && <span className="bg-sendme-50 text-sendme px-2 py-0.5 rounded-full font-medium text-[11px]">Search: "{searchQuery}"</span>}
+              <button
+                onClick={() => {
+                  setStateFilter("")
+                  setDateFilter("")
+                  setStatusFilter("")
+                  setVehicleFilter("")
+                  setSearchQuery("")
+                  fetchSchedules({ state: "", search: "", vehicle: "", status: "", date: "" })
+                }}
+                className="text-danger hover:underline font-semibold text-[11px] ml-1"
+              >
+                Reset all
               </button>
-            ))}
-            <button className="flex items-center gap-1.5 bg-white border border-border-default rounded-lg px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-surface-hover transition-colors">
-              <Filter size={12} className="text-text-muted" /> More Filters
-            </button>
-          </div>
+            </div>
+          )}
 
           <Card className="overflow-hidden">
             <div className="overflow-x-auto">

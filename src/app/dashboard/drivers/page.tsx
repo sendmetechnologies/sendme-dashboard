@@ -74,12 +74,8 @@ export default function DriversPage() {
     if (stateFilter) params.set("state", stateFilter)
     if (vehicleFilter) params.set("vehicle_type", vehicleFilter)
     if (ratingFilter) params.set("rating_min", ratingFilter)
-
-    if (activeTab === "Online Now") {
-      params.set("online", "online")
-    } else if (onlineFilter) {
-      params.set("online", onlineFilter)
-    }
+    if (onlineFilter) params.set("online", onlineFilter)
+    if (activeTab && activeTab !== "All Drivers") params.set("tab", activeTab)
 
     if (hubCoords && radiusFilter) {
       const [lat, lng] = hubCoords.split(",")
@@ -143,7 +139,15 @@ export default function DriversPage() {
     { label: "Total Balance", value: stats.totalBalanceFormatted, icon: DollarSign, color: "text-sendme", bg: "bg-sendme-50" },
   ]
 
-  const statusTabNames = ["All Drivers", "Online Now", "Independent", "Organization-linked"]
+  const statusTabNames = [
+    "All Drivers",
+    "Online Now",
+    "Approved",
+    "Pending Review",
+    "Suspended",
+    "Independent",
+    "Organization-linked",
+  ]
 
   return (
     <div className="flex h-full">
@@ -261,7 +265,7 @@ export default function DriversPage() {
                 )}
                 <button
                   onClick={() => {
-                    const csv = "data:text/csv;charset=utf-8," + ["Name,Phone,Vehicle,Plate,State,Status,Online,Rating,Trips", ...drivers.map(d => `"${d.name}","${d.phone}","${d.vehicle}","${d.vehiclePlate}","${d.city}","${d.status}","${d.online ? 'Online' : 'Offline'}","${d.rating}","${d.trips}"`)].join("\n")
+                    const csv = "data:text/csv;charset=utf-8," + ["Name,Phone,Type,Vehicle,Plate,State,Status,Online,Rating,Trips", ...drivers.map(d => `"${d.name}","${d.phone}","${d.type}","${d.vehicle}","${d.vehiclePlate}","${d.city}","${d.status}","${d.online ? 'Online' : 'Offline'}","${d.rating}","${d.trips}"`)].join("\n")
                     const uri = encodeURI(csv)
                     const link = document.createElement("a")
                     link.setAttribute("href", uri)
@@ -296,24 +300,24 @@ export default function DriversPage() {
             })}
           </div>
 
-          {/* Status Tabs */}
-          <div className="flex items-center justify-between border-b border-border-light">
-            <div className="flex gap-0">
+          {/* Child Filter Tabs */}
+          <div className="flex items-center justify-between border-b border-border-light overflow-x-auto no-scrollbar">
+            <div className="flex items-center gap-1 min-w-max">
               {statusTabNames.map((tab) => (
                 <button
                   key={tab}
                   onClick={() => setActiveTab(tab)}
-                  className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-medium whitespace-nowrap border-b-2 transition-colors ${
+                  className={`flex items-center gap-1.5 px-3.5 py-2.5 text-xs font-medium whitespace-nowrap border-b-2 transition-colors ${
                     activeTab === tab
-                      ? "border-sendme text-sendme"
+                      ? "border-sendme text-sendme font-semibold"
                       : "border-transparent text-text-muted hover:text-text-primary"
                   }`}
                 >
                   {tab}
-                  <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${
+                  <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full transition-colors ${
                     activeTab === tab ? "bg-sendme-50 text-sendme" : "bg-surface-secondary text-text-muted"
                   }`}>
-                    {(tabCounts[tab] || 0).toLocaleString()}
+                    {(tabCounts[tab] ?? 0).toLocaleString()}
                   </span>
                 </button>
               ))}
@@ -373,7 +377,12 @@ export default function DriversPage() {
                               />
                             </div>
                             <div>
-                              <p className="font-semibold text-xs text-text-primary leading-tight">{driver.name}</p>
+                              <div className="flex items-center gap-1.5">
+                                <p className="font-semibold text-xs text-text-primary leading-tight">{driver.name}</p>
+                                <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${driver.typeColor}`}>
+                                  {driver.type}
+                                </span>
+                              </div>
                               <p className="text-[11px] text-text-muted font-mono">{driver.phone}</p>
                             </div>
                           </div>

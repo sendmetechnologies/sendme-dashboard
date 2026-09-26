@@ -21,145 +21,99 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url)
     const page = Math.max(1, parseInt(searchParams.get("page") || "1"))
     const limit = Math.min(100, Math.max(1, parseInt(searchParams.get("limit") || "20")))
-    const statusFilter = searchParams.get("status") || null
-    const search = searchParams.get("search") || null
-    const state = searchParams.get("state") || null
-    const online = searchParams.get("online") || null
-    const vehicleTypeFilter = searchParams.get("vehicle_type") || null
+    
+    // Parent filters
+    const search = searchParams.get("search")?.trim().toLowerCase() || null
+    const state = searchParams.get("state")?.trim() || null
+    const vehicleTypeFilter = searchParams.get("vehicle_type")?.trim().toLowerCase() || null
     const ratingMin = searchParams.get("rating_min") ? parseFloat(searchParams.get("rating_min")!) : null
     const radiusParam = searchParams.get("radius") ? parseFloat(searchParams.get("radius")!) : null
     const latParam = searchParams.get("lat") ? parseFloat(searchParams.get("lat")!) : null
     const lngParam = searchParams.get("lng") ? parseFloat(searchParams.get("lng")!) : null
+    
+    // Child filter tab & dropdown overrides
+    const tab = searchParams.get("tab") || "All Drivers"
+    const statusFilter = searchParams.get("status") || null
+    const onlineFilter = searchParams.get("online") || null
 
-    const statusMap: Record<string, string[]> = {
-      "Approved": ["verified"],
-      "Pending Review": ["pending", "under_review"],
-      "Rejected": ["rejected"],
-    }
-
-    // ── Total riders from users table (source of truth) ──
-    const { count: totalRiders } = await supabaseAdmin
-      .from("users")
-      .select("id", { count: "exact", head: true })
-      .eq("role", "driver")
-
-    // ── Get all driver profile statuses in one query ──
-    const { data: allProfiles } = await supabaseAdmin
-      .from("driver_profiles")
-      .select("id, verification_status, is_online, is_suspended, is_deleted")
-
-    const profiles = allProfiles || []
-    const verifiedCount = profiles.filter((p) => p.verification_status === "verified").length
-    const pendingCount = profiles.filter((p) => p.verification_status === "pending" || p.verification_status === "under_review").length
-    const rejectedCount = profiles.filter((p) => p.verification_status === "rejected" && p.is_suspended !== true).length
-    const suspendedCount = profiles.filter((p) => p.is_suspended === true).length
-    const onlineCount = profiles.filter((p) => p.is_online === true).length
-
-    // Riders WITHOUT a driver_profile row (signed up but not onboarded)
-    const ridersWithoutProfile = (totalRiders || 0) - profiles.length
-
-    const tabCounts: Record<string, number> = {
-      "All Drivers": totalRiders || 0,
-      "Independent": totalRiders || 0,
-      "Organization-linked": 0,
-      "Online Now": onlineCount,
-    }
-
-    // ── Get marketer profiles to check for removed status ──
-    const { data: marketerProfiles } = await supabaseAdmin
-      .from("marketer_profiles")
-      .select("user_id, status")
-      .eq("status", "removed")
-    const removedMarketerIds = new Set((marketerProfiles || []).map((p: any) => p.user_id))
-
-    // ── Build query on users table (primary) ──
-    let query = supabaseAdmin
-      .from("users")
-      .select(`
-        id, full_name, phone, email, state, created_at, is_onboarded,
-        driver_profiles(verification_status, rating, vehicle_info, is_online, review_reason, trips_count, id_details, is_suspended, is_deleted, current_lat, current_lng)
-      `)
-      .eq("role", "driver")
-      .order("created_at", { ascending: false })
-
-    if (statusFilter && statusFilter !== "All Drivers" && statusFilter !== "All Status") {
-      if (statusFilter === "Suspended") {
-        query = query.eq("driver_profiles.is_suspended", true)
-      } else if (statusFilter === "Deactivated") {
-        query = query.eq("driver_profiles.is_deleted", true)
-      } else {
-        const dbStatuses = statusMap[statusFilter]
-        if (dbStatuses) {
-          query = query.in("driver_profiles.verification_status", dbStatuses)
-        }
-      }
-    }
-
-    if (state) {
-      query = query.eq("state", state)
-    }
-
-    if (online === "online") {
-      query = query.eq("driver_profiles.is_online", true)
-    } else if (online === "offline") {
-      query = query.not("driver_profiles.is_online", "is", true)
-    }
-
-    if (search) {
-      query = query.or(`full_name.ilike.%${search}%,phone.ilike.%${search}%,email.ilike.%${search}%,id.ilike.%${search}%`)
-    }
-
-    // If radius filtering is requested, we fetch a broader set of drivers to filter and calculate distance in-memory
-    const isRadiusActive = radiusParam != null && latParam != null && lngParam != null
-    const fetchLimit = isRadiusActive ? 250 : limit
-    const fetchOffset = isRadiusActive ? 0 : (page - 1) * limit
-
-    const { data: drivers, error } = await query.range(fetchOffset, fetchOffset + fetchLimit - 1)
-
-    if (error) {
-      console.error("[Drivers] Query error:", error.message)
-      return NextResponse.json({ error: error.message }, { status: 500 })
-    }
-
-    // ── Get trip counts for each driver ──
-    const driverIds = (drivers || []).map((d) => d.id)
-    const tripCounts: Record<string, number> = {}
-    if (driverIds.length > 0) {
-      const { data: trips } = await supabaseAdmin
+    // ── Concurrently fetch all driver records, org relations, removed marketers, wallets, and orders ──
+    const [driversRes, orgDriversRes, marketerProfilesRes, walletsRes, ordersRes] = await Promise.all([
+      supabaseAdmin
+        .from("users")
+        .select(`
+          id, full_name, phone, email, state, created_at, is_onboarded, linked_org_id, is_suspended, is_deleted,
+          driver_profiles(verification_status, rating, vehicle_info, is_online, review_reason, trips_count, id_details, is_suspended, is_deleted, current_lat, current_lng)
+        `)
+        .eq("role", "driver")
+        .order("created_at", { ascending: false }),
+      supabaseAdmin
+        .from("organization_drivers")
+        .select("user_id, phone, organization_id"),
+      supabaseAdmin
+        .from("marketer_profiles")
+        .select("user_id")
+        .eq("status", "removed"),
+      supabaseAdmin
+        .from("wallets")
+        .select("user_id, balance"),
+      supabaseAdmin
         .from("orders")
         .select("accepted_driver_id")
-        .in("accepted_driver_id", driverIds)
         .eq("status", "delivered")
-      if (trips) {
-        for (const t of trips) {
-          tripCounts[t.accepted_driver_id] = (tripCounts[t.accepted_driver_id] || 0) + 1
-        }
+        .not("accepted_driver_id", "is", null),
+    ])
+
+    if (driversRes.error) {
+      console.error("[Drivers API] Fetch drivers error:", driversRes.error.message)
+      return NextResponse.json({ error: driversRes.error.message }, { status: 500 })
+    }
+
+    const rawDrivers = driversRes.data || []
+    
+    // Index organization drivers by user_id and normalized phone
+    const orgDriverUserIds = new Set<string>()
+    const orgDriverPhones = new Set<string>()
+    for (const od of orgDriversRes.data || []) {
+      if (od.user_id) orgDriverUserIds.add(od.user_id)
+      if (od.phone) {
+        const clean = od.phone.replace(/\D/g, "")
+        if (clean) orgDriverPhones.add(clean)
       }
     }
 
-    // ── Get total wallet balance for these drivers ──
-    let totalBalance = 0
-    if (driverIds.length > 0) {
-      const { data: walletData } = await supabaseAdmin
-        .from("wallets")
-        .select("balance")
-        .in("user_id", driverIds)
-      totalBalance = (walletData || []).reduce((sum, w) => sum + (Number(w.balance) || 0), 0)
+    // Index removed marketers
+    const removedMarketerIds = new Set((marketerProfilesRes.data || []).map((m: any) => m.user_id))
+
+    // Index wallets
+    const walletMap = new Map<string, number>()
+    for (const w of walletsRes.data || []) {
+      walletMap.set(w.user_id, Number(w.balance) || 0)
     }
 
-    let formatted = (drivers || []).map((d) => {
+    // Index trip counts from delivered orders
+    const tripCountMap = new Map<string, number>()
+    for (const o of ordersRes.data || []) {
+      if (o.accepted_driver_id) {
+        tripCountMap.set(o.accepted_driver_id, (tripCountMap.get(o.accepted_driver_id) || 0) + 1)
+      }
+    }
+
+    const isHttpUrl = (v: unknown): v is string => typeof v === "string" && /^https?:\/\//i.test(v)
+
+    // Map all raw drivers into structured DriverRow objects
+    const allFormattedDrivers = rawDrivers.map((d) => {
       const profileEmbed = (d as any).driver_profiles
       const profile = Array.isArray(profileEmbed) ? profileEmbed[0] : profileEmbed
       const vp = profile?.vehicle_info as any
       const vehicleType = vp?.type || "—"
       const vehiclePlate = vp?.plate || "—"
       const rating = profile?.rating != null ? Number(profile.rating) : null
-      const trips = tripCounts[d.id] || profile?.trips_count || 0
+      const trips = tripCountMap.get(d.id) ?? profile?.trips_count ?? 0
       const verificationStatus = profile?.verification_status || "pending"
-      const isOnline = profile?.is_online || false
-      const isSuspended = profile?.is_suspended === true
-      const isDeleted = profile?.is_deleted === true
-      const isHttpUrl = (v: unknown): v is string => typeof v === "string" && /^https?:\/\//i.test(v)
+      const isOnline = profile?.is_online === true
+      const isSuspended = profile?.is_suspended === true || (d as any).is_suspended === true
+      const isDeleted = profile?.is_deleted === true || (d as any).is_deleted === true
+      
       const idDetails = (profile?.id_details && typeof profile.id_details === "object" ? profile.id_details : {}) as Record<string, unknown>
       const hasSubmittedDocs = Object.values(idDetails).some(isHttpUrl)
       const isOnboarded = (d as any)?.is_onboarded === true
@@ -168,12 +122,35 @@ export async function GET(req: NextRequest) {
       let statusLabel = "Pending Review"
       let statusColor = "bg-warning-light text-warning"
       const isRemovedMarketer = removedMarketerIds.has(d.id)
-      if (isRemovedMarketer) { statusLabel = "Removed marketer"; statusColor = "bg-surface-secondary text-text-muted" }
-      else if (isSuspended) { statusLabel = "Suspended"; statusColor = "bg-warning-light text-warning" }
-      else if (isDeleted) { statusLabel = "Deactivated"; statusColor = "bg-surface-secondary text-text-muted" }
-      else if (verificationStatus === "verified") { statusLabel = "Approved"; statusColor = "bg-sendme-50 text-sendme" }
-      else if (verificationStatus === "rejected") { statusLabel = "Rejected"; statusColor = "bg-danger-light text-danger" }
-      else if (isIncomplete) { statusLabel = "Incomplete Registration"; statusColor = "bg-surface-secondary text-text-muted" }
+      if (isRemovedMarketer) { 
+        statusLabel = "Removed marketer"
+        statusColor = "bg-surface-secondary text-text-muted" 
+      } else if (isSuspended) { 
+        statusLabel = "Suspended"
+        statusColor = "bg-warning-light text-warning" 
+      } else if (isDeleted) { 
+        statusLabel = "Deactivated"
+        statusColor = "bg-surface-secondary text-text-muted" 
+      } else if (verificationStatus === "verified") { 
+        statusLabel = "Approved"
+        statusColor = "bg-sendme-50 text-sendme" 
+      } else if (verificationStatus === "rejected") { 
+        statusLabel = "Rejected"
+        statusColor = "bg-danger-light text-danger" 
+      } else if (isIncomplete) { 
+        statusLabel = "Incomplete Registration"
+        statusColor = "bg-surface-secondary text-text-muted" 
+      }
+
+      // Check organization linkage
+      const phoneClean = (d.phone || "").replace(/\D/g, "")
+      const isOrgLinked = Boolean(
+        d.linked_org_id ||
+        orgDriverUserIds.has(d.id) ||
+        (phoneClean && orgDriverPhones.has(phoneClean))
+      )
+      const driverType = isOrgLinked ? "Organization-linked" : "Independent"
+      const typeColor = isOrgLinked ? "bg-purple-50 text-purple-700" : "bg-sendme-50 text-sendme"
 
       const created = new Date(d.created_at)
       const now = new Date()
@@ -200,8 +177,9 @@ export async function GET(req: NextRequest) {
         phone: d.phone || "—",
         email: d.email || "—",
         avatar: (d.full_name || "?")[0],
-        type: "Independent",
-        typeColor: "bg-sendme-50 text-sendme",
+        type: driverType,
+        typeColor,
+        isOrgLinked,
         vehicle: vehicleType,
         vehiclePlate,
         city: (d as any).state || "—",
@@ -221,26 +199,103 @@ export async function GET(req: NextRequest) {
       }
     })
 
+    // ── STEP 1: APPLY PARENT FILTERS ──
+    // Parent filters narrow down the candidate pool of drivers
+    let parentFiltered = allFormattedDrivers
+
+    // State filter
+    if (state && state !== "All" && state !== "All States") {
+      const targetState = state.toLowerCase()
+      parentFiltered = parentFiltered.filter((d) => d.city.toLowerCase() === targetState)
+    }
+
+    // Free text search (name, phone, email, plate, vehicle, ID)
+    if (search) {
+      parentFiltered = parentFiltered.filter((d) => 
+        d.name.toLowerCase().includes(search) ||
+        d.phone.toLowerCase().includes(search) ||
+        d.email.toLowerCase().includes(search) ||
+        d.vehiclePlate.toLowerCase().includes(search) ||
+        d.vehicle.toLowerCase().includes(search) ||
+        d.id.toLowerCase().includes(search)
+      )
+    }
+
     // Vehicle type filter
-    if (vehicleTypeFilter) {
-      const vq = vehicleTypeFilter.toLowerCase()
-      formatted = formatted.filter((d) => d.vehicle.toLowerCase().includes(vq))
+    if (vehicleTypeFilter && vehicleTypeFilter !== "all" && vehicleTypeFilter !== "all vehicles") {
+      parentFiltered = parentFiltered.filter((d) => d.vehicle.toLowerCase().includes(vehicleTypeFilter))
     }
 
     // Rating filter
     if (ratingMin != null) {
-      formatted = formatted.filter((d) => (d.ratingNum != null && d.ratingNum >= ratingMin))
+      parentFiltered = parentFiltered.filter((d) => d.ratingNum != null && d.ratingNum >= ratingMin)
     }
 
-    // Radius filter (if reference hub/coordinates and radius are selected)
+    // Radius & Coordinate Hub filter
+    const isRadiusActive = radiusParam != null && latParam != null && lngParam != null
     if (isRadiusActive && radiusParam != null) {
-      formatted = formatted.filter((d) => d.distanceKm != null && d.distanceKm <= radiusParam)
-      // Sort by closest distance first
-      formatted.sort((a, b) => (a.distanceKm ?? 9999) - (b.distanceKm ?? 9999))
+      parentFiltered = parentFiltered.filter((d) => d.distanceKm != null && d.distanceKm <= radiusParam)
+      // Sort by distance (closest first)
+      parentFiltered.sort((a, b) => (a.distanceKm ?? 9999) - (b.distanceKm ?? 9999))
     }
 
-    // Reverse-geocode riders with a current location into a short human-readable area
-    const located = formatted.filter((d) => d.latitude != null && d.longitude != null).slice(0, 20)
+    // If dropdown filters are also explicitly set from the top filter bar
+    if (statusFilter && statusFilter !== "All Status" && statusFilter !== "All Drivers") {
+      parentFiltered = parentFiltered.filter((d) => d.status === statusFilter)
+    }
+    if (onlineFilter === "online") {
+      parentFiltered = parentFiltered.filter((d) => d.online)
+    } else if (onlineFilter === "offline") {
+      parentFiltered = parentFiltered.filter((d) => !d.online)
+    }
+
+    // ── STEP 2: DYNAMICALLY COMPUTE CHILD TAB COUNTS & STATS ──
+    // Tab badges MUST strictly sync with the parent-filtered set!
+    const tabCounts: Record<string, number> = {
+      "All Drivers": parentFiltered.length,
+      "Online Now": parentFiltered.filter((d) => d.online).length,
+      "Approved": parentFiltered.filter((d) => d.status === "Approved").length,
+      "Pending Review": parentFiltered.filter((d) => d.status === "Pending Review" || d.status === "Incomplete Registration").length,
+      "Suspended": parentFiltered.filter((d) => d.status === "Suspended").length,
+      "Independent": parentFiltered.filter((d) => !d.isOrgLinked).length,
+      "Organization-linked": parentFiltered.filter((d) => d.isOrgLinked).length,
+    }
+
+    const totalBalance = parentFiltered.reduce((sum, d) => sum + (walletMap.get(d.id) || 0), 0)
+
+    const stats = {
+      total: parentFiltered.length,
+      approved: tabCounts["Approved"],
+      pending: tabCounts["Pending Review"],
+      suspended: tabCounts["Suspended"],
+      blocked: parentFiltered.filter((d) => d.status === "Rejected").length,
+      onlineNow: tabCounts["Online Now"],
+      totalBalance,
+      totalBalanceFormatted: `₦${totalBalance.toLocaleString()}`,
+    }
+
+    // ── STEP 3: APPLY CHILD FILTER TAB ──
+    let tabFiltered = parentFiltered
+    if (tab === "Online Now") {
+      tabFiltered = tabFiltered.filter((d) => d.online)
+    } else if (tab === "Approved") {
+      tabFiltered = tabFiltered.filter((d) => d.status === "Approved")
+    } else if (tab === "Pending Review") {
+      tabFiltered = tabFiltered.filter((d) => d.status === "Pending Review" || d.status === "Incomplete Registration")
+    } else if (tab === "Suspended") {
+      tabFiltered = tabFiltered.filter((d) => d.status === "Suspended")
+    } else if (tab === "Independent") {
+      tabFiltered = tabFiltered.filter((d) => !d.isOrgLinked)
+    } else if (tab === "Organization-linked") {
+      tabFiltered = tabFiltered.filter((d) => d.isOrgLinked)
+    }
+
+    // ── STEP 4: PAGINATION & GEOCODING ──
+    const totalCount = tabFiltered.length
+    const paginatedDrivers = tabFiltered.slice((page - 1) * limit, page * limit)
+
+    // Reverse-geocode drivers with locations on the current page slice
+    const located = paginatedDrivers.filter((d) => d.latitude != null && d.longitude != null).slice(0, 20)
     if (located.length > 0) {
       const geoResults = await Promise.all(
         located.map((d) => reverseGeocodeArea(d.latitude as number, d.longitude as number)),
@@ -250,23 +305,10 @@ export async function GET(req: NextRequest) {
       })
     }
 
-    // Paginate in-memory if radius was active
-    const totalCount = isRadiusActive ? formatted.length : totalRiders || 0
-    const finalDrivers = isRadiusActive ? formatted.slice((page - 1) * limit, page * limit) : formatted
-
     return NextResponse.json({
-      stats: {
-        total: totalRiders || 0,
-        approved: verifiedCount,
-        pending: pendingCount + ridersWithoutProfile,
-        suspended: suspendedCount,
-        blocked: rejectedCount,
-        onlineNow: onlineCount,
-        totalBalance,
-        totalBalanceFormatted: `₦${totalBalance.toLocaleString()}`,
-      },
+      stats,
       tabCounts,
-      drivers: finalDrivers,
+      drivers: paginatedDrivers,
       pagination: {
         page,
         limit,
@@ -275,7 +317,7 @@ export async function GET(req: NextRequest) {
       },
     })
   } catch (err) {
-    console.error("[Drivers] Error:", err)
+    console.error("[Drivers API] Internal error:", err)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }

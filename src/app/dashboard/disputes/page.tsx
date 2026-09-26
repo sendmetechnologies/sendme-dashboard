@@ -6,8 +6,9 @@ import { Button } from "@/components/ui/button"
 import {
   Search, Filter, Download, ChevronDown, X, MoreHorizontal, MessageSquare,
   Clock, AlertTriangle, AlertCircle, CheckCircle, Ban, Send, Tag, UserPlus,
-  Loader2, ChevronLeft, ChevronRight, StickyNote, RefreshCw
+  Loader2, ChevronLeft, ChevronRight, StickyNote, RefreshCw, RotateCcw
 } from "lucide-react"
+import { DateRangeFilter } from "@/components/dashboard/filters"
 
 // ─── Types ─────────────────────────────────────────────────
 
@@ -127,6 +128,7 @@ export default function DisputesPage() {
   const [searchQuery, setSearchQuery] = useState("")
   const [categoryFilter, setCategoryFilter] = useState("")
   const [roleFilter, setRoleFilter] = useState("")
+  const [dateRangeFilter, setDateRangeFilter] = useState("")
 
   // Detail panel state
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -155,6 +157,7 @@ export default function DisputesPage() {
     if (search) params.set("search", search)
     if (categoryFilter) params.set("category", categoryFilter)
     if (roleFilter) params.set("role", roleFilter)
+    if (dateRangeFilter) params.set("date_range", dateRangeFilter)
 
     try {
       const res = await fetch(`/api/dashboard/complaints?${params.toString()}`)
@@ -168,11 +171,11 @@ export default function DisputesPage() {
     } finally {
       setLoading(false)
     }
-  }, [categoryFilter, roleFilter])
+  }, [categoryFilter, roleFilter, dateRangeFilter])
 
   useEffect(() => {
     fetchComplaints(1, tabToStatus[activeTab] || "", searchQuery)
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [categoryFilter, roleFilter, dateRangeFilter]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleTabChange = (tab: string) => {
     setActiveTab(tab)
@@ -335,7 +338,7 @@ export default function DisputesPage() {
           <div className="flex-1 min-w-[180px] flex items-center gap-2 bg-white border border-border-default rounded-lg px-3 py-1.5">
             <Search size={12} className="text-text-muted" />
             <input
-              placeholder="Search by subject, customer, or ticket ID..."
+              placeholder="Search by subject, description, ticket ID..."
               className="flex-1 text-[11px] placeholder:text-text-muted focus:outline-none bg-transparent"
               value={searchQuery}
               onChange={(e) => handleSearch(e.target.value)}
@@ -347,25 +350,40 @@ export default function DisputesPage() {
           <select
             className="bg-white border border-border-default rounded-lg px-2.5 py-1.5 text-[11px] font-medium text-text-secondary focus:outline-none"
             value={categoryFilter}
-            onChange={(e) => { setCategoryFilter(e.target.value); fetchComplaints(1, tabToStatus[activeTab] || "", searchQuery) }}
+            onChange={(e) => setCategoryFilter(e.target.value)}
           >
             <option value="">All Categories</option>
-            <option value="order">Order</option>
-            <option value="payment">Payment</option>
-            <option value="driver">Driver</option>
-            <option value="app">App</option>
+            <option value="order">Order Issues</option>
+            <option value="payment">Payment & Wallet</option>
+            <option value="driver">Driver Incident</option>
+            <option value="app">App & Bug</option>
             <option value="other">Other</option>
           </select>
           <select
             className="bg-white border border-border-default rounded-lg px-2.5 py-1.5 text-[11px] font-medium text-text-secondary focus:outline-none"
             value={roleFilter}
-            onChange={(e) => { setRoleFilter(e.target.value); fetchComplaints(1, tabToStatus[activeTab] || "", searchQuery) }}
+            onChange={(e) => setRoleFilter(e.target.value)}
           >
             <option value="">All Roles</option>
             <option value="customer">Customers</option>
             <option value="driver">Drivers</option>
             <option value="organization">Organizations</option>
           </select>
+          <DateRangeFilter value={dateRangeFilter} onChange={setDateRangeFilter} />
+          {(searchQuery || categoryFilter || roleFilter || dateRangeFilter || activeTab !== "All Tickets") && (
+            <button
+              onClick={() => {
+                setSearchQuery("")
+                setCategoryFilter("")
+                setRoleFilter("")
+                setDateRangeFilter("")
+                setActiveTab("All Tickets")
+              }}
+              className="flex items-center gap-1 text-[11px] text-danger font-medium hover:underline px-2 py-1"
+            >
+              <RotateCcw size={11} /> Reset
+            </button>
+          )}
         </div>
 
         {/* Tabs */}

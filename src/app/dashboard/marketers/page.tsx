@@ -4,9 +4,11 @@ import { useState, useEffect } from "react"
 import { Card } from "@/components/ui/card"
 import { formatCardValue } from "@/lib/format"
 import { MarketerDetail } from "@/components/dashboard/marketer-detail"
+import { FilterSelect, StateFilter } from "@/components/dashboard/filters"
 import {
   Megaphone, Users, Clock, CheckCircle, Ban,
-  Search, ChevronDown, ArrowUpDown, ChevronLeft, ChevronRight, Loader2
+  Search, Download, ChevronDown, ArrowUpDown, ChevronLeft, ChevronRight,
+  Loader2, RotateCcw, Filter
 } from "lucide-react"
 
 interface MarketerRow {
@@ -36,7 +38,12 @@ export default function MarketersPage() {
   const [stats, setStats] = useState({ total: 0, pending: 0, approved: 0, rejected: 0, suspended: 0, removed: 0 })
   const [tabCounts, setTabCounts] = useState<Record<string, number>>({})
   const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, totalPages: 1 })
+  
+  // Filters
   const [searchQuery, setSearchQuery] = useState("")
+  const [stateFilter, setStateFilter] = useState("")
+  const [perfFilter, setPerfFilter] = useState("")
+  const [sortBy, setSortBy] = useState("newest")
 
   const fetchData = (page: number, search: string, status?: string) => {
     setLoading(true)
@@ -44,7 +51,11 @@ export default function MarketersPage() {
     params.set("page", String(page))
     params.set("limit", "20")
     if (search) params.set("search", search)
-    if (status && status !== "All") params.set("status", status.toLowerCase())
+    const st = status || activeTab
+    if (st && st !== "All") params.set("status", st.toLowerCase())
+    if (stateFilter) params.set("state", stateFilter)
+    if (perfFilter) params.set("performance", perfFilter)
+    if (sortBy) params.set("sort_by", sortBy)
 
     fetch(`/api/dashboard/marketers?${params.toString()}`)
       .then((r) => r.json())
@@ -59,18 +70,29 @@ export default function MarketersPage() {
   }
 
   useEffect(() => {
-    fetchData(1, "")
-  }, [])
+    fetchData(1, searchQuery, activeTab)
+  }, [activeTab, stateFilter, perfFilter, sortBy])
 
   const handleTabChange = (tab: string) => {
     setActiveTab(tab)
-    fetchData(1, searchQuery, tab)
   }
 
   const handleSearch = (q: string) => {
     setSearchQuery(q)
     fetchData(1, q, activeTab)
   }
+
+  const resetFilters = () => {
+    setSearchQuery("")
+    setStateFilter("")
+    setPerfFilter("")
+    setSortBy("newest")
+    setActiveTab("All")
+  }
+
+  const hasActiveFilters = Boolean(
+    searchQuery || stateFilter || perfFilter || sortBy !== "newest" || activeTab !== "All"
+  )
 
   const handlePageChange = (page: number) => {
     fetchData(page, searchQuery, activeTab)
@@ -94,27 +116,13 @@ export default function MarketersPage() {
           {/* Page Header */}
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-xl font-bold text-text-primary">Marketers</h1>
-              <p className="text-sm text-text-muted mt-0.5">Manage Growth Partner applications and accounts.</p>
-            </div>
-          </div>
-
-          {/* Search */}
-          <div className="flex items-center gap-2 flex-wrap">
-            <div className="flex-1 min-w-[200px] flex items-center gap-2 bg-white border border-border-default rounded-lg px-3 py-2">
-              <Search size={14} className="text-text-muted shrink-0" />
-              <input
-                type="text"
-                placeholder="Search by name, phone, city..."
-                className="flex-1 text-xs text-text-primary placeholder:text-text-muted focus:outline-none bg-transparent"
-                value={searchQuery}
-                onChange={(e) => handleSearch(e.target.value)}
-              />
+              <h1 className="text-xl font-bold text-text-primary">Growth Partners & Marketers</h1>
+              <p className="text-sm text-text-muted mt-0.5">Manage partner tiers, referral networks, commissions and payouts.</p>
             </div>
           </div>
 
           {/* Stats Cards */}
-          <div className="grid grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
             {statCards.map((stat) => {
               const Icon = stat.icon
               return (
@@ -125,37 +133,113 @@ export default function MarketersPage() {
                       <Icon size={16} />
                     </div>
                   </div>
-                  <p className="text-2xl font-bold text-text-primary mb-0.5 truncate" title={String(stat.value)}>{formatCardValue(stat.value)}</p>
+                  <p className="text-2xl font-bold text-text-primary mb-0.5 truncate" title={String(stat.value)}>
+                    {formatCardValue(stat.value)}
+                  </p>
                 </Card>
               )
             })}
           </div>
 
-          {/* Status Tabs */}
-          <div className="flex items-center justify-between border-b border-border-light">
-            <div className="flex gap-0 overflow-x-auto">
-              {tabs.map((tab) => {
-                const count = tab === "All" ? stats.total : (tabCounts[tab] || 0)
-                return (
-                  <button
-                    key={tab}
-                    onClick={() => handleTabChange(tab)}
-                    className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-medium whitespace-nowrap border-b-2 transition-colors ${
-                      activeTab === tab
-                        ? "border-sendme text-sendme"
-                        : "border-transparent text-text-muted hover:text-text-primary"
-                    }`}
-                  >
-                    {tab}
-                    <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${
-                      activeTab === tab ? "bg-sendme-50 text-sendme" : "bg-surface-secondary text-text-muted"
-                    }`}>
-                      {count.toLocaleString()}
-                    </span>
-                  </button>
-                )
-              })}
+          {/* Filters Bar */}
+          <div className="bg-white border border-border-default rounded-xl p-3 shadow-xs space-y-2.5">
+            <div className="flex items-center gap-2 flex-wrap">
+              {/* Search Box */}
+              <div className="flex-1 min-w-[200px] flex items-center gap-2 bg-surface-secondary border border-border-default rounded-lg px-3 py-2">
+                <Search size={14} className="text-text-muted shrink-0" />
+                <input
+                  type="text"
+                  placeholder="Search by marketer name, phone, code or ID..."
+                  className="flex-1 text-xs text-text-primary placeholder:text-text-muted focus:outline-none bg-transparent"
+                  value={searchQuery}
+                  onChange={(e) => handleSearch(e.target.value)}
+                />
+                {searchQuery && (
+                  <button onClick={() => handleSearch("")} className="text-xs text-text-muted hover:text-text-primary">✕</button>
+                )}
+              </div>
+
+              {/* State Filter */}
+              <StateFilter value={stateFilter} onChange={setStateFilter} />
+
+              {/* Performance Filter */}
+              <FilterSelect
+                value={perfFilter}
+                onChange={setPerfFilter}
+                placeholder="Referrals: All"
+                options={[
+                  { value: "10+", label: "10+ Referrals" },
+                  { value: "1-10", label: "1 - 10 Referrals" },
+                  { value: "zero", label: "0 Referrals" },
+                ]}
+              />
+
+              {/* Sorting */}
+              <FilterSelect
+                value={sortBy}
+                onChange={setSortBy}
+                options={[
+                  { value: "newest", label: "Sort: Newest Joined" },
+                  { value: "referrals", label: "Sort: Most Referrals" },
+                  { value: "earnings", label: "Sort: Highest Earnings" },
+                  { value: "oldest", label: "Sort: Oldest First" },
+                ]}
+              />
             </div>
+
+            <div className="flex items-center justify-between gap-2 flex-wrap pt-1 border-t border-border-light">
+              <div className="flex items-center gap-2">
+                {hasActiveFilters && (
+                  <button
+                    onClick={resetFilters}
+                    className="flex items-center gap-1.5 text-xs text-danger font-medium hover:underline px-2 py-1.5"
+                  >
+                    <RotateCcw size={12} /> Reset Filters
+                  </button>
+                )}
+              </div>
+
+              <button
+                onClick={() => {
+                  const csv = "data:text/csv;charset=utf-8," + ["Name,Phone,Email,Code,State,Status,Referrals,Earnings,Joined", ...marketers.map(m => `"${m.name}","${m.phone}","${m.email}","${m.marketerId}","${m.state}","${m.statusLabel}","${m.referrals}","${m.totalEarnings}","${m.joined}"`)].join("\n")
+                  const uri = encodeURI(csv)
+                  const link = document.createElement("a")
+                  link.setAttribute("href", uri)
+                  link.setAttribute("download", `sendme-marketers-${new Date().toISOString().slice(0, 10)}.csv`)
+                  document.body.appendChild(link)
+                  link.click()
+                  link.remove()
+                }}
+                className="flex items-center gap-1.5 bg-white border border-border-default rounded-lg px-3 py-1.5 text-xs font-medium text-text-primary hover:bg-surface-hover transition-colors"
+              >
+                <Download size={13} className="text-text-muted" /> Export CSV
+              </button>
+            </div>
+          </div>
+
+          {/* Status Tabs */}
+          <div className="flex items-center gap-0 border-b border-border-light overflow-x-auto">
+            {tabs.map((tab) => {
+              const count = tab === "All" ? stats.total : (tabCounts[tab.toLowerCase()] ?? 0)
+              return (
+                <button
+                  key={tab}
+                  onClick={() => handleTabChange(tab)}
+                  className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-medium whitespace-nowrap border-b-2 transition-colors ${
+                    activeTab === tab
+                      ? "border-sendme text-sendme"
+                      : "border-transparent text-text-muted hover:text-text-primary"
+                  }`}
+                >
+                  {tab}
+                  <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${
+                    activeTab === tab ? "bg-sendme-50 text-sendme" : "bg-surface-secondary text-text-muted"
+                  }`}>
+                    {count.toLocaleString()}
+                  </span>
+                </button>
+              )
+            })}
           </div>
 
           {/* Marketers Table */}
@@ -166,20 +250,27 @@ export default function MarketersPage() {
                   <Loader2 size={24} className="animate-spin text-sendme" />
                 </div>
               ) : marketers.length === 0 ? (
-                <div className="h-48 flex items-center justify-center">
-                  <p className="text-sm text-text-muted">No marketers found</p>
+                <div className="h-48 flex flex-col items-center justify-center text-text-muted">
+                  <p className="text-sm font-medium">No marketers found matching your filter criteria</p>
+                  {hasActiveFilters && (
+                    <button onClick={resetFilters} className="mt-2 text-xs text-sendme underline font-semibold">
+                      Clear all filters
+                    </button>
+                  )}
                 </div>
               ) : (
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="text-left text-[10px] text-text-muted font-semibold uppercase tracking-wider border-b border-border-light bg-surface-secondary/50">
                       <th className="px-4 py-3 font-semibold">Marketer <ArrowUpDown size={10} className="inline ml-1" /></th>
-                      <th className="px-4 py-3 font-semibold">ID</th>
-                      <th className="px-4 py-3 font-semibold">Location</th>
+                      <th className="px-4 py-3 font-semibold">Code / ID</th>
+                      <th className="px-4 py-3 font-semibold">State / City</th>
+                      <th className="px-4 py-3 font-semibold">Occupation</th>
                       <th className="px-4 py-3 font-semibold">Status</th>
                       <th className="px-4 py-3 font-semibold">Referrals</th>
-                      <th className="px-4 py-3 font-semibold">Earnings</th>
+                      <th className="px-4 py-3 font-semibold">Total Earnings</th>
                       <th className="px-4 py-3 font-semibold">Joined</th>
+                      <th className="px-4 py-3 font-semibold text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -192,36 +283,40 @@ export default function MarketersPage() {
                         }`}
                       >
                         <td className="px-4 py-3">
-                          <div className="flex items-center gap-2.5">
-                            <div className="w-8 h-8 bg-sendme-50 rounded-full flex items-center justify-center text-sendme text-xs font-bold shrink-0">
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-full bg-sendme-50 text-sendme font-bold flex items-center justify-center text-xs shrink-0">
                               {(m.name || "?")[0]}
                             </div>
                             <div>
-                              <p className="text-xs font-semibold text-text-primary">{m.name}</p>
-                              <p className="text-[10px] text-text-muted">{m.email}</p>
+                              <p className="font-semibold text-xs text-text-primary leading-tight">{m.name}</p>
+                              <p className="text-[10px] text-text-muted font-mono">{m.phone}</p>
                             </div>
                           </div>
                         </td>
+                        <td className="px-4 py-3 text-xs font-mono font-semibold text-sendme">{m.marketerId}</td>
+                        <td className="px-4 py-3 text-xs text-text-primary">{m.state} {m.city !== "—" ? `· ${m.city}` : ""}</td>
+                        <td className="px-4 py-3 text-xs text-text-secondary">{m.occupation}</td>
                         <td className="px-4 py-3">
-                          <span className="text-[10px] font-mono text-text-muted">{m.marketerId}</span>
-                        </td>
-                        <td className="px-4 py-3">
-                          <p className="text-xs text-text-muted">{m.city}, {m.state}</p>
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${m.statusColor}`}>
+                          <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${m.statusColor}`}>
                             {m.statusLabel}
                           </span>
                         </td>
+                        <td className="px-4 py-3 text-xs font-bold text-text-primary">{m.referrals}</td>
+                        <td className="px-4 py-3 text-xs font-semibold text-sendme">{m.totalEarningsFormatted}</td>
                         <td className="px-4 py-3">
-                          <span className="text-xs font-medium text-text-primary">{m.referrals}</span>
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className="text-xs font-semibold text-text-primary">{m.totalEarningsFormatted}</span>
-                        </td>
-                        <td className="px-4 py-3">
-                          <p className="text-xs font-medium text-text-primary">{m.joined}</p>
+                          <p className="text-xs text-text-primary">{m.joined}</p>
                           <p className="text-[10px] text-text-muted">{m.joinedNote}</p>
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setSelectedMarketer(m.id)
+                            }}
+                            className="text-xs font-semibold text-sendme hover:underline"
+                          >
+                            Details →
+                          </button>
                         </td>
                       </tr>
                     ))}
@@ -232,39 +327,22 @@ export default function MarketersPage() {
 
             {/* Pagination */}
             {!loading && marketers.length > 0 && (
-              <div className="flex items-center justify-between px-4 py-3 border-t border-border-light">
-                <p className="text-xs text-text-muted">
-                  Showing {(pagination.page - 1) * pagination.limit + 1} to {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total.toLocaleString()} marketers
-                </p>
-                <div className="flex items-center gap-1">
+              <div className="flex items-center justify-between px-4 py-3 border-t border-border-light text-xs text-text-muted">
+                <p>Showing page {pagination.page} of {pagination.totalPages} ({pagination.total.toLocaleString()} total)</p>
+                <div className="flex items-center gap-2">
                   <button
-                    onClick={() => handlePageChange(pagination.page - 1)}
                     disabled={pagination.page <= 1}
-                    className="p-1.5 text-text-muted hover:text-text-primary transition-colors disabled:opacity-30"
+                    onClick={() => handlePageChange(pagination.page - 1)}
+                    className="p-1 rounded hover:bg-surface-hover disabled:opacity-40"
                   >
-                    <ChevronLeft size={14} />
+                    <ChevronLeft size={16} />
                   </button>
-                  {Array.from({ length: Math.min(5, pagination.totalPages) }, (_, i) => {
-                    const p = i + 1
-                    return (
-                      <button
-                        key={p}
-                        onClick={() => handlePageChange(p)}
-                        className={`w-7 h-7 rounded-lg text-xs font-medium transition-colors ${
-                          p === pagination.page ? "bg-sendme text-white" : "text-text-muted hover:bg-surface-hover"
-                        }`}
-                      >
-                        {p}
-                      </button>
-                    )
-                  })}
-                  {pagination.totalPages > 5 && <span className="text-text-muted text-xs px-1">...</span>}
                   <button
-                    onClick={() => handlePageChange(pagination.page + 1)}
                     disabled={pagination.page >= pagination.totalPages}
-                    className="p-1.5 text-text-muted hover:text-text-primary transition-colors disabled:opacity-30"
+                    onClick={() => handlePageChange(pagination.page + 1)}
+                    className="p-1 rounded hover:bg-surface-hover disabled:opacity-40"
                   >
-                    <ChevronRight size={14} />
+                    <ChevronRight size={16} />
                   </button>
                 </div>
               </div>
@@ -273,9 +351,12 @@ export default function MarketersPage() {
         </div>
       </div>
 
-      {/* Marketer Detail Sidebar */}
+      {/* Marketer Detail Drawer */}
       {selectedMarketer && (
-        <MarketerDetail marketerId={selectedMarketer} onClose={() => setSelectedMarketer(null)} />
+        <MarketerDetail
+          marketerId={selectedMarketer}
+          onClose={() => setSelectedMarketer(null)}
+        />
       )}
     </div>
   )

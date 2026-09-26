@@ -4,10 +4,11 @@ import { useState, useEffect } from "react"
 import { Card } from "@/components/ui/card"
 import { formatCardValue } from "@/lib/format"
 import { ReturnLoadDetail } from "@/components/dashboard/return-load-detail"
+import { FilterSelect, StateFilter, VehicleFilter, NIGERIAN_STATES } from "@/components/dashboard/filters"
 import {
   ArrowLeftRight, Package, CheckCircle, AlertTriangle,
-  ChevronDown, Search, Download, Plus, MoreHorizontal, ArrowUpDown,
-  Filter, ChevronLeft, ChevronRight
+  ChevronDown, Search, Download, Plus, ArrowUpDown,
+  Filter, RotateCcw, ChevronLeft, ChevronRight, Loader2
 } from "lucide-react"
 
 const statIcons: Record<string, any> = {
@@ -49,34 +50,65 @@ export default function ReturnLoadPage() {
   const [stats, setStats] = useState<{ label: string; value: number; icon: string }[]>([])
   const [statusTabs, setStatusTabs] = useState<{ name: string; count: number }[]>([])
   const [page, setPage] = useState(1)
+  
+  // Filters
   const [searchQuery, setSearchQuery] = useState("")
+  const [originState, setOriginState] = useState("")
+  const [destState, setDestState] = useState("")
+  const [vehicleFilter, setVehicleFilter] = useState("")
+  const [statusFilter, setStatusFilter] = useState("")
 
-  const pageSize = 8
+  const pageSize = 10
 
-  useEffect(() => {
-    let cancelled = false
+  const fetchData = () => {
     setLoading(true)
-    fetch("/api/dashboard/return-load")
+    const params = new URLSearchParams()
+    if (searchQuery) params.set("search", searchQuery)
+    if (originState) params.set("state", originState)
+    if (destState) params.set("destination_state", destState)
+    if (vehicleFilter) params.set("vehicle_type", vehicleFilter)
+    if (statusFilter) params.set("status", statusFilter)
+
+    fetch(`/api/dashboard/return-load?${params.toString()}`)
       .then((r) => r.json())
       .then((data) => {
-        if (cancelled) return
         setRoutes(data.routes || [])
         setStats(data.stats || [])
         setStatusTabs(data.statusTabs || [])
         setError(null)
         setLoading(false)
-        if ((data.routes || []).length > 0) setSelectedLoad(data.routes[0].id)
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setError("Failed to load return routes")
-          setLoading(false)
+        if ((data.routes || []).length > 0 && !selectedLoad) {
+          setSelectedLoad(data.routes[0].id)
         }
       })
-    return () => {
-      cancelled = true
-    }
-  }, [])
+      .catch(() => {
+        setError("Failed to load return routes")
+        setLoading(false)
+      })
+  }
+
+  useEffect(() => {
+    fetchData()
+  }, [originState, destState, vehicleFilter, statusFilter])
+
+  const handleSearch = (q: string) => {
+    setSearchQuery(q)
+    setPage(1)
+  }
+
+  const resetFilters = () => {
+    setSearchQuery("")
+    setOriginState("")
+    setDestState("")
+    setVehicleFilter("")
+    setStatusFilter("")
+    setActiveTab("All Routes")
+    setPage(1)
+  }
+
+  const hasActiveFilters = Boolean(
+    searchQuery || originState || destState || vehicleFilter || statusFilter || activeTab !== "All Routes"
+  )
 
   const tabKey = (name: string) => {
     if (name === "Available Loads") return "Available"
@@ -107,64 +139,117 @@ export default function ReturnLoadPage() {
     <div className="flex h-full">
       <div className="flex-1 overflow-y-auto">
         <div className="space-y-5 p-4 lg:p-6 animate-in fade-in duration-500">
+          {/* Header */}
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-xl font-bold text-text-primary">Return Load</h1>
-              <p className="text-sm text-text-muted mt-0.5">Manage return routes and match available loads with drivers.</p>
+              <p className="text-sm text-text-muted mt-0.5">Manage return routes, inter-city legs, and match available loads with drivers.</p>
             </div>
-            <div className="flex items-center gap-3">
-              <div className="flex items-center gap-2 bg-white border border-border-default rounded-lg px-3 py-2 text-xs font-medium text-text-primary">
-                <span className="w-2 h-2 rounded-full bg-sendme" /> All Locations <ChevronDown size={14} className="text-text-muted" />
-              </div>
-              <button className="flex items-center gap-2 bg-sendme text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-sendme-dark transition-colors">
-                <Plus size={16} /> Create Return Route
-              </button>
-            </div>
+            <button className="flex items-center gap-2 bg-sendme text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-sendme-dark transition-colors">
+              <Plus size={16} /> Create Return Route
+            </button>
           </div>
 
-          <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+          {/* Stats Cards */}
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
             {stats.map((stat) => {
               const Icon = statIcons[stat.icon] || Package
               return (
-                <Card key={stat.label} className="p-4 min-w-0 overflow-hidden">
-                  <div className="flex items-start justify-between mb-2">
-                    <p className="text-xs text-text-muted truncate">{stat.label}</p>
-                    <div className="p-1.5 rounded-lg bg-sendme-50 text-sendme shrink-0">
-                      <Icon size={16} />
+                <Card key={stat.label} className="p-3.5 min-w-0 overflow-hidden">
+                  <div className="flex items-start justify-between mb-1.5">
+                    <p className="text-[11px] text-text-muted truncate">{stat.label}</p>
+                    <div className="p-1 rounded-lg bg-sendme-50 text-sendme shrink-0">
+                      <Icon size={14} />
                     </div>
                   </div>
-                  <p className="text-2xl font-bold text-text-primary mb-0.5 truncate" title={String(stat.value)}>{formatCardValue(stat.value)}</p>
-                  <p className="text-[10px] font-medium text-text-muted truncate">from live database</p>
+                  <p className="text-xl font-bold text-text-primary mb-0.5 truncate" title={String(stat.value)}>{formatCardValue(stat.value)}</p>
                 </Card>
               )
             })}
           </div>
 
-          <div className="flex items-center gap-3 flex-wrap">
-            <div className="flex-1 min-w-[200px] flex items-center gap-2 bg-white border border-border-default rounded-lg px-3 py-2">
-              <Search size={14} className="text-text-muted shrink-0" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => { setSearchQuery(e.target.value); setPage(1) }}
-                placeholder="Search by route, location, driver or load ID..."
-                className="flex-1 text-xs text-text-primary placeholder:text-text-muted focus:outline-none bg-transparent"
+          {/* Filters Bar */}
+          <div className="bg-white border border-border-default rounded-xl p-3 shadow-xs space-y-2.5">
+            <div className="flex items-center gap-2 flex-wrap">
+              {/* Search */}
+              <div className="flex-1 min-w-[200px] flex items-center gap-2 bg-surface-secondary border border-border-default rounded-lg px-3 py-2">
+                <Search size={14} className="text-text-muted shrink-0" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => handleSearch(e.target.value)}
+                  placeholder="Search route, city, driver or load ID..."
+                  className="flex-1 text-xs text-text-primary placeholder:text-text-muted focus:outline-none bg-transparent"
+                />
+                {searchQuery && (
+                  <button onClick={() => handleSearch("")} className="text-xs text-text-muted hover:text-text-primary">✕</button>
+                )}
+              </div>
+
+              {/* Origin State Filter */}
+              <FilterSelect
+                value={originState}
+                onChange={(v) => { setOriginState(v); setPage(1) }}
+                placeholder="Origin: All States"
+                options={NIGERIAN_STATES.map((s) => ({ value: s, label: `From: ${s === 'FCT' ? 'FCT - Abuja' : s}` }))}
+              />
+
+              {/* Destination State Filter */}
+              <FilterSelect
+                value={destState}
+                onChange={(v) => { setDestState(v); setPage(1) }}
+                placeholder="Dest: All States"
+                options={NIGERIAN_STATES.map((s) => ({ value: s, label: `To: ${s === 'FCT' ? 'FCT - Abuja' : s}` }))}
+              />
+
+              {/* Vehicle Filter */}
+              <VehicleFilter value={vehicleFilter} onChange={(v) => { setVehicleFilter(v); setPage(1) }} />
+
+              {/* Status Filter */}
+              <FilterSelect
+                value={statusFilter}
+                onChange={(v) => { setStatusFilter(v); setPage(1) }}
+                placeholder="All Status"
+                options={[
+                  { value: "Available", label: "Available" },
+                  { value: "Matched", label: "Matched" },
+                  { value: "Completed", label: "Completed" },
+                  { value: "Cancelled", label: "Cancelled" },
+                ]}
               />
             </div>
-            <button className="flex items-center gap-2 bg-white border border-border-default rounded-lg px-3 py-2 text-xs font-medium text-text-primary hover:bg-surface-hover transition-colors">
-              All Status <ChevronDown size={14} className="text-text-muted" />
-            </button>
-            <button className="flex items-center gap-2 bg-white border border-border-default rounded-lg px-3 py-2 text-xs font-medium text-text-primary hover:bg-surface-hover transition-colors">
-              All Vehicle Types <ChevronDown size={14} className="text-text-muted" />
-            </button>
-            <button className="flex items-center gap-2 bg-white border border-border-default rounded-lg px-3 py-2 text-xs font-medium text-text-primary hover:bg-surface-hover transition-colors">
-              All Route Types <ChevronDown size={14} className="text-text-muted" />
-            </button>
-            <button className="flex items-center gap-2 bg-white border border-border-default rounded-lg px-3 py-2 text-xs font-medium text-text-primary hover:bg-surface-hover transition-colors">
-              <Filter size={14} className="text-text-muted" /> Filters
-            </button>
+
+            <div className="flex items-center justify-between gap-2 flex-wrap pt-1 border-t border-border-light">
+              <div className="flex items-center gap-2">
+                {hasActiveFilters && (
+                  <button
+                    onClick={resetFilters}
+                    className="flex items-center gap-1.5 text-xs text-danger font-medium hover:underline px-2 py-1.5"
+                  >
+                    <RotateCcw size={12} /> Reset Filters
+                  </button>
+                )}
+              </div>
+
+              <button
+                onClick={() => {
+                  const csv = "data:text/csv;charset=utf-8," + ["ID,From,To,Vehicle,Capacity,Driver,Plate,Status,Created", ...filtered.map(r => `"${r.id}","${r.from}","${r.to}","${r.vehicle}","${r.capacity}","${r.driver || ''}","${r.driverPlate || ''}","${r.status}","${r.created}"`)].join("\n")
+                  const uri = encodeURI(csv)
+                  const link = document.createElement("a")
+                  link.setAttribute("href", uri)
+                  link.setAttribute("download", `sendme-return-load-${new Date().toISOString().slice(0, 10)}.csv`)
+                  document.body.appendChild(link)
+                  link.click()
+                  link.remove()
+                }}
+                className="flex items-center gap-1.5 bg-white border border-border-default rounded-lg px-3 py-1.5 text-xs font-medium text-text-primary hover:bg-surface-hover transition-colors"
+              >
+                <Download size={13} className="text-text-muted" /> Export CSV
+              </button>
+            </div>
           </div>
 
+          {/* Status Tabs */}
           <div className="flex items-center gap-0 border-b border-border-light overflow-x-auto">
             {statusTabs.map((tab) => (
               <button
@@ -188,147 +273,139 @@ export default function ReturnLoadPage() {
             ))}
           </div>
 
+          {/* Routes Table */}
           <Card className="overflow-hidden">
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-left text-[10px] text-text-muted font-semibold uppercase tracking-wider border-b border-border-light bg-surface-secondary/50">
-                    <th className="px-4 py-3 font-semibold">Route & Load <ArrowUpDown size={10} className="inline ml-1" /></th>
-                    <th className="px-4 py-3 font-semibold">Route Details</th>
-                    <th className="px-4 py-3 font-semibold">Vehicle / Capacity</th>
-                    <th className="px-4 py-3 font-semibold">Status</th>
-                    <th className="px-4 py-3 font-semibold">Match Score</th>
-                    <th className="px-4 py-3 font-semibold">Driver / Organization</th>
-                    <th className="px-4 py-3 font-semibold text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {loading ? (
-                    <tr>
-                      <td colSpan={7} className="px-4 py-10 text-center">
-                        <div className="w-6 h-6 border-2 border-sendme border-t-transparent rounded-full animate-spin mx-auto" />
-                        <p className="text-xs text-text-muted mt-2">Loading return routes...</p>
-                      </td>
+              {loading ? (
+                <div className="h-48 flex items-center justify-center">
+                  <Loader2 size={24} className="animate-spin text-sendme" />
+                </div>
+              ) : paged.length === 0 ? (
+                <div className="h-48 flex flex-col items-center justify-center text-text-muted">
+                  <p className="text-sm font-medium">No return routes found matching your filter criteria</p>
+                  {hasActiveFilters && (
+                    <button onClick={resetFilters} className="mt-2 text-xs text-sendme underline font-semibold">
+                      Clear all filters
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-[10px] text-text-muted font-semibold uppercase tracking-wider border-b border-border-light bg-surface-secondary/50">
+                      <th className="px-4 py-3 font-semibold">Route & Load <ArrowUpDown size={10} className="inline ml-1" /></th>
+                      <th className="px-4 py-3 font-semibold">Route Details</th>
+                      <th className="px-4 py-3 font-semibold">Vehicle / Capacity</th>
+                      <th className="px-4 py-3 font-semibold">Status</th>
+                      <th className="px-4 py-3 font-semibold">Match Score</th>
+                      <th className="px-4 py-3 font-semibold">Driver / Fleet</th>
+                      <th className="px-4 py-3 font-semibold text-right">Actions</th>
                     </tr>
-                  ) : error ? (
-                    <tr>
-                      <td colSpan={7} className="px-4 py-10 text-center">
-                        <p className="text-xs text-danger">{error}</p>
-                      </td>
-                    </tr>
-                  ) : paged.length === 0 ? (
-                    <tr>
-                      <td colSpan={7} className="px-4 py-10 text-center">
-                        <p className="text-xs text-text-muted">No return routes found{activeTab !== "All Routes" ? ` under "${activeTab}"` : ""}.</p>
-                      </td>
-                    </tr>
-                  ) : (
-                    paged.map((r) => (
+                  </thead>
+                  <tbody className="divide-y divide-border-light">
+                    {paged.map((route) => (
                       <tr
-                        key={r.id}
-                        onClick={() => setSelectedLoad(r.id)}
-                        className={`border-b border-border-light last:border-0 hover:bg-surface-secondary/50 transition-colors cursor-pointer ${
-                          selectedLoad === r.id ? "bg-sendme-50/30" : ""
+                        key={route.id}
+                        onClick={() => setSelectedLoad(route.id)}
+                        className={`hover:bg-surface-hover cursor-pointer transition-colors ${
+                          selectedLoad === route.id ? "bg-sendme-50/40" : ""
                         }`}
                       >
                         <td className="px-4 py-3">
-                          <div className="flex items-center gap-2.5">
-                            <div className={`w-8 h-8 rounded-lg ${r.iconBg} flex items-center justify-center text-white text-[10px] font-bold shrink-0`}>
-                              {r.iconLetter}
+                          <div className="flex items-center gap-3">
+                            <div className={`w-8 h-8 rounded-lg ${route.iconBg} text-white font-bold flex items-center justify-center text-xs shrink-0`}>
+                              {route.iconLetter}
                             </div>
                             <div>
-                              <p className="text-xs font-semibold text-text-primary">{r.id}</p>
-                              <p className="text-[10px] text-text-muted">{r.created}</p>
+                              <p className="font-semibold text-xs text-text-primary leading-tight">{route.id}</p>
+                              <p className="text-[10px] text-text-muted">{route.created}</p>
                             </div>
                           </div>
                         </td>
                         <td className="px-4 py-3">
-                          <p className="text-xs font-medium text-text-primary">{r.from} → {r.to}</p>
-                          <p className="text-[10px] text-text-muted">{r.fromState}</p>
-                          <p className="text-[10px] text-text-muted">{r.toState}</p>
+                          <p className="text-xs font-semibold text-text-primary">{route.from} → {route.to}</p>
+                          <p className="text-[10px] text-text-muted truncate max-w-[200px]">{route.fromState} to {route.toState}</p>
                         </td>
                         <td className="px-4 py-3">
-                          <p className="text-xs font-medium text-text-primary">{r.vehicle}</p>
-                          <p className="text-[10px] text-text-muted">{r.capacity}</p>
+                          <p className="text-xs font-medium text-text-primary">{route.vehicle}</p>
+                          <p className="text-[10px] text-text-muted font-mono">{route.capacity}</p>
                         </td>
                         <td className="px-4 py-3">
-                          <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${r.statusColor}`}>{r.status}</span>
-                          <p className="text-[10px] text-text-muted mt-0.5">{r.statusNote}</p>
+                          <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${route.statusColor}`}>
+                            {route.status}
+                          </span>
+                          <p className="text-[10px] text-text-muted mt-0.5">{route.statusNote}</p>
                         </td>
                         <td className="px-4 py-3">
-                          {r.matchScore ? (
-                            <div className="flex items-center gap-2">
-                              <div className="w-12 h-1.5 bg-surface-secondary rounded-full overflow-hidden">
-                                <div
-                                  className={`h-full rounded-full ${
-                                    parseInt(r.matchScore) >= 80 ? "bg-sendme" : parseInt(r.matchScore) >= 60 ? "bg-warning" : "bg-danger"
-                                  }`}
-                                  style={{ width: `${r.matchScore}%` }}
-                                />
-                              </div>
-                              <span className="text-[10px] font-semibold text-text-primary">{r.matchScore}%</span>
-                            </div>
+                          {route.matchScore ? (
+                            <span className="text-xs font-bold text-sendme">{route.matchScore}% Match</span>
                           ) : (
-                            <span className="text-[10px] text-text-muted">—</span>
+                            <span className="text-xs text-text-muted">—</span>
                           )}
                         </td>
                         <td className="px-4 py-3">
-                          {r.driver ? (
+                          {route.driver ? (
                             <div className="flex items-center gap-2">
-                              <div className="w-6 h-6 bg-sendme-50 rounded-full flex items-center justify-center text-sendme text-[10px] font-bold shrink-0">
-                                {r.driverAvatar}
+                              <div className="w-6 h-6 rounded-full bg-sendme-50 text-sendme font-bold flex items-center justify-center text-[10px] shrink-0">
+                                {route.driverAvatar}
                               </div>
-                              <div className="min-w-0">
-                                <p className="text-xs font-medium text-text-primary truncate">{r.driver}</p>
-                                <p className="text-[10px] text-text-muted">{r.driverPlate}</p>
+                              <div>
+                                <p className="text-xs font-medium text-text-primary leading-tight">{route.driver}</p>
+                                <p className="text-[10px] text-text-muted font-mono">{route.driverPlate || '—'}</p>
                               </div>
                             </div>
                           ) : (
-                            <span className="text-[10px] text-text-muted italic">—</span>
+                            <span className="text-xs text-text-muted italic">Unassigned</span>
                           )}
                         </td>
                         <td className="px-4 py-3 text-right">
-                          <button className="p-1 text-text-muted hover:text-text-primary transition-colors">
-                            <MoreHorizontal size={16} />
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setSelectedLoad(route.id)
+                            }}
+                            className="text-xs font-semibold text-sendme hover:underline"
+                          >
+                            Details →
                           </button>
                         </td>
                       </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
+                    ))}
+                  </tbody>
+                </table>
+              )}
             </div>
 
-            <div className="flex items-center justify-between px-4 py-3 border-t border-border-light">
-              <p className="text-xs text-text-muted">
-                {loading ? "Loading..." : filtered.length === 0 ? "No routes" : `Showing ${(safePage - 1) * pageSize + 1} to ${Math.min(safePage * pageSize, filtered.length)} of ${filtered.length} routes`}
-              </p>
-              <div className="flex items-center gap-1">
-                <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={safePage <= 1} className="p-1.5 text-text-muted hover:text-text-primary transition-colors disabled:opacity-40">
-                  <ChevronLeft size={14} />
-                </button>
-                {Array.from({ length: totalPages }, (_, i) => i + 1).slice(0, 5).map((p) => (
+            {/* Pagination */}
+            {!loading && filtered.length > 0 && (
+              <div className="flex items-center justify-between px-4 py-3 border-t border-border-light text-xs text-text-muted">
+                <p>Showing page {safePage} of {totalPages} ({filtered.length} total routes)</p>
+                <div className="flex items-center gap-2">
                   <button
-                    key={p}
-                    onClick={() => setPage(p)}
-                    className={`w-7 h-7 rounded-lg text-xs font-medium transition-colors ${p === safePage ? "bg-sendme text-white" : "text-text-muted hover:bg-surface-hover"}`}
+                    disabled={safePage <= 1}
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    className="p-1 rounded hover:bg-surface-hover disabled:opacity-40"
                   >
-                    {p}
+                    <ChevronLeft size={16} />
                   </button>
-                ))}
-                <button onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={safePage >= totalPages} className="p-1.5 text-text-muted hover:text-text-primary transition-colors disabled:opacity-40">
-                  <ChevronRight size={14} />
-                </button>
+                  <button
+                    disabled={safePage >= totalPages}
+                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                    className="p-1 rounded hover:bg-surface-hover disabled:opacity-40"
+                  >
+                    <ChevronRight size={16} />
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
           </Card>
         </div>
       </div>
 
+      {/* Return Load Detail Drawer */}
       {selectedLoad && (
         <ReturnLoadDetail
           loadId={selectedLoad}
-          load={routes.find((r) => r.id === selectedLoad) || null}
           onClose={() => setSelectedLoad(null)}
         />
       )}

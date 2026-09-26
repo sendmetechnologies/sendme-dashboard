@@ -6,8 +6,9 @@ import { BidsPricingDetail } from "@/components/dashboard/bids-pricing-detail"
 import {
   TrendingUp, TrendingDown, Search, Download, Plus, MoreHorizontal, Filter,
   ChevronLeft, ChevronRight, ChevronDown, Clock, AlertTriangle, CheckCircle,
-  Eye, Star, DollarSign, Users, MapPin, FileText, Activity, Loader2, Lock, Trash2
+  Eye, Star, DollarSign, Users, MapPin, FileText, Activity, Loader2, Lock, Trash2, RotateCcw
 } from "lucide-react"
+import { FilterSelect, StateFilter, VehicleFilter } from "@/components/dashboard/filters"
 
 const topTabs = ["Bid Activity", "Price Control", "Route Pricing", "Overrides", "Pricing Logs"]
 
@@ -58,6 +59,10 @@ function BidActivityView({ onSelect }: { onSelect: (id: string) => void }) {
   const [stats, setStats] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState("")
+  const [stateFilter, setStateFilter] = useState("")
+  const [vehicleFilter, setVehicleFilter] = useState("")
+  const [urgencyFilter, setUrgencyFilter] = useState("")
+  const [priceRangeFilter, setPriceRangeFilter] = useState("")
   const [page, setPage] = useState(1)
   const [pagination, setPagination] = useState({ total: 0, totalPages: 1 })
 
@@ -74,6 +79,10 @@ function BidActivityView({ onSelect }: { onSelect: (id: string) => void }) {
     try {
       const params = new URLSearchParams({ page: String(page), limit: "20" })
       if (search) params.set("search", search)
+      if (stateFilter) params.set("state", stateFilter)
+      if (vehicleFilter) params.set("vehicle_type", vehicleFilter)
+      if (urgencyFilter) params.set("urgency", urgencyFilter)
+      if (priceRangeFilter) params.set("price_range", priceRangeFilter)
       const statusKey = tabFilterMap[activeTab] || "all"
       if (statusKey !== "all") params.set("status", statusKey)
       const res = await fetch(`/api/dashboard/bids?${params}`)
@@ -88,12 +97,26 @@ function BidActivityView({ onSelect }: { onSelect: (id: string) => void }) {
     } finally {
       setLoading(false)
     }
-  }, [page, search, activeTab])
+  }, [page, search, activeTab, stateFilter, vehicleFilter, urgencyFilter, priceRangeFilter])
 
   useEffect(() => { fetchBids() }, [fetchBids])
 
   const handleTabChange = (tab: string) => { setActiveTab(tab); setPage(1) }
   const handleSearch = (v: string) => { setSearch(v); setPage(1) }
+
+  const resetFilters = () => {
+    setSearch("")
+    setStateFilter("")
+    setVehicleFilter("")
+    setUrgencyFilter("")
+    setPriceRangeFilter("")
+    setActiveTab("All Bids")
+    setPage(1)
+  }
+
+  const hasActiveFilters = Boolean(
+    search || stateFilter || vehicleFilter || urgencyFilter || priceRangeFilter || activeTab !== "All Bids"
+  )
 
   const displayStats = stats ? [
     { label: "Total Bids Today", value: stats.totalBidsToday.toLocaleString(), icon: Users, color: "text-sendme", bg: "bg-sendme-50" },
@@ -118,8 +141,43 @@ function BidActivityView({ onSelect }: { onSelect: (id: string) => void }) {
           <Card key={s.label} className="p-3 min-w-0 overflow-hidden"><div className="flex items-start justify-between mb-1.5"><p className="text-[10px] text-text-muted truncate">{s.label}</p><div className={`p-1 rounded-lg ${s.bg} ${s.color} shrink-0`}><I size={14}/></div></div><p className="text-base lg:text-lg font-bold text-text-primary truncate">{s.value}</p></Card>
         )})}
       </div>
-      <div className="flex items-center gap-2 flex-wrap">
-        <div className="flex-1 min-w-[180px] flex items-center gap-2 bg-white border border-border-default rounded-lg px-3 py-1.5"><Search size={12} className="text-text-muted"/><input value={search} onChange={e => handleSearch(e.target.value)} placeholder="Search by order ID, route or customer..." className="flex-1 text-[11px] placeholder:text-text-muted focus:outline-none bg-transparent"/></div>
+      <div className="bg-white border border-border-default rounded-xl p-3 shadow-xs space-y-2.5">
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex-1 min-w-[180px] flex items-center gap-2 bg-surface-secondary border border-border-default rounded-lg px-3 py-1.5">
+            <Search size={12} className="text-text-muted shrink-0"/>
+            <input value={search} onChange={e => handleSearch(e.target.value)} placeholder="Search by order ID, route, customer or driver..." className="flex-1 text-[11px] placeholder:text-text-muted focus:outline-none bg-transparent"/>
+            {search && <button onClick={() => handleSearch("")} className="text-[10px] text-text-muted">✕</button>}
+          </div>
+          <StateFilter value={stateFilter} onChange={(v) => { setStateFilter(v); setPage(1) }} />
+          <VehicleFilter value={vehicleFilter} onChange={(v) => { setVehicleFilter(v); setPage(1) }} />
+          <FilterSelect
+            value={urgencyFilter}
+            onChange={(v) => { setUrgencyFilter(v); setPage(1) }}
+            placeholder="Urgency: All"
+            options={[
+              { value: "express", label: "Express / Urgent" },
+              { value: "normal", label: "Normal" },
+            ]}
+          />
+          <FilterSelect
+            value={priceRangeFilter}
+            onChange={(v) => { setPriceRangeFilter(v); setPage(1) }}
+            placeholder="Price: All"
+            options={[
+              { value: "under_5k", label: "Under ₦5,000" },
+              { value: "5k_20k", label: "₦5,000 - ₦20,000" },
+              { value: "20k_100k", label: "₦20,000 - ₦100,000" },
+              { value: "100k_plus", label: "Above ₦100,000" },
+            ]}
+          />
+        </div>
+        {hasActiveFilters && (
+          <div className="pt-1 border-t border-border-light flex items-center justify-between">
+            <button onClick={resetFilters} className="flex items-center gap-1 text-[11px] text-danger font-medium hover:underline">
+              <RotateCcw size={11} /> Reset Filters
+            </button>
+          </div>
+        )}
       </div>
       <div className="flex items-center justify-between border-b border-border-light">
         <div className="flex gap-0 overflow-x-auto">{displayTabs.map(t => (

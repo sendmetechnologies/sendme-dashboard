@@ -5,10 +5,13 @@ export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url)
     const page = Math.max(1, parseInt(searchParams.get("page") || "1"))
-    const limit = Math.min(50, Math.max(1, parseInt(searchParams.get("limit") || "20")))
+    const limit = Math.min(100, Math.max(1, parseInt(searchParams.get("limit") || "20")))
     const search = searchParams.get("search") || null
     const status = searchParams.get("status") || null
     const state = searchParams.get("state") || null
+    const dateRange = searchParams.get("date_range") || null
+    const activity = searchParams.get("activity") || null
+    const sortBy = searchParams.get("sort_by") || "newest"
     const offset = (page - 1) * limit
 
     // ── Total count ──
@@ -23,13 +26,21 @@ export async function GET(req: NextRequest) {
       .select("customer_id")
     const uniqueActiveOrderCustomerIds = new Set((activeCustomerIds || []).map((o) => o.customer_id))
 
-    // Cross-reference: only count active customers who exist in users table as customer
     const { data: allCustomers } = await supabaseAdmin
       .from("users")
       .select("id")
       .eq("role", "customer")
     const customerIds = new Set((allCustomers || []).map((c) => c.id))
     const uniqueActive = [...uniqueActiveOrderCustomerIds].filter((id) => customerIds.has(id)).length
+
+    // New this month count
+    const now = new Date()
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
+    const { count: newThisMonthCount } = await supabaseAdmin
+      .from("users")
+      .select("id", { count: "exact", head: true })
+      .eq("role", "customer")
+      .gte("created_at", startOfMonth)
 
     // ── Get marketer profiles to check for removed status ──
     const { data: marketerProfiles } = await supabaseAdmin
@@ -38,7 +49,31 @@ export async function GET(req: NextRequest) {
       .eq("status", "removed")
     const removedMarketerIds = new Set((marketerProfiles || []).map((p: any) => p.user_id))
 
-    // ── Build query (try with new columns, fallback without) ──
+    // ── Date range filter calculation ──
+    let dateGte: string | null = null
+    if (dateRange === "today") {
+      const d = new Date()
+      d.setHours(0, 0, 0, 0)
+      dateGte = d.toISOString()
+    } else if (dateRange === "yesterday") {
+      const d = new Date()
+      d.setDate(d.getDate() - 1)
+      d.setHours(0, 0, 0, 0)
+      dateGte = d.toISOString()
+    } else if (dateRange === "week") {
+      const d = new Date()
+      d.setDate(d.getDate() - 7)
+      dateGte = d.toISOString()
+    } else if (dateRange === "month" || dateRange === "last_30") {
+      const d = new Date()
+      d.setDate(d.getDate() - 30)
+      dateGte = d.toISOString()
+    } else if (dateRange === "year") {
+      const d = new Date(now.getFullYear(), 0, 1)
+      dateGte = d.toISOString()
+    }
+
+    // ── Build query ──
     let senders: any[] | null = null
     let queryError: any = null
 
@@ -47,12 +82,16 @@ export async function GET(req: NextRequest) {
         .from("users")
         .select(selectCols)
         .eq("role", "customer")
-        .order("created_at", { ascending: false })
+        .order("created_at", { ascending: sortBy === "oldest" })
+
       if (search) {
         q = q.or(`full_name.ilike.%${search}%,phone.ilike.%${search}%,email.ilike.%${search}%`)
       }
       if (state) {
         q = q.eq("state", state)
+      }
+      if (dateGte) {
+        q = q.gte("created_at", dateGte)
       }
       if (status === "suspended") {
         q = q.eq("is_suspended", true)
@@ -61,19 +100,20 @@ export async function GET(req: NextRequest) {
       } else if (status === "active") {
         q = q.not("is_suspended", "is", true).not("is_deleted", "is", true)
       }
-      return q.range(offset, offset + limit - 1)
+
+      // If activity filter or in-memory sorting is active, fetch a larger batch
+      const effectiveLimit = (activity || sortBy === "spent" || sortBy === "orders") ? 200 : limit
+      const effectiveOffset = (activity || sortBy === "spent" || sortBy === "orders") ? 0 : offset
+      return q.range(effectiveOffset, effectiveOffset + effectiveLimit - 1)
     }
 
-    // Try with is_deleted and is_suspended columns first
-    const full = await tryQuery("id, full_name, phone, email, created_at, is_deleted, is_suspended")
+    const full = await tryQuery("id, full_name, phone, email, state, created_at, is_deleted, is_suspended")
     if (full.error) {
-      // Columns don't exist yet, fall back
-      const fallback = await tryQuery("id, full_name, phone, email, created_at")
+      const fallback = await tryQuery("id, full_name, phone, email, state, created_at")
       senders = fallback.data
       queryError = fallback.error
     } else {
       senders = full.data
-      // Keep all users — show deactivated ones with a status label
     }
 
     if (queryError) {
@@ -100,9 +140,8 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    const formatted = (senders || []).map((s) => {
+    let formatted = (senders || []).map((s) => {
       const created = new Date(s.created_at)
-      const now = new Date()
       const diffMs = now.getTime() - created.getTime()
       const diffDays = Math.floor(diffMs / 86400000)
       let joinedNote = "Just now"
@@ -131,6 +170,7 @@ export async function GET(req: NextRequest) {
         name: s.full_name || "—",
         phone: s.phone || "—",
         email: s.email || "—",
+        state: s.state || "—",
         avatar: (s.full_name || "?")[0],
         orders: orderCounts[s.id] || 0,
         totalSpent: totalSpent[s.id] || 0,
@@ -142,26 +182,30 @@ export async function GET(req: NextRequest) {
       }
     })
 
-    // ── Filtered count for pagination (mirrors the list filters) ──
-    let countQuery = supabaseAdmin
-      .from("users")
-      .select("id", { count: "exact", head: true })
-      .eq("role", "customer")
-    if (search) countQuery = countQuery.or(`full_name.ilike.%${search}%,phone.ilike.%${search}%,email.ilike.%${search}%`)
-    if (state) countQuery = countQuery.eq("state", state)
-    if (status === "suspended") countQuery = countQuery.eq("is_suspended", true)
-    else if (status === "deactivated") countQuery = countQuery.eq("is_deleted", true)
-    else if (status === "active") countQuery = countQuery.not("is_suspended", "is", true).not("is_deleted", "is", true)
-    const { count: filteredTotal } = await countQuery
+    // Activity filter
+    if (activity === "with_orders") {
+      formatted = formatted.filter((s) => s.orders > 0)
+    } else if (activity === "zero_orders") {
+      formatted = formatted.filter((s) => s.orders === 0)
+    }
 
-    // ── Total wallet balance across all senders ──
-    const senderUserIds = (senders || []).map((s) => s.id)
+    // Sort by spent or orders
+    if (sortBy === "spent") {
+      formatted.sort((a, b) => b.totalSpent - a.totalSpent)
+    } else if (sortBy === "orders") {
+      formatted.sort((a, b) => b.orders - a.orders)
+    }
+
+    const totalCount = (activity || sortBy === "spent" || sortBy === "orders") ? formatted.length : (totalSenders || 0)
+    const finalSenders = (activity || sortBy === "spent" || sortBy === "orders") ? formatted.slice(offset, offset + limit) : formatted
+
+    // Total wallet balance across all senders
     let totalBalance = 0
-    if (senderUserIds.length > 0) {
+    if (senderIds.length > 0) {
       const { data: wallets } = await supabaseAdmin
         .from("wallets")
         .select("balance")
-        .in("user_id", senderUserIds)
+        .in("user_id", senderIds)
       totalBalance = (wallets || []).reduce((sum, w) => sum + (Number(w.balance) || 0), 0)
     }
 
@@ -169,12 +213,12 @@ export async function GET(req: NextRequest) {
       stats: {
         total: totalSenders || 0,
         active: uniqueActive,
-        newThisMonth: 0,
+        newThisMonth: newThisMonthCount || 0,
         totalBalance,
         totalBalanceFormatted: `₦${totalBalance.toLocaleString()}`,
       },
-      senders: formatted,
-      pagination: { page, limit, total: filteredTotal || 0, totalPages: Math.ceil((filteredTotal || 0) / limit) },
+      senders: finalSenders,
+      pagination: { page, limit, total: totalCount, totalPages: Math.ceil(totalCount / limit) || 1 },
     })
   } catch (err) {
     console.error("[Senders] Error:", err)

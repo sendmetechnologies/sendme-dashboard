@@ -15,10 +15,15 @@ export async function GET(request: Request) {
   const category = searchParams.get("category") || "";
   const role = searchParams.get("role") || "";
   const search = searchParams.get("search") || "";
+  const dateRange = searchParams.get("date_range") || "";
   const sort = searchParams.get("sort") || "newest";
 
   // Auto-close old complaints
-  await supabaseAdmin.rpc("auto_close_complaints");
+  try {
+    await supabaseAdmin.rpc("auto_close_complaints");
+  } catch {
+    // Ignore RPC missing in local test env
+  }
 
   let query = supabaseAdmin
     .from("complaints")
@@ -39,9 +44,24 @@ export async function GET(request: Request) {
   if (role) {
     query = query.eq("user_role", role);
   }
+
+  if (dateRange === "today") {
+    const d = new Date()
+    d.setHours(0, 0, 0, 0)
+    query = query.gte("created_at", d.toISOString())
+  } else if (dateRange === "week") {
+    const d = new Date()
+    d.setDate(d.getDate() - 7)
+    query = query.gte("created_at", d.toISOString())
+  } else if (dateRange === "month" || dateRange === "last_30") {
+    const d = new Date()
+    d.setDate(d.getDate() - 30)
+    query = query.gte("created_at", d.toISOString())
+  }
+
   if (search) {
     query = query.or(
-      `subject.ilike.%${search}%,description.ilike.%${search}%,assigned_admin_name.ilike.%${search}%`
+      `subject.ilike.%${search}%,description.ilike.%${search}%,assigned_admin_name.ilike.%${search}%,id.ilike.%${search}%`
     );
   }
 
@@ -58,30 +78,48 @@ export async function GET(request: Request) {
   }
 
   // Get stats
-  const { data: stats } = await supabaseAdmin.rpc("get_complaint_stats");
+  const { data: allComplaints } = await supabaseAdmin
+    .from("complaints")
+    .select("status, category, user_role");
 
-  // Get tab counts
-  const tabCounts: Record<string, number> = { "All Tickets": count || 0 };
-  if (!status) {
-    const statuses = ["open", "in_progress", "resolved", "closed"];
-    for (const s of statuses) {
-      const { count: c } = await supabaseAdmin
-        .from("complaints")
-        .select("*", { count: "exact", head: true })
-        .eq("status", s);
-      tabCounts[s] = c || 0;
-    }
-  }
+  const list = allComplaints || [];
+  const stats = {
+    total: list.length,
+    open: list.filter((c) => c.status === "open").length,
+    in_progress: list.filter((c) => c.status === "in_progress").length,
+    resolved: list.filter((c) => c.status === "resolved").length,
+    closed: list.filter((c) => c.status === "closed").length,
+    by_role: {
+      customer: list.filter((c) => c.user_role === "customer").length,
+      driver: list.filter((c) => c.user_role === "driver").length,
+      organization: list.filter((c) => c.user_role === "organization").length,
+    },
+    by_category: {
+      order: list.filter((c) => c.category === "order").length,
+      payment: list.filter((c) => c.category === "payment").length,
+      driver: list.filter((c) => c.category === "driver").length,
+      app: list.filter((c) => c.category === "app").length,
+      other: list.filter((c) => c.category === "other").length,
+    },
+  };
+
+  const tabCounts: Record<string, number> = {
+    all: stats.total,
+    open: stats.open,
+    in_progress: stats.in_progress,
+    resolved: stats.resolved,
+    closed: stats.closed,
+  };
 
   return NextResponse.json({
     complaints: data || [],
-    stats: stats || {},
+    stats,
     tabCounts,
     pagination: {
       page,
       limit,
       total: count || 0,
-      totalPages: Math.ceil((count || 0) / limit),
+      totalPages: Math.ceil((count || 0) / limit) || 1,
     },
   });
 }

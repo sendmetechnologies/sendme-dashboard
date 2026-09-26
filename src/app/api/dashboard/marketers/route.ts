@@ -5,9 +5,12 @@ export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url)
     const page = Math.max(1, parseInt(searchParams.get("page") || "1"))
-    const limit = Math.min(50, Math.max(1, parseInt(searchParams.get("limit") || "20")))
+    const limit = Math.min(100, Math.max(1, parseInt(searchParams.get("limit") || "20")))
     const search = searchParams.get("search") || null
     const statusFilter = searchParams.get("status") || null
+    const state = searchParams.get("state") || null
+    const performance = searchParams.get("performance") || null
+    const sortBy = searchParams.get("sort_by") || "newest"
     const offset = (page - 1) * limit
 
     // ── Total count ──
@@ -36,23 +39,24 @@ export async function GET(req: NextRequest) {
     let query = supabaseAdmin
       .from("marketer_profiles")
       .select("*, users!inner(id, full_name, email, phone, state, role, created_at)")
-      .order("created_at", { ascending: false })
+      .order("created_at", { ascending: sortBy === "oldest" })
 
-    if (statusFilter) {
+    if (statusFilter && statusFilter !== "all") {
       query = query.eq("status", statusFilter)
     }
 
-    if (search) {
-      query = query.or(`phone.ilike.%${search}%,city.ilike.%${search}%,users.full_name.ilike.%${search}%`)
+    if (state) {
+      query = query.or(`state.ilike.%${state}%,city.ilike.%${state}%`)
     }
 
-    // Get count for pagination (before range)
-    const { count: filteredCount } = await supabaseAdmin
-      .from("marketer_profiles")
-      .select("id", { count: "exact", head: true })
-      .match(statusFilter ? { status: statusFilter } : {})
+    if (search) {
+      query = query.or(`phone.ilike.%${search}%,city.ilike.%${search}%,marketer_id.ilike.%${search}%,users.full_name.ilike.%${search}%,users.email.ilike.%${search}%`)
+    }
 
-    const { data: profiles, error: queryError } = await query.range(offset, offset + limit - 1)
+    const effectiveLimit = (performance || sortBy === "referrals" || sortBy === "earnings") ? 200 : limit
+    const effectiveOffset = (performance || sortBy === "referrals" || sortBy === "earnings") ? 0 : offset
+
+    const { data: profiles, error: queryError } = await query.range(effectiveOffset, effectiveOffset + effectiveLimit - 1)
 
     if (queryError) {
       console.error("[Marketers] Query error:", queryError)
@@ -95,7 +99,7 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    const formatted = (profiles || []).map((p: any) => {
+    let formatted = (profiles || []).map((p: any) => {
       const user = p.users
       const created = new Date(p.created_at)
       const now = new Date()
@@ -114,30 +118,48 @@ export async function GET(req: NextRequest) {
         removed: "bg-danger-light text-danger",
       }
 
+      const refs = referralCounts[p.marketer_id] || 0
+      const earnings = earningsByRef[p.marketer_id] || walletByRef[p.marketer_id] || 0
+
       return {
         id: p.user_id,
         name: user?.full_name || "—",
         phone: p.phone || user?.phone || "—",
         email: user?.email || "—",
         role: user?.role || "—",
-        state: p.state || "—",
+        state: p.state || user?.state || "—",
         city: p.city || "—",
         occupation: p.occupation || "—",
         marketerId: p.marketer_id || "—",
         status: p.status,
         statusLabel: p.status.charAt(0).toUpperCase() + p.status.slice(1),
         statusColor: statusColors[p.status] || "bg-gray-100 text-gray-600",
-        referrals: referralCounts[p.marketer_id] || 0,
-        totalEarnings: earningsByRef[p.marketer_id] || 0,
-        totalEarningsFormatted: `₦${(earningsByRef[p.marketer_id] || 0).toLocaleString()}`,
-        walletBalance: walletByRef[p.marketer_id] || 0,
-        walletBalanceFormatted: `₦${(walletByRef[p.marketer_id] || 0).toLocaleString()}`,
+        referrals: refs,
+        totalEarnings: earnings,
+        totalEarningsFormatted: `₦${earnings.toLocaleString()}`,
         joined: created.toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" }),
         joinedNote,
       }
     })
 
-    const totalPages = Math.ceil((filteredCount || totalMarketers || 0) / limit)
+    // Filter by performance
+    if (performance === "zero") {
+      formatted = formatted.filter((m) => m.referrals === 0)
+    } else if (performance === "1-10") {
+      formatted = formatted.filter((m) => m.referrals >= 1 && m.referrals <= 10)
+    } else if (performance === "10+") {
+      formatted = formatted.filter((m) => m.referrals > 10)
+    }
+
+    // Sort
+    if (sortBy === "referrals") {
+      formatted.sort((a, b) => b.referrals - a.referrals)
+    } else if (sortBy === "earnings") {
+      formatted.sort((a, b) => b.totalEarnings - a.totalEarnings)
+    }
+
+    const totalCount = (performance || sortBy === "referrals" || sortBy === "earnings") ? formatted.length : (totalMarketers || 0)
+    const finalMarketers = (performance || sortBy === "referrals" || sortBy === "earnings") ? formatted.slice(offset, offset + limit) : formatted
 
     return NextResponse.json({
       stats: {
@@ -146,17 +168,16 @@ export async function GET(req: NextRequest) {
         approved: tabCounts.approved,
         rejected: tabCounts.rejected,
         suspended: tabCounts.suspended,
+        removed: tabCounts.removed,
       },
-      tabCounts: {
-        "All": totalMarketers || 0,
-        "Pending": tabCounts.pending,
-        "Approved": tabCounts.approved,
-        "Rejected": tabCounts.rejected,
-        "Suspended": tabCounts.suspended,
-        "Removed": tabCounts.removed,
+      tabCounts,
+      marketers: finalMarketers,
+      pagination: {
+        page,
+        limit,
+        total: totalCount,
+        totalPages: Math.ceil(totalCount / limit) || 1,
       },
-      marketers: formatted,
-      pagination: { page, limit, total: filteredCount || totalMarketers || 0, totalPages },
     })
   } catch (err) {
     console.error("[Marketers] Error:", err)

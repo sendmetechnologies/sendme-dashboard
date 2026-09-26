@@ -8,6 +8,10 @@ export async function GET(req: NextRequest) {
     const limit = Math.min(50, Math.max(1, parseInt(searchParams.get("limit") || "20")))
     const search = searchParams.get("search") || null
     const statusFilter = searchParams.get("status") || "all"
+    const state = searchParams.get("state") || null
+    const vehicleType = searchParams.get("vehicle_type") || null
+    const urgency = searchParams.get("urgency") || null
+    const priceRange = searchParams.get("price_range") || null
     const offset = (page - 1) * limit
 
     // ── Stats: aggregate from orders + bids ──
@@ -76,7 +80,7 @@ export async function GET(req: NextRequest) {
         commission_amount, driver_earning,
         accepted_driver_id,
         bids(id, driver_id, amount, eta, status, created_at)
-      `)
+      `, { count: "exact" })
       .order("created_at", { ascending: false })
 
     // Status filter
@@ -88,8 +92,28 @@ export async function GET(req: NextRequest) {
       } else if (statusFilter === "cancelled") {
         query = query.in("status", ["cancelled", "canceled"])
       }
-      // "lost" is harder to compute at DB level — orders that had bids but weren't won
-      // We'll handle it client-side after fetch
+    }
+
+    if (state) {
+      query = query.or(`pickup_state.ilike.%${state}%,pickup_address.ilike.%${state}%,dropoff_address.ilike.%${state}%`)
+    }
+
+    if (vehicleType) {
+      query = query.ilike("vehicle_type", `%${vehicleType}%`)
+    }
+
+    if (urgency) {
+      query = query.eq("urgency", urgency)
+    }
+
+    if (priceRange === "under_5k") {
+      query = query.lte("final_price", 5000)
+    } else if (priceRange === "5k_20k") {
+      query = query.gte("final_price", 5000).lte("final_price", 20000)
+    } else if (priceRange === "20k_100k") {
+      query = query.gte("final_price", 20000).lte("final_price", 100000)
+    } else if (priceRange === "100k_plus") {
+      query = query.gte("final_price", 100000)
     }
 
     // Search filter
@@ -97,7 +121,7 @@ export async function GET(req: NextRequest) {
       query = query.or(`id.ilike.%${search}%,sender_name.ilike.%${search}%,pickup_address.ilike.%${search}%,dropoff_address.ilike.%${search}%`)
     }
 
-    const { data: orders, error } = await query.range(offset, offset + limit - 1)
+    const { data: orders, count: filteredCount, error } = await query.range(offset, offset + limit - 1)
 
     if (error) {
       console.error("[Bids] Query error:", error)
@@ -143,92 +167,96 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // ── Format orders with bid info ──
-    const formatted = (orders || []).map(order => {
-      const bids = (order as any).bids || []
-      const highestBid = bids.length > 0
-        ? bids.reduce((max: any, b: any) => Number(b.amount) > Number(max.amount) ? b : max, bids[0])
+    const formattedBids = (orders || []).map(order => {
+      const orderBids = Array.isArray(order.bids) ? order.bids : []
+      const bidsCount = orderBids.length
+      const highestBid = bidsCount > 0
+        ? Math.max(...orderBids.map((b: any) => Number(b.amount) || 0))
         : null
-      const wonBid = bids.find((b: any) => b.status === "accepted")
-      const customerName = customerMap[order.customer_id] || (order as any).sender_name || "—"
-      const winnerDriver = wonBid ? driverMap[wonBid.driver_id] : null
-      const highestDriver = highestBid ? driverMap[highestBid.driver_id] : null
+      const highestBidObj = bidsCount > 0
+        ? orderBids.find((b: any) => Number(b.amount) === highestBid)
+        : null
+      const winningBidObj = orderBids.find((b: any) => b.status === "accepted")
+      const winningBid = winningBidObj ? Number(winningBidObj.amount) : null
 
-      const status = order.status
-      let statusLabel = "Open"
-      let statusColor = "bg-warning-light text-warning"
-      let statusNote = `${bids.length} bid${bids.length !== 1 ? "s" : ""}`
+      const fromArea = order.pickup_address ? order.pickup_address.split(",")[0].trim() : "—"
+      const toArea = order.dropoff_address ? order.dropoff_address.split(",")[0].trim() : "—"
+      const route = `${fromArea} → ${toArea}`
 
-      if (status === "accepted" || status === "picked_up" || status === "in_transit") {
-        statusLabel = "Won"
+      const customerName = customerMap[order.customer_id] || order.sender_name || "—"
+      const winnerName = winningBidObj && driverMap[winningBidObj.driver_id]
+        ? driverMap[winningBidObj.driver_id].name
+        : order.accepted_driver_id && driverMap[order.accepted_driver_id]
+        ? driverMap[order.accepted_driver_id].name
+        : "—"
+      const highestByName = highestBidObj && driverMap[highestBidObj.driver_id]
+        ? driverMap[highestBidObj.driver_id].name
+        : "—"
+
+      let status = "Open for Bids"
+      let statusColor = "bg-sendme-50 text-sendme"
+      let statusNote = `${bidsCount} bids received`
+
+      if (order.status === "accepted" || winningBidObj) {
+        status = "Won"
         statusColor = "bg-sendme-50 text-sendme"
-        statusNote = "Driver assigned"
-      } else if (status === "delivered") {
-        statusLabel = "Completed"
+        statusNote = winnerName !== "—" ? `Won by ${winnerName}` : "Bid Accepted"
+      } else if (order.status === "cancelled" || order.status === "canceled") {
+        status = "Cancelled"
+        statusColor = "bg-danger-light text-danger"
+        statusNote = "Order cancelled"
+      } else if (order.status === "delivered") {
+        status = "Delivered"
         statusColor = "bg-sendme-50 text-sendme"
-        statusNote = "Delivered"
-      } else if (status === "cancelled" || status === "canceled") {
-        statusLabel = "Cancelled"
-        statusColor = "bg-surface-secondary text-text-muted"
-        statusNote = "Cancelled"
-      } else if (bids.length === 0) {
-        statusLabel = "Searching"
+        statusNote = "Ride completed"
+      } else if (order.status === "picked_up") {
+        status = "In Transit"
         statusColor = "bg-info-light text-info"
-        statusNote = "No bids yet"
+        statusNote = "Ride in progress"
       }
 
-      const itemDetails = (order as any).item_details as any
-      const itemType = itemDetails?.type || itemDetails?.category || "Item"
+      const created = new Date(order.created_at)
+      const diffMs = Date.now() - created.getTime()
+      const diffMins = Math.floor(diffMs / 60000)
+      let timeAgo = "Just now"
+      if (diffMins < 60) timeAgo = `${diffMins}m ago`
+      else if (diffMins < 1440) timeAgo = `${Math.floor(diffMins / 60)}h ago`
+      else timeAgo = `${Math.floor(diffMins / 1440)}d ago`
 
       return {
         id: order.id,
-        shortId: `SM-${order.id.slice(0, 4).toUpperCase()}`,
-        time: new Date(order.created_at).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }),
-        route: `${order.pickup_address || "—"} → ${order.dropoff_address || "—"}`,
-        type: `${itemType} • ${order.vehicle_type || "—"}`,
+        shortId: `ORD-${order.id.slice(0, 5).toUpperCase()}`,
+        time: timeAgo,
+        route,
+        type: order.vehicle_type || "Motorbike",
+        distance: order.distance_km ? `${order.distance_km} km` : "—",
         customer: customerName,
-        customerType: "—",
-        highestBid: highestBid ? Number(highestBid.amount) : null,
-        highestBy: highestDriver?.name || "—",
-        winningBid: wonBid ? Number(wonBid.amount) : null,
-        winner: winnerDriver?.name || "—",
-        winnerVehicle: winnerDriver?.vehicle || "—",
-        bidsCount: bids.length,
-        status: statusLabel,
-        statusNote,
+        bidsCount,
+        highestBid,
+        highestBy: highestByName,
+        winningBid,
+        winner: winnerName,
+        status,
         statusColor,
-        distance: order.distance_km ? `${Math.round(order.distance_km)} km` : "—",
-        finalPrice: order.final_price ? Number(order.final_price) : null,
-        commission: order.commission_amount ? Number(order.commission_amount) : null,
-        driverEarning: order.driver_earning ? Number(order.driver_earning) : null,
+        statusNote,
         urgency: order.urgency || "normal",
-        orderStatus: status,
-        pickupState: order.pickup_state || "—",
-        createdAt: order.created_at,
-        bids: bids.map((b: any) => ({
-          id: b.id,
-          driverId: b.driver_id,
-          driverName: driverMap[b.driver_id]?.name || "—",
-          amount: Number(b.amount),
-          eta: b.eta,
-          status: b.status,
-          time: new Date(b.created_at).toLocaleString("en-US", { hour: "2-digit", minute: "2-digit" }),
-        })).sort((a: any, b: any) => b.amount - a.amount),
+        pickup_state: order.pickup_state,
+        final_price: order.final_price,
+        rawOrder: order,
       }
     })
 
-    // Filter "lost" orders client-side: orders that had bids but no accepted bid and aren't cancelled
-    let result = formatted
-    if (statusFilter === "lost") {
-      result = formatted.filter(o => o.orderStatus !== "cancelled" && o.orderStatus !== "canceled" && o.orderStatus !== "accepted" && o.bidsCount > 0)
-    }
-
-    const totalPages = Math.ceil((totalBidCount || 0) / limit)
+    const finalCount = filteredCount ?? totalOrders ?? 0
 
     return NextResponse.json({
       stats,
-      bids: result,
-      pagination: { page, limit, total: totalBidCount || 0, totalPages },
+      bids: formattedBids,
+      pagination: {
+        page,
+        limit,
+        total: finalCount,
+        totalPages: Math.ceil(finalCount / limit) || 1,
+      },
     })
   } catch (err) {
     console.error("[Bids] Error:", err)

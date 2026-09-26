@@ -2,16 +2,34 @@ import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { reverseGeocodeArea } from "@/lib/geocode"
 
+function haversineDistanceKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371 // Earth radius in km
+  const dLat = ((lat2 - lat1) * Math.PI) / 180
+  const dLon = ((lon2 - lon1) * Math.PI) / 180
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2)
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+  return R * c
+}
+
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url)
     const page = Math.max(1, parseInt(searchParams.get("page") || "1"))
-    const limit = Math.min(50, Math.max(1, parseInt(searchParams.get("limit") || "20")))
+    const limit = Math.min(100, Math.max(1, parseInt(searchParams.get("limit") || "20")))
     const statusFilter = searchParams.get("status") || null
     const search = searchParams.get("search") || null
     const state = searchParams.get("state") || null
     const online = searchParams.get("online") || null
-    const offset = (page - 1) * limit
+    const vehicleTypeFilter = searchParams.get("vehicle_type") || null
+    const ratingMin = searchParams.get("rating_min") ? parseFloat(searchParams.get("rating_min")!) : null
+    const radiusParam = searchParams.get("radius") ? parseFloat(searchParams.get("radius")!) : null
+    const latParam = searchParams.get("lat") ? parseFloat(searchParams.get("lat")!) : null
+    const lngParam = searchParams.get("lng") ? parseFloat(searchParams.get("lng")!) : null
 
     const statusMap: Record<string, string[]> = {
       "Approved": ["verified"],
@@ -44,6 +62,7 @@ export async function GET(req: NextRequest) {
       "All Drivers": totalRiders || 0,
       "Independent": totalRiders || 0,
       "Organization-linked": 0,
+      "Online Now": onlineCount,
     }
 
     // ── Get marketer profiles to check for removed status ──
@@ -63,7 +82,7 @@ export async function GET(req: NextRequest) {
       .eq("role", "driver")
       .order("created_at", { ascending: false })
 
-    if (statusFilter && statusFilter !== "All Drivers") {
+    if (statusFilter && statusFilter !== "All Drivers" && statusFilter !== "All Status") {
       if (statusFilter === "Suspended") {
         query = query.eq("driver_profiles.is_suspended", true)
       } else if (statusFilter === "Deactivated") {
@@ -90,7 +109,12 @@ export async function GET(req: NextRequest) {
       query = query.or(`full_name.ilike.%${search}%,phone.ilike.%${search}%,email.ilike.%${search}%,id.ilike.%${search}%`)
     }
 
-    const { data: drivers, error } = await query.range(offset, offset + limit - 1)
+    // If radius filtering is requested, we fetch a broader set of drivers to filter and calculate distance in-memory
+    const isRadiusActive = radiusParam != null && latParam != null && lngParam != null
+    const fetchLimit = isRadiusActive ? 250 : limit
+    const fetchOffset = isRadiusActive ? 0 : (page - 1) * limit
+
+    const { data: drivers, error } = await query.range(fetchOffset, fetchOffset + fetchLimit - 1)
 
     if (error) {
       console.error("[Drivers] Query error:", error.message)
@@ -123,13 +147,13 @@ export async function GET(req: NextRequest) {
       totalBalance = (walletData || []).reduce((sum, w) => sum + (Number(w.balance) || 0), 0)
     }
 
-    const formatted = (drivers || []).map((d) => {
+    let formatted = (drivers || []).map((d) => {
       const profileEmbed = (d as any).driver_profiles
       const profile = Array.isArray(profileEmbed) ? profileEmbed[0] : profileEmbed
       const vp = profile?.vehicle_info as any
       const vehicleType = vp?.type || "—"
       const vehiclePlate = vp?.plate || "—"
-      const rating = profile?.rating || null
+      const rating = profile?.rating != null ? Number(profile.rating) : null
       const trips = tripCounts[d.id] || profile?.trips_count || 0
       const verificationStatus = profile?.verification_status || "pending"
       const isOnline = profile?.is_online || false
@@ -160,32 +184,63 @@ export async function GET(req: NextRequest) {
       else if (diffDays > 30) joinedNote = `${Math.floor(diffDays / 30)} month${Math.floor(diffDays / 30) > 1 ? "s" : ""} ago`
       else if (diffDays > 0) joinedNote = `${diffDays} day${diffDays > 1 ? "s" : ""} ago`
 
+      const dLat = profile?.current_lat ?? null
+      const dLng = profile?.current_lng ?? null
+      let distanceKm: number | null = null
+      let distanceLabel: string | null = null
+
+      if (latParam != null && lngParam != null && dLat != null && dLng != null) {
+        distanceKm = Math.round(haversineDistanceKm(latParam, lngParam, dLat, dLng) * 10) / 10
+        distanceLabel = `${distanceKm} km away`
+      }
+
       return {
         id: d.id,
         name: d.full_name || "—",
         phone: d.phone || "—",
+        email: d.email || "—",
         avatar: (d.full_name || "?")[0],
         type: "Independent",
         typeColor: "bg-sendme-50 text-sendme",
         vehicle: vehicleType,
         vehiclePlate,
         city: (d as any).state || "—",
-        latitude: profile?.current_lat ?? null,
-        longitude: profile?.current_lng ?? null,
+        latitude: dLat,
+        longitude: dLng,
+        distanceKm,
+        distanceLabel,
         locationLabel: null as string | null,
         status: statusLabel,
         statusColor,
         online: isOnline,
-        rating: rating ? String(rating) : "—",
+        rating: rating != null ? String(rating) : "—",
+        ratingNum: rating,
         trips,
         joined: created.toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" }),
         joinedNote,
       }
     })
 
-    // Reverse-geocode riders with a current location into a short human-readable
-    // area (e.g. "Ikeja, Lagos") so admins can see where online riders are.
-    const located = formatted.filter((d) => d.latitude != null && d.longitude != null)
+    // Vehicle type filter
+    if (vehicleTypeFilter) {
+      const vq = vehicleTypeFilter.toLowerCase()
+      formatted = formatted.filter((d) => d.vehicle.toLowerCase().includes(vq))
+    }
+
+    // Rating filter
+    if (ratingMin != null) {
+      formatted = formatted.filter((d) => (d.ratingNum != null && d.ratingNum >= ratingMin))
+    }
+
+    // Radius filter (if reference hub/coordinates and radius are selected)
+    if (isRadiusActive && radiusParam != null) {
+      formatted = formatted.filter((d) => d.distanceKm != null && d.distanceKm <= radiusParam)
+      // Sort by closest distance first
+      formatted.sort((a, b) => (a.distanceKm ?? 9999) - (b.distanceKm ?? 9999))
+    }
+
+    // Reverse-geocode riders with a current location into a short human-readable area
+    const located = formatted.filter((d) => d.latitude != null && d.longitude != null).slice(0, 20)
     if (located.length > 0) {
       const geoResults = await Promise.all(
         located.map((d) => reverseGeocodeArea(d.latitude as number, d.longitude as number)),
@@ -195,21 +250,9 @@ export async function GET(req: NextRequest) {
       })
     }
 
-    // ── Filtered count for pagination (mirrors the list filters) ──
-    let countQuery = supabaseAdmin
-      .from("users")
-      .select("id, driver_profiles(verification_status, is_suspended, is_deleted, is_online)", { count: "exact", head: true })
-      .eq("role", "driver")
-    if (statusFilter && statusFilter !== "All Drivers") {
-      if (statusFilter === "Suspended") countQuery = countQuery.eq("driver_profiles.is_suspended", true)
-      else if (statusFilter === "Deactivated") countQuery = countQuery.eq("driver_profiles.is_deleted", true)
-      else { const dbStatuses = statusMap[statusFilter]; if (dbStatuses) countQuery = countQuery.in("driver_profiles.verification_status", dbStatuses) }
-    }
-    if (state) countQuery = countQuery.eq("state", state)
-    if (online === "online") countQuery = countQuery.eq("driver_profiles.is_online", true)
-    else if (online === "offline") countQuery = countQuery.not("driver_profiles.is_online", "is", true)
-    if (search) countQuery = countQuery.or(`full_name.ilike.%${search}%,phone.ilike.%${search}%,email.ilike.%${search}%,id.ilike.%${search}%`)
-    const { count: filteredTotal } = await countQuery
+    // Paginate in-memory if radius was active
+    const totalCount = isRadiusActive ? formatted.length : totalRiders || 0
+    const finalDrivers = isRadiusActive ? formatted.slice((page - 1) * limit, page * limit) : formatted
 
     return NextResponse.json({
       stats: {
@@ -223,8 +266,13 @@ export async function GET(req: NextRequest) {
         totalBalanceFormatted: `₦${totalBalance.toLocaleString()}`,
       },
       tabCounts,
-      drivers: formatted,
-      pagination: { page, limit, total: filteredTotal || 0, totalPages: Math.ceil((filteredTotal || 0) / limit) },
+      drivers: finalDrivers,
+      pagination: {
+        page,
+        limit,
+        total: totalCount,
+        totalPages: Math.ceil(totalCount / limit) || 1,
+      },
     })
   } catch (err) {
     console.error("[Drivers] Error:", err)

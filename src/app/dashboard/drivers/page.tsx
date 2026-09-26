@@ -5,20 +5,23 @@ import { Card } from "@/components/ui/card"
 import { formatCardValue } from "@/lib/format"
 import { DriverDetail } from "@/components/dashboard/driver-detail"
 import { DriverForm } from "@/components/dashboard/forms"
-import { FilterSelect, StateFilter } from "@/components/dashboard/filters"
+import {
+  FilterSelect, StateFilter, VehicleFilter, RadiusFilter, LocationHubFilter
+} from "@/components/dashboard/filters"
 import { OtpUnlockModal } from "@/components/ui/otp-unlock-modal"
 import { useKycUnlock } from "@/hooks/use-kyc-unlock"
 import { usePageRefresh } from "@/hooks/use-page-refresh"
 import {
   Users, CheckCircle, Clock, AlertTriangle, Ban, Wifi, ChevronDown,
-  Search, Download, Plus, MoreHorizontal, ArrowUpDown, Filter,
-  ChevronLeft, ChevronRight, Star, Loader2, DollarSign, MapPin, Phone, MessageCircle
+  Search, Download, Plus, ArrowUpDown, Filter, RotateCcw,
+  ChevronLeft, ChevronRight, Star, Loader2, DollarSign, MapPin, Navigation
 } from "lucide-react"
 
 interface DriverRow {
   id: string
   name: string
   phone: string
+  email: string
   avatar: string
   type: string
   typeColor: string
@@ -27,6 +30,8 @@ interface DriverRow {
   city: string
   latitude: number | null
   longitude: number | null
+  distanceKm?: number | null
+  distanceLabel?: string | null
   locationLabel: string | null
   status: string
   statusColor: string
@@ -46,10 +51,17 @@ export default function DriversPage() {
   const [stats, setStats] = useState({ total: 0, approved: 0, pending: 0, suspended: 0, blocked: 0, onlineNow: 0, totalBalance: 0, totalBalanceFormatted: "₦0" })
   const [tabCounts, setTabCounts] = useState<Record<string, number>>({})
   const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, totalPages: 1 })
+  
+  // Filters
   const [searchQuery, setSearchQuery] = useState("")
   const [statusFilter, setStatusFilter] = useState("")
   const [stateFilter, setStateFilter] = useState("")
   const [onlineFilter, setOnlineFilter] = useState("")
+  const [vehicleFilter, setVehicleFilter] = useState("")
+  const [hubCoords, setHubCoords] = useState("")
+  const [radiusFilter, setRadiusFilter] = useState("")
+  const [ratingFilter, setRatingFilter] = useState("")
+  
   const kyc = useKycUnlock()
 
   const fetchData = (page: number, search: string) => {
@@ -60,7 +72,23 @@ export default function DriversPage() {
     if (search) params.set("search", search)
     if (statusFilter) params.set("status", statusFilter)
     if (stateFilter) params.set("state", stateFilter)
-    if (onlineFilter) params.set("online", onlineFilter)
+    if (vehicleFilter) params.set("vehicle_type", vehicleFilter)
+    if (ratingFilter) params.set("rating_min", ratingFilter)
+
+    if (activeTab === "Online Now") {
+      params.set("online", "online")
+    } else if (onlineFilter) {
+      params.set("online", onlineFilter)
+    }
+
+    if (hubCoords && radiusFilter) {
+      const [lat, lng] = hubCoords.split(",")
+      if (lat && lng) {
+        params.set("lat", lat.trim())
+        params.set("lng", lng.trim())
+        params.set("radius", radiusFilter)
+      }
+    }
 
     fetch(`/api/dashboard/drivers?${params.toString()}`)
       .then((r) => r.json())
@@ -75,8 +103,8 @@ export default function DriversPage() {
   }
 
   useEffect(() => {
-    fetchData(1, "")
-  }, [])
+    fetchData(1, searchQuery)
+  }, [statusFilter, stateFilter, onlineFilter, vehicleFilter, hubCoords, radiusFilter, ratingFilter, activeTab])
 
   usePageRefresh(() => fetchData(pagination.page, searchQuery))
 
@@ -85,20 +113,21 @@ export default function DriversPage() {
     fetchData(1, q)
   }
 
-  const handleStatusChange = (v: string) => {
-    setStatusFilter(v)
-    fetchData(1, searchQuery)
+  const resetFilters = () => {
+    setSearchQuery("")
+    setStatusFilter("")
+    setStateFilter("")
+    setOnlineFilter("")
+    setVehicleFilter("")
+    setHubCoords("")
+    setRadiusFilter("")
+    setRatingFilter("")
+    setActiveTab("All Drivers")
   }
 
-  const handleStateChange = (v: string) => {
-    setStateFilter(v)
-    fetchData(1, searchQuery)
-  }
-
-  const handleOnlineChange = (v: string) => {
-    setOnlineFilter(v)
-    fetchData(1, searchQuery)
-  }
+  const hasActiveFilters = Boolean(
+    searchQuery || statusFilter || stateFilter || onlineFilter || vehicleFilter || hubCoords || radiusFilter || ratingFilter || activeTab !== "All Drivers"
+  )
 
   const handlePageChange = (page: number) => {
     fetchData(page, searchQuery)
@@ -114,7 +143,7 @@ export default function DriversPage() {
     { label: "Total Balance", value: stats.totalBalanceFormatted, icon: DollarSign, color: "text-sendme", bg: "bg-sendme-50" },
   ]
 
-  const statusTabNames = ["All Drivers", "Independent", "Organization-linked"]
+  const statusTabNames = ["All Drivers", "Online Now", "Independent", "Organization-linked"]
 
   return (
     <div className="flex h-full">
@@ -124,8 +153,8 @@ export default function DriversPage() {
           {/* Page Header */}
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-xl font-bold text-text-primary">Drivers</h1>
-              <p className="text-sm text-text-muted mt-0.5">Manage and verify all independent and organization-linked drivers.</p>
+              <h1 className="text-xl font-bold text-text-primary">Drivers & Riders</h1>
+              <p className="text-sm text-text-muted mt-0.5">Manage, track, and verify riders with precision location & radius filtering.</p>
             </div>
             <button 
               onClick={() => setIsDriverFormOpen(true)}
@@ -135,58 +164,133 @@ export default function DriversPage() {
             </button>
           </div>
 
-          {/* Top Filters */}
-          <div className="flex items-center gap-2 flex-wrap">
-            <FilterSelect
-              value={statusFilter}
-              onChange={handleStatusChange}
-              placeholder="All Status"
-              options={[
-                { value: "Approved", label: "Approved" },
-                { value: "Pending Review", label: "Pending Review" },
-                { value: "Rejected", label: "Rejected" },
-                { value: "Suspended", label: "Suspended" },
-                { value: "Deactivated", label: "Deactivated" },
-              ]}
-            />
-            <StateFilter value={stateFilter} onChange={handleStateChange} />
-            <FilterSelect
-              value={onlineFilter}
-              onChange={handleOnlineChange}
-              placeholder="All Riders"
-              options={[
-                { value: "online", label: "Online" },
-                { value: "offline", label: "Offline" },
-              ]}
-            />
-            <div className="flex-1 min-w-[200px] flex items-center gap-2 bg-white border border-border-default rounded-lg px-3 py-2">
-              <Search size={14} className="text-text-muted shrink-0" />
-              <input
-                type="text"
-                placeholder="Search by name, phone, email or ID..."
-                className="flex-1 text-xs text-text-primary placeholder:text-text-muted focus:outline-none bg-transparent"
-                value={searchQuery}
-                onChange={(e) => handleSearch(e.target.value)}
+          {/* Comprehensive Filters Bar */}
+          <div className="space-y-2.5 bg-white border border-border-default rounded-xl p-3 shadow-xs">
+            <div className="flex items-center gap-2 flex-wrap">
+              {/* Search Box */}
+              <div className="flex-1 min-w-[220px] flex items-center gap-2 bg-surface-secondary border border-border-default rounded-lg px-3 py-2">
+                <Search size={14} className="text-text-muted shrink-0" />
+                <input
+                  type="text"
+                  placeholder="Search rider name, phone, plate, ID..."
+                  className="flex-1 text-xs text-text-primary placeholder:text-text-muted focus:outline-none bg-transparent"
+                  value={searchQuery}
+                  onChange={(e) => handleSearch(e.target.value)}
+                />
+                {searchQuery && (
+                  <button onClick={() => handleSearch("")} className="text-xs text-text-muted hover:text-text-primary">✕</button>
+                )}
+              </div>
+
+              {/* State Filter */}
+              <StateFilter value={stateFilter} onChange={(v) => { setStateFilter(v); setHubCoords("") }} />
+
+              {/* Reference Hub / Area */}
+              <LocationHubFilter
+                value={hubCoords}
+                onChange={(v) => setHubCoords(v)}
+                stateFilter={stateFilter}
+              />
+
+              {/* Radius Filter */}
+              <RadiusFilter
+                value={radiusFilter}
+                onChange={(v) => setRadiusFilter(v)}
+                disabled={!hubCoords}
+              />
+
+              {/* Online / Offline Filter */}
+              <FilterSelect
+                value={onlineFilter}
+                onChange={(v) => setOnlineFilter(v)}
+                placeholder="Live Status: All"
+                options={[
+                  { value: "online", label: "Online Now (Live)" },
+                  { value: "offline", label: "Offline" },
+                ]}
               />
             </div>
-            <button className="flex items-center gap-2 bg-white border border-border-default rounded-lg px-3 py-2 text-xs font-medium text-text-primary hover:bg-surface-hover transition-colors">
-              <Download size={14} className="text-text-muted" /> Export
-            </button>
+
+            <div className="flex items-center justify-between gap-2 flex-wrap pt-1 border-t border-border-light">
+              <div className="flex items-center gap-2 flex-wrap">
+                {/* Vehicle Filter */}
+                <VehicleFilter value={vehicleFilter} onChange={(v) => setVehicleFilter(v)} />
+
+                {/* Status Filter */}
+                <FilterSelect
+                  value={statusFilter}
+                  onChange={(v) => setStatusFilter(v)}
+                  placeholder="All Status"
+                  options={[
+                    { value: "Approved", label: "Approved" },
+                    { value: "Pending Review", label: "Pending Review" },
+                    { value: "Rejected", label: "Rejected" },
+                    { value: "Suspended", label: "Suspended" },
+                    { value: "Deactivated", label: "Deactivated" },
+                  ]}
+                />
+
+                {/* Rating Filter */}
+                <FilterSelect
+                  value={ratingFilter}
+                  onChange={(v) => setRatingFilter(v)}
+                  placeholder="Rating: Any"
+                  options={[
+                    { value: "4.5", label: "★ 4.5 & Above" },
+                    { value: "4.0", label: "★ 4.0 & Above" },
+                    { value: "3.0", label: "★ 3.0 & Above" },
+                  ]}
+                />
+
+                {hasActiveFilters && (
+                  <button
+                    onClick={resetFilters}
+                    className="flex items-center gap-1.5 text-xs text-danger font-medium hover:underline px-2 py-1.5"
+                  >
+                    <RotateCcw size={12} /> Reset Filters
+                  </button>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2">
+                {radiusFilter && hubCoords && (
+                  <div className="flex items-center gap-1.5 bg-sendme-50 text-sendme border border-sendme/20 text-xs px-2.5 py-1 rounded-full font-medium">
+                    <Navigation size={12} />
+                    <span>Filtering within {radiusFilter} km of selected hub</span>
+                  </div>
+                )}
+                <button
+                  onClick={() => {
+                    const csv = "data:text/csv;charset=utf-8," + ["Name,Phone,Vehicle,Plate,State,Status,Online,Rating,Trips", ...drivers.map(d => `"${d.name}","${d.phone}","${d.vehicle}","${d.vehiclePlate}","${d.city}","${d.status}","${d.online ? 'Online' : 'Offline'}","${d.rating}","${d.trips}"`)].join("\n")
+                    const uri = encodeURI(csv)
+                    const link = document.createElement("a")
+                    link.setAttribute("href", uri)
+                    link.setAttribute("download", `sendme-riders-${new Date().toISOString().slice(0, 10)}.csv`)
+                    document.body.appendChild(link)
+                    link.click()
+                    link.remove()
+                  }}
+                  className="flex items-center gap-1.5 bg-white border border-border-default rounded-lg px-3 py-1.5 text-xs font-medium text-text-primary hover:bg-surface-hover transition-colors"
+                >
+                  <Download size={13} className="text-text-muted" /> Export CSV
+                </button>
+              </div>
+            </div>
           </div>
 
           {/* Stats Cards */}
-          <div className="grid grid-cols-3 lg:grid-cols-7 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
             {statCards.map((stat) => {
               const Icon = stat.icon
               return (
-                <Card key={stat.label} className="p-4 min-w-0 overflow-hidden">
-                  <div className="flex items-start justify-between mb-2">
-                    <p className="text-xs text-text-muted truncate">{stat.label}</p>
-                    <div className={`p-1.5 rounded-lg ${stat.bg} ${stat.color} shrink-0`}>
-                      <Icon size={16} />
+                <Card key={stat.label} className="p-3.5 min-w-0 overflow-hidden">
+                  <div className="flex items-start justify-between mb-1.5">
+                    <p className="text-[11px] text-text-muted truncate">{stat.label}</p>
+                    <div className={`p-1 rounded-lg ${stat.bg} ${stat.color} shrink-0`}>
+                      <Icon size={14} />
                     </div>
                   </div>
-                  <p className="text-2xl font-bold text-text-primary mb-0.5 truncate" title={String(stat.value)}>{formatCardValue(stat.value)}</p>
+                  <p className="text-xl font-bold text-text-primary truncate" title={String(stat.value)}>{formatCardValue(stat.value)}</p>
                 </Card>
               )
             })}
@@ -198,6 +302,7 @@ export default function DriversPage() {
               {statusTabNames.map((tab) => (
                 <button
                   key={tab}
+                  onClick={() => setActiveTab(tab)}
                   className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-medium whitespace-nowrap border-b-2 transition-colors ${
                     activeTab === tab
                       ? "border-sendme text-sendme"
@@ -213,14 +318,6 @@ export default function DriversPage() {
                 </button>
               ))}
             </div>
-            <div className="flex items-center gap-2 pb-2">
-              <button className="flex items-center gap-1.5 text-xs font-medium text-text-secondary hover:text-text-primary transition-colors">
-                <Filter size={14} /> Filters
-              </button>
-              <button className="flex items-center gap-1.5 bg-white border border-border-default rounded-lg px-3 py-1.5 text-xs font-medium text-text-primary hover:bg-surface-hover transition-colors">
-                Newest First <ChevronDown size={14} className="text-text-muted" />
-              </button>
-            </div>
           </div>
 
           {/* Drivers Table */}
@@ -231,15 +328,20 @@ export default function DriversPage() {
                   <Loader2 size={24} className="animate-spin text-sendme" />
                 </div>
               ) : drivers.length === 0 ? (
-                <div className="h-48 flex items-center justify-center">
-                  <p className="text-sm text-text-muted">No drivers found</p>
+                <div className="h-48 flex flex-col items-center justify-center text-text-muted">
+                  <p className="text-sm font-medium">No drivers found matching your filter criteria</p>
+                  {hasActiveFilters && (
+                    <button onClick={resetFilters} className="mt-2 text-xs text-sendme underline font-semibold">
+                      Clear all filters
+                    </button>
+                  )}
                 </div>
               ) : (
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="text-left text-[10px] text-text-muted font-semibold uppercase tracking-wider border-b border-border-light bg-surface-secondary/50">
                       <th className="px-4 py-3 font-semibold">Driver <ArrowUpDown size={10} className="inline ml-1" /></th>
-                      <th className="px-4 py-3 font-semibold">Driver Type</th>
+                      <th className="px-4 py-3 font-semibold">Live Telemetry</th>
                       <th className="px-4 py-3 font-semibold">Vehicle</th>
                       <th className="px-4 py-3 font-semibold">State / Location</th>
                       <th className="px-4 py-3 font-semibold">Status</th>
@@ -249,107 +351,89 @@ export default function DriversPage() {
                       <th className="px-4 py-3 font-semibold text-right">Actions</th>
                     </tr>
                   </thead>
-                  <tbody>
-                    {drivers.map((d) => (
+                  <tbody className="divide-y divide-border-light">
+                    {drivers.map((driver) => (
                       <tr
-                        key={d.id}
-                        onClick={() => setSelectedDriver(d.id)}
-                        className={`border-b border-border-light last:border-0 hover:bg-surface-secondary/50 transition-colors cursor-pointer ${
-                          selectedDriver === d.id ? "bg-sendme-50/30" : ""
+                        key={driver.id}
+                        onClick={() => setSelectedDriver(driver.id)}
+                        className={`hover:bg-surface-hover cursor-pointer transition-colors ${
+                          selectedDriver === driver.id ? "bg-sendme-50/40" : ""
                         }`}
                       >
                         <td className="px-4 py-3">
-                          <div className="flex items-center gap-2.5">
-                            <div className="w-8 h-8 bg-sendme-50 rounded-full flex items-center justify-center text-sendme text-xs font-bold shrink-0">
-                              {d.avatar}
+                          <div className="flex items-center gap-3">
+                            <div className="relative">
+                              <div className="w-9 h-9 rounded-full bg-sendme-50 text-sendme font-bold flex items-center justify-center text-xs">
+                                {driver.avatar}
+                              </div>
+                              <span
+                                className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white ${
+                                  driver.online ? "bg-sendme" : "bg-text-muted"
+                                }`}
+                              />
                             </div>
                             <div>
-                              <p className="text-xs font-semibold text-text-primary">{d.name}</p>
-                              <p className="text-[10px] text-text-muted">{d.phone}</p>
+                              <p className="font-semibold text-xs text-text-primary leading-tight">{driver.name}</p>
+                              <p className="text-[11px] text-text-muted font-mono">{driver.phone}</p>
                             </div>
                           </div>
                         </td>
                         <td className="px-4 py-3">
-                          <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${d.typeColor}`}>{d.type}</span>
-                        </td>
-                        <td className="px-4 py-3">
-                          <p className="text-xs font-medium text-text-primary">{d.vehicle}</p>
-                          <p className="text-[10px] text-text-muted">{d.vehiclePlate}</p>
-                        </td>
-                        <td className="px-4 py-3">
-                          <p className="text-xs font-medium text-text-primary">{d.city}</p>
-                          {d.locationLabel ? (
-                            <p className="text-[10px] font-medium text-text-primary flex items-center gap-1 mt-0.5">
-                              <MapPin size={10} className="text-sendme shrink-0" /> {d.locationLabel}
-                            </p>
-                          ) : null}
-                          {d.latitude != null && d.longitude != null ? (
-                            <a
-                              href={`https://www.google.com/maps?q=${d.latitude},${d.longitude}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-[10px] text-sendme hover:underline"
-                              title="Open in Google Maps"
-                            >
-                              View on map
-                            </a>
-                          ) : (
-                            <p className="text-[10px] text-text-muted">No location</p>
-                          )}
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${d.statusColor}`}>{d.status}</span>
-                          {d.online && (
-                            <span className="flex items-center gap-0.5 text-[9px] font-semibold text-sendme mt-0.5">
-                              <span className="w-1.5 h-1.5 rounded-full bg-sendme" /> Online
+                          <div className="space-y-0.5">
+                            <span className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                              driver.online ? "bg-sendme-50 text-sendme" : "bg-surface-secondary text-text-muted"
+                            }`}>
+                              <span className={`w-1.5 h-1.5 rounded-full ${driver.online ? "bg-sendme animate-ping" : "bg-text-muted"}`} />
+                              {driver.online ? "Online Now" : "Offline"}
                             </span>
+                            {driver.distanceLabel && (
+                              <p className="text-[10px] font-semibold text-sendme flex items-center gap-1">
+                                <Navigation size={9} /> {driver.distanceLabel}
+                              </p>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3">
+                          <p className="text-xs font-medium text-text-primary">{driver.vehicle}</p>
+                          <p className="text-[10px] text-text-muted font-mono">{driver.vehiclePlate}</p>
+                        </td>
+                        <td className="px-4 py-3">
+                          <p className="text-xs text-text-primary flex items-center gap-1">
+                            <MapPin size={11} className="text-text-muted shrink-0" />
+                            {driver.city}
+                          </p>
+                          {driver.locationLabel && (
+                            <p className="text-[10px] text-text-muted truncate max-w-[140px]">{driver.locationLabel}</p>
                           )}
                         </td>
                         <td className="px-4 py-3">
-                          {d.rating !== "—" ? (
-                            <div className="flex items-center gap-1">
-                              <Star size={10} className="text-warning fill-warning" />
-                              <span className="text-xs font-medium text-text-primary">{d.rating}</span>
-                            </div>
-                          ) : (
-                            <span className="text-[10px] text-text-muted">—</span>
-                          )}
+                          <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${driver.statusColor}`}>
+                            {driver.status}
+                          </span>
                         </td>
                         <td className="px-4 py-3">
-                          <span className="text-xs font-medium text-text-primary">{d.trips}</span>
+                          <div className="flex items-center gap-1 text-xs font-semibold text-text-primary">
+                            <Star size={12} className="text-warning fill-warning" />
+                            {driver.rating}
+                          </div>
                         </td>
                         <td className="px-4 py-3">
-                          <p className="text-xs font-medium text-text-primary">{d.joined}</p>
-                          <p className="text-[10px] text-text-muted">{d.joinedNote}</p>
+                          <span className="text-xs font-semibold text-text-primary">{driver.trips}</span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <p className="text-xs text-text-primary">{driver.joined}</p>
+                          <p className="text-[10px] text-text-muted">{driver.joinedNote}</p>
                         </td>
                         <td className="px-4 py-3 text-right">
-                          <div className="flex items-center justify-end gap-1">
-                            {d.phone && d.phone !== "—" && (
-                              <>
-                                <a
-                                  href={`tel:${d.phone}`}
-                                  className="p-1.5 text-text-muted hover:text-sendme transition-colors"
-                                  title="Call rider"
-                                  onClick={(e) => e.stopPropagation()}
-                                >
-                                  <Phone size={14} />
-                                </a>
-                                <a
-                                  href={`https://wa.me/${d.phone.replace(/\D/g, "")}`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="p-1.5 text-text-muted hover:text-sendme transition-colors"
-                                  title="WhatsApp rider"
-                                  onClick={(e) => e.stopPropagation()}
-                                >
-                                  <MessageCircle size={14} />
-                                </a>
-                              </>
-                            )}
-                            <button className="p-1 text-text-muted hover:text-text-primary transition-colors">
-                              <MoreHorizontal size={16} />
-                            </button>
-                          </div>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setSelectedDriver(driver.id)
+                            }}
+                            className="text-xs font-semibold text-sendme hover:underline"
+                          >
+                            Details →
+                          </button>
                         </td>
                       </tr>
                     ))}
@@ -360,49 +444,22 @@ export default function DriversPage() {
 
             {/* Pagination */}
             {!loading && drivers.length > 0 && (
-              <div className="flex items-center justify-between px-4 py-3 border-t border-border-light">
-                <p className="text-xs text-text-muted">
-                  Showing {(pagination.page - 1) * pagination.limit + 1} to {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total.toLocaleString()} drivers
-                </p>
-                <div className="flex items-center gap-1">
+              <div className="flex items-center justify-between px-4 py-3 border-t border-border-light text-xs text-text-muted">
+                <p>Showing page {pagination.page} of {pagination.totalPages} ({pagination.total.toLocaleString()} total)</p>
+                <div className="flex items-center gap-2">
                   <button
-                    onClick={() => handlePageChange(pagination.page - 1)}
                     disabled={pagination.page <= 1}
-                    className="p-1.5 text-text-muted hover:text-text-primary transition-colors disabled:opacity-30"
+                    onClick={() => handlePageChange(pagination.page - 1)}
+                    className="p-1 rounded hover:bg-surface-hover disabled:opacity-40"
                   >
-                    <ChevronLeft size={14} />
+                    <ChevronLeft size={16} />
                   </button>
-                  {Array.from({ length: Math.min(5, pagination.totalPages) }, (_, i) => {
-                    const p = i + 1
-                    return (
-                      <button
-                        key={p}
-                        onClick={() => handlePageChange(p)}
-                        className={`w-7 h-7 rounded-lg text-xs font-medium transition-colors ${
-                          p === pagination.page ? "bg-sendme text-white" : "text-text-muted hover:bg-surface-hover"
-                        }`}
-                      >
-                        {p}
-                      </button>
-                    )
-                  })}
-                  {pagination.totalPages > 5 && <span className="text-text-muted text-xs px-1">...</span>}
-                  {pagination.totalPages > 5 && (
-                    <button
-                      onClick={() => handlePageChange(pagination.totalPages)}
-                      className={`w-7 h-7 rounded-lg text-xs font-medium transition-colors ${
-                        pagination.totalPages === pagination.page ? "bg-sendme text-white" : "text-text-muted hover:bg-surface-hover"
-                      }`}
-                    >
-                      {pagination.totalPages}
-                    </button>
-                  )}
                   <button
-                    onClick={() => handlePageChange(pagination.page + 1)}
                     disabled={pagination.page >= pagination.totalPages}
-                    className="p-1.5 text-text-muted hover:text-text-primary transition-colors disabled:opacity-30"
+                    onClick={() => handlePageChange(pagination.page + 1)}
+                    className="p-1 rounded hover:bg-surface-hover disabled:opacity-40"
                   >
-                    <ChevronRight size={14} />
+                    <ChevronRight size={16} />
                   </button>
                 </div>
               </div>
@@ -411,7 +468,7 @@ export default function DriversPage() {
         </div>
       </div>
 
-      {/* Driver Detail Sidebar */}
+      {/* Driver Detail Drawer */}
       {selectedDriver && (
         <DriverDetail
           driverId={selectedDriver}
@@ -422,14 +479,24 @@ export default function DriversPage() {
       )}
 
       {/* Driver Form Modal */}
-      <DriverForm isOpen={isDriverFormOpen} onClose={() => setIsDriverFormOpen(false)} />
+      {isDriverFormOpen && (
+        <DriverForm
+          isOpen={isDriverFormOpen}
+          onClose={() => {
+            setIsDriverFormOpen(false)
+            fetchData(1, "")
+          }}
+        />
+      )}
 
       {/* KYC Unlock Modal */}
-      <OtpUnlockModal
-        isOpen={kyc.otpOpen}
-        onClose={kyc.closeOtp}
-        onUnlocked={kyc.handleUnlocked}
-      />
+      {kyc.otpOpen && (
+        <OtpUnlockModal
+          isOpen={kyc.otpOpen}
+          onClose={kyc.closeOtp}
+          onUnlocked={kyc.handleUnlocked}
+        />
+      )}
     </div>
   )
 }

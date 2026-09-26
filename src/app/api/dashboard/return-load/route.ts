@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server"
+import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 
 function fmtCreated(iso: string): string {
@@ -15,9 +15,17 @@ const ORDER_STATUS_LABEL: Record<string, string> = {
   canceled: "Cancelled",
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
-    const { data: plans, error } = await supabaseAdmin
+    const { searchParams } = new URL(req.url)
+    const search = searchParams.get("search") || null
+    const originState = searchParams.get("state") || searchParams.get("origin_state") || null
+    const destinationState = searchParams.get("destination_state") || null
+    const vehicleType = searchParams.get("vehicle_type") || null
+    const statusFilter = searchParams.get("status") || null
+    const dateRange = searchParams.get("date_range") || null
+
+    let query = supabaseAdmin
       .from("return_load_plans")
       .select(`
         id, driver_id, current_city, current_address, current_lat, current_lng,
@@ -27,6 +35,25 @@ export async function GET() {
         driver:users!return_load_plans_driver_id_fkey(full_name, phone)
       `)
       .order("created_at", { ascending: false })
+
+    if (vehicleType) {
+      query = query.ilike("vehicle_type", `%${vehicleType}%`)
+    }
+
+    if (originState) {
+      query = query.or(`current_city.ilike.%${originState}%,current_address.ilike.%${originState}%`)
+    }
+
+    if (destinationState) {
+      query = query.or(`destination_city.ilike.%${destinationState}%,destination_address.ilike.%${destinationState}%`)
+    }
+
+    if (dateRange === "today") {
+      const today = new Date().toISOString().slice(0, 10)
+      query = query.eq("return_date", today)
+    }
+
+    const { data: plans, error } = await query
 
     if (error) {
       console.error("[Return Load] Plans query error:", error)
@@ -67,7 +94,7 @@ export async function GET() {
     let matchedCount = 0
     let completedCount = 0
 
-    const routes = list.map((p) => {
+    let routes = list.map((p) => {
       const matchOrders = matchedByPlan[p.id] || []
       const activeMatch = matchOrders.find((o) => o.status !== "delivered" && o.status !== "canceled")
       const deliveredCount = matchOrders.filter((o) => o.status === "delivered").length
@@ -136,6 +163,21 @@ export async function GET() {
         created_at: p.created_at,
       }
     })
+
+    if (search) {
+      const q = search.toLowerCase()
+      routes = routes.filter(
+        (r) =>
+          r.id.toLowerCase().includes(q) ||
+          r.from.toLowerCase().includes(q) ||
+          r.to.toLowerCase().includes(q) ||
+          (r.driver || "").toLowerCase().includes(q)
+      )
+    }
+
+    if (statusFilter && statusFilter !== "All Routes") {
+      routes = routes.filter((r) => r.status.toLowerCase() === statusFilter.toLowerCase())
+    }
 
     const statusTabs = [
       { name: "All Routes", count: routes.length },

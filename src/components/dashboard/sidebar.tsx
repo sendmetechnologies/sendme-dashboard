@@ -6,7 +6,7 @@ import {
   LayoutDashboard, Package, MapPin, Calendar, Users, Building2,
   Car, DollarSign, Wallet, AlertCircle, CheckCircle, BarChart3, Bell,
   Settings, ChevronLeft, ChevronRight, Send, HelpCircle, ArrowLeftRight,
-  Megaphone, Trophy, Mail
+  Megaphone, Trophy, Mail, TrendingUp
 } from "lucide-react"
 import { useState, useEffect } from "react"
 
@@ -51,6 +51,7 @@ const navSections: NavSection[] = [
   {
     title: "COMMERCE",
     items: [
+      { name: "Revenue", href: "/dashboard/revenue", icon: TrendingUp },
       { name: "Bids & Pricing", href: "/dashboard/bids-pricing", icon: DollarSign },
       { name: "Wallets & Payments", href: "/dashboard/wallets-payments", icon: Wallet },
     ],

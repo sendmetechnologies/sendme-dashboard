@@ -7,11 +7,12 @@ import { OrderDetail } from "@/components/dashboard/order-detail"
 import { OrderForm } from "@/components/dashboard/forms"
 import { FilterSelect, StateFilter } from "@/components/dashboard/filters"
 import { NearbyRidersModal } from "@/components/dashboard/nearby-riders-modal"
+import { DeliveryLiveTrackingModal } from "@/components/dashboard/delivery-live-tracking-modal"
 import { PAGE_REFRESH_EVENT } from "@/hooks/use-page-refresh"
 import {
   Package, Users, Calendar, Clock, AlertTriangle,
   Search, Download, Plus, MoreHorizontal, ArrowUpDown,
-  ChevronLeft, ChevronRight, Loader2, MapPin, Phone, MessageCircle
+  ChevronLeft, ChevronRight, Loader2, MapPin, Phone, MessageCircle, Navigation
 } from "lucide-react"
 
 interface DeliveryOrder {
@@ -69,6 +70,7 @@ export default function DeliveriesPage() {
   const [nearbySummary, setNearbySummary] = useState<any | null>(null)
   const [nearbyLoading, setNearbyLoading] = useState(false)
   const [nearbyRadius, setNearbyRadius] = useState(30)
+  const [trackingModalOrder, setTrackingModalOrder] = useState<DeliveryOrder | null>(null)
 
   const fetchNearbyRiders = async (orderId: string, radius: number) => {
     setNearbyLoading(true)
@@ -400,16 +402,26 @@ export default function DeliveriesPage() {
                           <p className="text-[10px] font-medium text-text-muted">{order.etaStatus}</p>
                         </td>
                         <td className="px-4 py-3 text-right">
-                          <button
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setTrackingModalOrder(order);
+                              }}
+                              className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold text-sendme bg-sendme-50 rounded-lg hover:bg-sendme hover:text-white transition-all shadow-2xs"
+                              title="Track live delivery in dashboard"
+                            >
+                              <Navigation size={12} />
+                              <span>Track</span>
+                            </button>
+                            <button
                               onClick={(e) => { e.stopPropagation(); openNearbyRiders(order) }}
-                              className="p-1 text-text-muted hover:text-sendme transition-colors"
+                              className="p-1.5 text-text-muted hover:text-sendme hover:bg-surface-secondary rounded-lg transition-colors"
                               title="Find nearby riders"
                             >
-                              <MapPin size={16} />
+                              <MapPin size={15} />
                             </button>
-                            <button className="p-1 text-text-muted hover:text-text-primary transition-colors">
-                            <MoreHorizontal size={16} />
-                          </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -498,6 +510,15 @@ export default function DeliveriesPage() {
             setNearbySummary(null)
           }}
           onRefresh={() => fetchNearbyRiders(nearbyOrder.fullId, nearbyRadius)}
+        />
+      )}
+
+      {/* In-Dashboard Live Tracking Modal */}
+      {trackingModalOrder && (
+        <DeliveryLiveTrackingModal
+          isOpen={Boolean(trackingModalOrder)}
+          order={trackingModalOrder}
+          onClose={() => setTrackingModalOrder(null)}
         />
       )}
     </div>

@@ -156,7 +156,9 @@ export function Sidebar() {
             )}
             <div className="space-y-0.5">
               {section.items.map((item) => {
-                const active = pathname === item.href || pathname.startsWith(item.href + "/")
+                const active = item.href === "/dashboard"
+                  ? pathname === "/dashboard"
+                  : pathname === item.href || pathname.startsWith(item.href + "/")
                 const Icon = item.icon
                 return (
                   <Link

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback, useMemo } from "react"
+import { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import { Card } from "@/components/ui/card"
 import { TrackerDetail } from "@/components/dashboard/tracker-detail"
 import { FilterSelect, StateFilter } from "@/components/dashboard/filters"
@@ -67,13 +67,16 @@ export default function LiveTrackerPage() {
   const [autoRefresh, setAutoRefresh] = useState(true)
   const [copiedCoords, setCopiedCoords] = useState(false)
 
+  const trackingOrderIdRef = useRef<string | null>(null)
+
   const fetchTrackerData = useCallback((overrides?: {
     state?: string
     search?: string
     vehicle?: string
     view?: string
   }) => {
-    setLoading(true)
+    // Only show full loading spinner if activeDeliveries is empty
+    setLoading((prev) => (activeDeliveries.length === 0 ? true : false))
     const effectiveState = overrides?.state !== undefined ? overrides.state : stateFilter
     const effectiveSearch = overrides?.search !== undefined ? overrides.search : searchQuery
     const effectiveVehicle = overrides?.vehicle !== undefined ? overrides.vehicle : vehicleFilter
@@ -97,17 +100,19 @@ export default function LiveTrackerPage() {
         setError(null)
         setLoading(false)
 
-        // Keep tracking order fresh
-        if (trackingOrder) {
-          const fresh = dels.find((d: any) => d.id === trackingOrder.id || d.fullId === trackingOrder.fullId)
-          if (fresh) setTrackingOrder(fresh)
+        // Keep tracked order locked and firmly updated with newest telemetry
+        if (trackingOrderIdRef.current) {
+          const fresh = dels.find((d: any) => d.id === trackingOrderIdRef.current || d.fullId === trackingOrderIdRef.current)
+          if (fresh) {
+            setTrackingOrder(fresh)
+          }
         }
       })
       .catch((err) => {
         setError("Failed to load live tracker telemetry")
         setLoading(false)
       })
-  }, [stateFilter, searchQuery, vehicleFilter, viewMode, trackingOrder])
+  }, [stateFilter, searchQuery, vehicleFilter, viewMode, activeDeliveries.length])
 
   // Initial fetch
   useEffect(() => {
@@ -167,12 +172,14 @@ export default function LiveTrackerPage() {
 
   // Trigger tracking mode for an order
   const handleTrackOrder = (order: any) => {
+    trackingOrderIdRef.current = order.id || order.fullId
     setTrackingOrder(order)
     setSelectedOrder(order.id)
     setZoomLevel(2) // zoom in to order corridor
   }
 
   const handleExitTracking = () => {
+    trackingOrderIdRef.current = null
     setTrackingOrder(null)
     setZoomLevel(1)
   }

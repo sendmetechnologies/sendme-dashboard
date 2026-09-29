@@ -6,8 +6,9 @@ import { formatCardValue } from "@/lib/format"
 import { DriverDetail } from "@/components/dashboard/driver-detail"
 import { DriverForm } from "@/components/dashboard/forms"
 import {
-  FilterSelect, StateFilter, VehicleFilter, RadiusFilter, LocationHubFilter
+  FilterSelect, StateFilter, VehicleFilter
 } from "@/components/dashboard/filters"
+import { LocationSearchInput, SelectedLocation } from "@/components/dashboard/location-search-input"
 import { OtpUnlockModal } from "@/components/ui/otp-unlock-modal"
 import { useKycUnlock } from "@/hooks/use-kyc-unlock"
 import { usePageRefresh } from "@/hooks/use-page-refresh"
@@ -58,8 +59,8 @@ export default function DriversPage() {
   const [stateFilter, setStateFilter] = useState("")
   const [onlineFilter, setOnlineFilter] = useState("")
   const [vehicleFilter, setVehicleFilter] = useState("")
-  const [hubCoords, setHubCoords] = useState("")
-  const [radiusFilter, setRadiusFilter] = useState("")
+  const [selectedLocation, setSelectedLocation] = useState<SelectedLocation | null>(null)
+  const [radiusFilter, setRadiusFilter] = useState("15")
   const [ratingFilter, setRatingFilter] = useState("")
   
   const kyc = useKycUnlock()
@@ -77,11 +78,10 @@ export default function DriversPage() {
     if (onlineFilter) params.set("online", onlineFilter)
     if (activeTab && activeTab !== "All Drivers") params.set("tab", activeTab)
 
-    if (hubCoords && radiusFilter) {
-      const [lat, lng] = hubCoords.split(",")
-      if (lat && lng) {
-        params.set("lat", lat.trim())
-        params.set("lng", lng.trim())
+    if (selectedLocation) {
+      params.set("lat", String(selectedLocation.lat))
+      params.set("lng", String(selectedLocation.lng))
+      if (radiusFilter) {
         params.set("radius", radiusFilter)
       }
     }
@@ -100,7 +100,7 @@ export default function DriversPage() {
 
   useEffect(() => {
     fetchData(1, searchQuery)
-  }, [statusFilter, stateFilter, onlineFilter, vehicleFilter, hubCoords, radiusFilter, ratingFilter, activeTab])
+  }, [statusFilter, stateFilter, onlineFilter, vehicleFilter, selectedLocation, radiusFilter, ratingFilter, activeTab])
 
   usePageRefresh(() => fetchData(pagination.page, searchQuery))
 
@@ -115,14 +115,14 @@ export default function DriversPage() {
     setStateFilter("")
     setOnlineFilter("")
     setVehicleFilter("")
-    setHubCoords("")
-    setRadiusFilter("")
+    setSelectedLocation(null)
+    setRadiusFilter("15")
     setRatingFilter("")
     setActiveTab("All Drivers")
   }
 
   const hasActiveFilters = Boolean(
-    searchQuery || statusFilter || stateFilter || onlineFilter || vehicleFilter || hubCoords || radiusFilter || ratingFilter || activeTab !== "All Drivers"
+    searchQuery || statusFilter || stateFilter || onlineFilter || vehicleFilter || selectedLocation || ratingFilter || activeTab !== "All Drivers"
   )
 
   const handlePageChange = (page: number) => {
@@ -187,20 +187,15 @@ export default function DriversPage() {
               </div>
 
               {/* State Filter */}
-              <StateFilter value={stateFilter} onChange={(v) => { setStateFilter(v); setHubCoords("") }} />
+              <StateFilter value={stateFilter} onChange={(v) => { setStateFilter(v); setSelectedLocation(null) }} />
 
-              {/* Reference Hub / Area */}
-              <LocationHubFilter
-                value={hubCoords}
-                onChange={(v) => setHubCoords(v)}
+              {/* Pickup / Map Address & Radius Search */}
+              <LocationSearchInput
+                selectedLocation={selectedLocation}
+                onSelectLocation={setSelectedLocation}
+                radius={radiusFilter}
+                onRadiusChange={setRadiusFilter}
                 stateFilter={stateFilter}
-              />
-
-              {/* Radius Filter */}
-              <RadiusFilter
-                value={radiusFilter}
-                onChange={(v) => setRadiusFilter(v)}
-                disabled={!hubCoords}
               />
 
               {/* Online / Offline Filter */}
@@ -257,10 +252,10 @@ export default function DriversPage() {
               </div>
 
               <div className="flex items-center gap-2">
-                {radiusFilter && hubCoords && (
-                  <div className="flex items-center gap-1.5 bg-sendme-50 text-sendme border border-sendme/20 text-xs px-2.5 py-1 rounded-full font-medium">
-                    <Navigation size={12} />
-                    <span>Filtering within {radiusFilter} km of selected hub</span>
+                {radiusFilter && selectedLocation && (
+                  <div className="flex items-center gap-1.5 bg-sendme-50 text-sendme border border-sendme/20 text-xs px-2.5 py-1 rounded-full font-medium max-w-[320px] truncate">
+                    <Navigation size={12} className="shrink-0" />
+                    <span className="truncate">Filtering within {radiusFilter} km of {selectedLocation.label}</span>
                   </div>
                 )}
                 <button
@@ -332,13 +327,44 @@ export default function DriversPage() {
                   <Loader2 size={24} className="animate-spin text-sendme" />
                 </div>
               ) : drivers.length === 0 ? (
-                <div className="h-48 flex flex-col items-center justify-center text-text-muted">
-                  <p className="text-sm font-medium">No drivers found matching your filter criteria</p>
-                  {hasActiveFilters && (
-                    <button onClick={resetFilters} className="mt-2 text-xs text-sendme underline font-semibold">
-                      Clear all filters
-                    </button>
+                <div className="h-56 flex flex-col items-center justify-center text-text-muted p-6 text-center">
+                  <MapPin size={32} className="text-text-muted/50 mb-2.5" />
+                  <p className="text-sm font-semibold text-text-primary">
+                    {selectedLocation
+                      ? `No drivers with live GPS found within ${radiusFilter || 15} km of "${selectedLocation.label}"`
+                      : "No drivers found matching your filter criteria"}
+                  </p>
+                  {selectedLocation && (
+                    <p className="text-xs text-text-muted mt-1 max-w-md">
+                      Drivers must have recent live telemetry recorded to be located by radius. You can expand the radius (e.g. 30 km, 50 km) or filter by state to see all registered drivers.
+                    </p>
                   )}
+                  <div className="flex items-center gap-2 mt-4">
+                    {selectedLocation && radiusFilter !== "50" && radiusFilter !== "100" && (
+                      <button
+                        onClick={() => setRadiusFilter("50")}
+                        className="text-xs bg-sendme text-white px-3 py-1.5 rounded-lg font-semibold hover:bg-sendme-dark transition-colors shadow-xs"
+                      >
+                        Expand radius to 50 km
+                      </button>
+                    )}
+                    {selectedLocation && (
+                      <button
+                        onClick={() => setSelectedLocation(null)}
+                        className="text-xs bg-white border border-border-default text-text-primary px-3 py-1.5 rounded-lg font-medium hover:bg-surface-secondary transition-colors"
+                      >
+                        Remove location filter
+                      </button>
+                    )}
+                    {hasActiveFilters && (
+                      <button
+                        onClick={resetFilters}
+                        className="text-xs text-danger hover:underline px-2 py-1.5 font-medium"
+                      >
+                        Clear all filters
+                      </button>
+                    )}
+                  </div>
                 </div>
               ) : (
                 <table className="w-full text-sm">

@@ -16,6 +16,38 @@ function haversineDistanceKm(lat1: number, lon1: number, lat2: number, lon2: num
   return R * c
 }
 
+function matchesState(
+  driverCity: string,
+  filterState: string,
+  lat?: number | null,
+  lng?: number | null
+): boolean {
+  if (!filterState || filterState === "All" || filterState === "All States") return true
+  const f = filterState.toLowerCase().trim()
+  const d = (driverCity || "").toLowerCase().trim()
+
+  // Special handling for FCT / Abuja (covers "FCT", "Abuja", "FCT - Abuja", "Federal Capital Territory")
+  if (f === "fct" || f === "abuja" || f.includes("abuja") || f.includes("fct")) {
+    if (d.includes("abuja") || d.includes("fct") || d.includes("federal capital")) return true
+    if (lat != null && lng != null && lat >= 8.2 && lat <= 9.5 && lng >= 6.7 && lng <= 7.8) return true
+    return false
+  }
+
+  // Lagos check (covers "Lagos", "Lagos State", coordinates in Lagos)
+  if (f === "lagos" || f.includes("lagos")) {
+    if (d.includes("lagos")) return true
+    if (lat != null && lng != null && lat >= 6.2 && lat <= 6.8 && lng >= 2.6 && lng <= 4.4) return true
+    return false
+  }
+
+  // General clean alphanumeric match for other Nigerian states (e.g. Akwa Ibom, Cross River, etc.)
+  const cleanF = f.replace(/[^a-z0-9]/g, "")
+  const cleanD = d.replace(/[^a-z0-9]/g, "")
+  if (cleanD.includes(cleanF) || cleanF.includes(cleanD)) return true
+
+  return false
+}
+
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url)
@@ -205,8 +237,7 @@ export async function GET(req: NextRequest) {
 
     // State filter
     if (state && state !== "All" && state !== "All States") {
-      const targetState = state.toLowerCase()
-      parentFiltered = parentFiltered.filter((d) => d.city.toLowerCase() === targetState)
+      parentFiltered = parentFiltered.filter((d) => matchesState(d.city, state, d.latitude, d.longitude))
     }
 
     // Free text search (name, phone, email, plate, vehicle, ID)

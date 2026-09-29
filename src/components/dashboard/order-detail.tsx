@@ -121,11 +121,13 @@ function OverviewTab({ data }: { data: OrderData }) {
             </div>
           </div>
         </div>
-        <div className="mt-3 h-24 bg-surface-secondary rounded-lg border border-border-light flex items-center justify-center">
-          <div className="text-center">
-            <MapPin size={16} className="text-sendme/40 mx-auto mb-1" />
-            <p className="text-[10px] text-text-muted">Map preview</p>
-          </div>
+        <div className="mt-3 h-36 bg-surface-secondary rounded-lg border border-border-light overflow-hidden relative shadow-xs">
+          <iframe
+            title="Order Route Map"
+            src={`https://maps.google.com/maps?q=${encodeURIComponent(order.pickupAddress || order.dropoffAddress || "Nigeria")}&z=14&output=embed`}
+            className="w-full h-full border-0"
+            loading="lazy"
+          />
         </div>
       </div>
 

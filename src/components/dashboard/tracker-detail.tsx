@@ -234,14 +234,13 @@ export function TrackerDetail({
                   {copiedGps ? <Check size={12} className="text-sendme" /> : <Copy size={12} />}
                   {copiedGps ? "Copied Coordinates" : "Copy GPS"}
                 </button>
-                <a
-                  href={googleMapsUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex-1 flex items-center justify-center gap-1 bg-white border border-border-default py-1.5 rounded text-[11px] font-semibold text-text-primary hover:bg-surface-hover transition-colors"
+                <button
+                  onClick={() => onTrackOrder?.(d)}
+                  className="flex-1 flex items-center justify-center gap-1 bg-sendme-50 border border-sendme/30 py-1.5 rounded text-[11px] font-bold text-sendme hover:bg-sendme hover:text-white transition-colors"
+                  title="Center and track live in dashboard map"
                 >
-                  <ExternalLink size={12} /> Google Maps
-                </a>
+                  <Crosshair size={12} /> {isTracking ? "Active in Map" : "Track in Dashboard"}
+                </button>
               </div>
             </div>
 

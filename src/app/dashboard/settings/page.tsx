@@ -3,10 +3,11 @@
 import { useState, useEffect, useCallback } from "react"
 import {
   Mail, Users, Save, Loader2, Plus, Trash2, X,
-  ToggleLeft, ToggleRight, ChevronRight, Check, AlertTriangle, Key, DollarSign, Play, GripVertical
+  ToggleLeft, ToggleRight, ChevronRight, Check, AlertTriangle, Key, DollarSign, Play, GripVertical, Headphones
 } from "lucide-react"
+import { SupportTeamTab } from "@/components/dashboard/support-team-tab"
 
-type Tab = "otp" | "referral" | "admins" | "fees" | "platform" | "howto"
+type Tab = "otp" | "referral" | "admins" | "support_team" | "fees" | "platform" | "howto"
 
 interface AdminUser {
   id: string
@@ -915,6 +916,7 @@ export default function SettingsPage() {
     { key: "referral", label: "Referral System", icon: Users },
     { key: "fees", label: "Withdrawal Fee", icon: DollarSign },
     { key: "howto", label: "How To Use", icon: Play },
+    { key: "support_team", label: "Manage Support Team", icon: Headphones },
     { key: "admins", label: "Admin Management", icon: Users },
   ]
 
@@ -925,12 +927,12 @@ export default function SettingsPage() {
         <p className="text-sm text-text-muted mt-0.5">Configure your dashboard preferences.</p>
       </div>
 
-      <div className="flex gap-1 bg-white border border-border-default rounded-lg p-1 w-fit">
+      <div className="flex gap-1 bg-white border border-border-default rounded-lg p-1 w-full sm:w-fit overflow-x-auto no-scrollbar">
         {tabs.map((tab) => {
           const Icon = tab.icon
           return (
             <button key={tab.key} onClick={() => setActiveTab(tab.key)}
-              className={`flex items-center gap-2 px-4 py-2 rounded-md text-xs font-medium transition-colors ${
+              className={`flex items-center gap-2 px-4 py-2 rounded-md text-xs font-medium whitespace-nowrap transition-colors ${
                 activeTab === tab.key ? "bg-sendme text-white" : "text-text-muted hover:text-text-primary hover:bg-surface-hover"
               }`}>
               <Icon size={14} />{tab.label}
@@ -945,6 +947,7 @@ export default function SettingsPage() {
         {activeTab === "referral" && <ReferralTab settings={settings} onSave={handleSave} saving={saving} />}
         {activeTab === "fees" && <WithdrawalFeeTab settings={settings} onSave={handleSave} saving={saving} />}
         {activeTab === "howto" && <HelpTopicsTab />}
+        {activeTab === "support_team" && <SupportTeamTab />}
         {activeTab === "admins" && <AdminsTab admins={admins} />}
       </div>
     </div>

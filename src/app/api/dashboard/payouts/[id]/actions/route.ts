@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { sendEmail, buildPayoutApprovedEmail, buildPayoutRejectedEmail } from "@/lib/sendbyte"
+import { logAdminActivity } from "@/lib/admin-logger"
+import { getSession } from "@/lib/auth"
 
 async function sendUserNotification(
   userId: string,
@@ -50,6 +52,11 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const session = await getSession()
+    const adminName = session?.displayName || session?.username || "Admin"
+    const adminUsername = session?.username || "admin"
+    const adminId = session?.id
+
     const { id } = await params
     const body = await req.json()
     const { action, reason } = body // action: "approve" | "reject"
@@ -209,6 +216,21 @@ export async function POST(
         console.error("[Payout Actions] Failed to send rejection email:", e)
       }
 
+      logAdminActivity({
+        admin_id: adminId,
+        admin_username: adminUsername,
+        admin_display_name: adminName,
+        action_type: "reject_payout",
+        action_category: "FINANCE",
+        description: `${adminName} rejected a withdrawal request of ₦${Number(payout.amount).toLocaleString()} for ${table === "organization_payout_requests" ? "an organization" : "a rider"}${reason ? ` — Reason: ${reason}` : ""}`,
+        target_type: table === "organization_payout_requests" ? "organization" : "rider",
+        target_id: userId,
+        target_name: (table === "organization_payout_requests" ? "Organization" : "Rider"),
+        amount: Number(payout.amount),
+        reason: reason || undefined,
+        metadata: { payout_id: id, table, fee_refunded: feeAmount },
+      }).catch(() => {})
+
       return NextResponse.json({ success: true, message: "Payout rejected. User wallet has been refunded." })
     }
 
@@ -283,6 +305,21 @@ export async function POST(
     } catch (e) {
       console.error("[Payout Actions] Failed to send approval email:", e)
     }
+
+    logAdminActivity({
+      admin_id: adminId,
+      admin_username: adminUsername,
+      admin_display_name: adminName,
+      action_type: "approve_payout",
+      action_category: "FINANCE",
+      description: `${adminName} approved a withdrawal request of ₦${Number(payout.amount).toLocaleString()} for ${table === "organization_payout_requests" ? "an org" : "a rider"} (${bankName})`,
+      target_type: table === "organization_payout_requests" ? "organization" : "rider",
+      target_id: userId,
+      target_name: bankName,
+      amount: Number(payout.amount),
+      reason: `Payout to ${bankName}`,
+      metadata: { payout_id: id, bank_name: bankName, table },
+    }).catch(() => {})
 
     return NextResponse.json({ success: true, message: "Payout approved and marked as paid. User has been notified." })
   } catch (err) {

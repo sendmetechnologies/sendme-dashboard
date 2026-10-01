@@ -6,7 +6,7 @@ import {
   LayoutDashboard, Package, MapPin, Calendar, Users, Building2,
   Car, DollarSign, Wallet, AlertCircle, CheckCircle, BarChart3, Bell,
   Settings, ChevronLeft, ChevronRight, Send, HelpCircle, ArrowLeftRight,
-  Megaphone, Trophy, Mail, TrendingUp
+  Megaphone, Trophy, Mail, TrendingUp, ShieldCheck
 } from "lucide-react"
 import { useState, useEffect } from "react"
 
@@ -75,6 +75,7 @@ const navSections: NavSection[] = [
   {
     title: "SYSTEM",
     items: [
+      { name: "Admin Logs", href: "/dashboard/admin-logs", icon: ShieldCheck },
       { name: "Settings", href: "/dashboard/settings", icon: Settings },
     ],
   },

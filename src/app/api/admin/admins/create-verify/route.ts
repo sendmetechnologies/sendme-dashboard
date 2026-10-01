@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getAdminById, verifyOTPCode, activateAdmin } from "@/lib/db";
+import { logAdminActivity } from "@/lib/admin-logger";
 
 export async function POST(req: NextRequest) {
   try {
@@ -34,6 +35,23 @@ export async function POST(req: NextRequest) {
     if (!activated) {
       return NextResponse.json({ error: "Failed to activate admin" }, { status: 500 });
     }
+
+    const forwarded = req.headers.get("x-forwarded-for");
+    const ip = forwarded ? forwarded.split(",")[0].trim() : req.headers.get("x-real-ip") || "127.0.0.1";
+
+    logAdminActivity({
+      admin_id: session.id,
+      admin_username: session.username,
+      admin_display_name: session.displayName || session.username,
+      action_type: "create_admin",
+      action_category: "SYSTEM",
+      description: `${session.displayName || session.username} created and activated new admin @${admin.username} (${admin.display_name}) with role ${admin.role}`,
+      target_type: "admin",
+      target_id: admin.id,
+      target_name: `@${admin.username} (${admin.display_name})`,
+      metadata: { username: admin.username, email: admin.email, role: admin.role },
+      ip_address: ip,
+    }).catch(() => {});
 
     return NextResponse.json({
       success: true,

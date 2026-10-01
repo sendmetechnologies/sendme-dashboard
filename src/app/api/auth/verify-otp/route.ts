@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAdminById, verifyOTPCode, updateLastLogin } from "@/lib/db";
 import { createSessionToken, getSessionCookieOptions } from "@/lib/auth";
+import { logAdminActivity } from "@/lib/admin-logger";
 
 export async function POST(req: NextRequest) {
   try {
@@ -54,6 +55,22 @@ export async function POST(req: NextRequest) {
 
     // ── Update last login (fire and forget) ──
     updateLastLogin(admin.id);
+
+    // ── Log login activity ──
+    const forwarded = req.headers.get("x-forwarded-for");
+    const ip = forwarded ? forwarded.split(",")[0].trim() : req.headers.get("x-real-ip") || "127.0.0.1";
+    logAdminActivity({
+      admin_id: admin.id,
+      admin_username: admin.username,
+      admin_display_name: admin.display_name,
+      action_type: "login",
+      action_category: "AUTH",
+      description: `${admin.username} logged into SendMe Admin Dashboard via Email 2FA`,
+      target_type: "system",
+      target_name: "Admin Dashboard Session",
+      metadata: { role: admin.role, auth_channel: "email_otp" },
+      ip_address: ip,
+    }).catch(() => {});
 
     return response;
   } catch (err) {

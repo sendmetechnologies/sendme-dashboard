@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
+import { logAdminActivity } from "@/lib/admin-logger"
+import { getSession } from "@/lib/auth"
 
 async function sendUserNotification(userId: string, title: string, body: string, type: string = "PAYMENT") {
   await supabaseAdmin.from("messages").insert({
@@ -24,9 +26,22 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const session = await getSession()
+    const adminName = session?.displayName || session?.username || "Admin"
+    const adminUsername = session?.username || "admin"
+    const adminId = session?.id
+
     const { id } = await params
     const body = await req.json()
     const { action, amount, note, reason, driver_user_id } = body
+
+    // Fetch org user info for notification & logging
+    const { data: orgUser } = await supabaseAdmin
+      .from("users")
+      .select("id, email, user_metadata")
+      .eq("id", id)
+      .single()
+    const orgName = orgUser?.user_metadata?.full_name || orgUser?.email || "Organization"
 
     // Verify organization
     if (action === "verify") {
@@ -35,12 +50,17 @@ export async function POST(
         .upsert({ id, is_verified: true, verification_status: "verified", review_reason: null }, { onConflict: "id" })
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-      // Fetch org user info for notification
-      const { data: orgUser } = await supabaseAdmin
-        .from("users")
-        .select("id, email, user_metadata")
-        .eq("id", id)
-        .single()
+      logAdminActivity({
+        admin_id: adminId,
+        admin_username: adminUsername,
+        admin_display_name: adminName,
+        action_type: "verify_org",
+        action_category: "ORGANIZATIONS",
+        description: `${adminName} verified organization ${orgName}`,
+        target_type: "organization",
+        target_id: id,
+        target_name: orgName,
+      }).catch(() => {})
 
       if (orgUser) {
         // In-app notification
@@ -93,12 +113,18 @@ export async function POST(
         .upsert({ id, is_verified: false, verification_status: "rejected", review_reason: reason || null }, { onConflict: "id" })
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-      // Fetch org user info for notification
-      const { data: orgUser } = await supabaseAdmin
-        .from("users")
-        .select("id, email, user_metadata")
-        .eq("id", id)
-        .single()
+      logAdminActivity({
+        admin_id: adminId,
+        admin_username: adminUsername,
+        admin_display_name: adminName,
+        action_type: "reject_org",
+        action_category: "ORGANIZATIONS",
+        description: `${adminName} rejected organization ${orgName}${reason ? ` — Reason: ${reason}` : ""}`,
+        target_type: "organization",
+        target_id: id,
+        target_name: orgName,
+        reason: reason || undefined,
+      }).catch(() => {})
 
       if (orgUser) {
         // In-app notification
@@ -158,10 +184,23 @@ export async function POST(
             .from("organization_profiles")
             .upsert({ id, is_verified: false }, { onConflict: "id" })
           if (fbErr) return NextResponse.json({ error: fbErr.message }, { status: 500 })
-          return NextResponse.json({ success: true, message: "Organization suspended (run supabase_migration_suspend.sql for full support)" })
+        } else {
+          return NextResponse.json({ error: error.message }, { status: 500 })
         }
-        return NextResponse.json({ error: error.message }, { status: 500 })
       }
+
+      logAdminActivity({
+        admin_id: adminId,
+        admin_username: adminUsername,
+        admin_display_name: adminName,
+        action_type: "suspend_org",
+        action_category: "ORGANIZATIONS",
+        description: `${adminName} suspended organization ${orgName}`,
+        target_type: "organization",
+        target_id: id,
+        target_name: orgName,
+      }).catch(() => {})
+
       return NextResponse.json({ success: true, message: "Organization suspended" })
     }
 
@@ -197,6 +236,24 @@ export async function POST(
 
       await sendUserNotification(id, "Wallet Credited", `₦${Number(amount).toLocaleString()} has been added to your wallet by admin.`, "PAYMENT")
 
+      logAdminActivity({
+        admin_id: adminId,
+        admin_username: adminUsername,
+        admin_display_name: adminName,
+        action_type: "credit_wallet",
+        action_category: "FINANCE",
+        description: `${adminName} credited organization ${orgName} ₦${Number(amount).toLocaleString()}${note ? ` for ${note}` : ""}`,
+        target_type: "organization",
+        target_id: id,
+        target_name: orgName,
+        amount: Number(amount),
+        reason: note || undefined,
+        metadata: {
+          previous_balance: wallet ? Number(wallet.balance) : 0,
+          new_balance: wallet ? Number(wallet.balance) + Number(amount) : Number(amount),
+        },
+      }).catch(() => {})
+
       return NextResponse.json({ success: true, message: `₦${Number(amount).toLocaleString()} credited to wallet` })
     }
 
@@ -206,6 +263,19 @@ export async function POST(
         .from("organization_profiles")
         .upsert({ id, is_verified: false }, { onConflict: "id" })
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+      logAdminActivity({
+        admin_id: adminId,
+        admin_username: adminUsername,
+        admin_display_name: adminName,
+        action_type: "delete_org",
+        action_category: "ORGANIZATIONS",
+        description: `${adminName} deactivated organization ${orgName}`,
+        target_type: "organization",
+        target_id: id,
+        target_name: orgName,
+      }).catch(() => {})
+
       return NextResponse.json({ success: true, message: "Organization deactivated" })
     }
 
@@ -214,6 +284,19 @@ export async function POST(
       const { data: result, error } = await supabaseAdmin.rpc("admin_hard_delete_user", { p_user_id: id })
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })
       if (result && !result.success) return NextResponse.json({ error: result.error }, { status: 500 })
+
+      logAdminActivity({
+        admin_id: adminId,
+        admin_username: adminUsername,
+        admin_display_name: adminName,
+        action_type: "delete_org",
+        action_category: "ORGANIZATIONS",
+        description: `${adminName} permanently deleted organization ${orgName}`,
+        target_type: "organization",
+        target_id: id,
+        target_name: orgName,
+      }).catch(() => {})
+
       return NextResponse.json({ success: true, message: "Organization permanently deleted" })
     }
 

@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
+import { logAdminActivity } from "@/lib/admin-logger"
+import { getSession } from "@/lib/auth"
 
 async function sendUserNotification(userId: string, title: string, body: string, type: string = "PAYMENT") {
   await supabaseAdmin.from("messages").insert({
@@ -24,9 +26,22 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const session = await getSession()
+    const adminName = session?.displayName || session?.username || "Admin"
+    const adminUsername = session?.username || "admin"
+    const adminId = session?.id
+
     const { id } = await params
     const body = await req.json()
     const { action, amount, note, reason } = body
+
+    // Fetch driver info for logging & notifications
+    const { data: driverUser } = await supabaseAdmin
+      .from("users")
+      .select("id, email, full_name, phone")
+      .eq("id", id)
+      .single()
+    const driverName = driverUser?.full_name || driverUser?.phone || "Rider"
 
     // Verify rider
     if (action === "verify") {
@@ -35,18 +50,24 @@ export async function POST(
         .upsert({ id, verification_status: "verified", review_reason: null, is_suspended: false }, { onConflict: "id" })
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-      // Send notification to rider
-      const { data: riderUser } = await supabaseAdmin
-        .from("users")
-        .select("id, email, full_name")
-        .eq("id", id)
-        .single()
+      logAdminActivity({
+        admin_id: adminId,
+        admin_username: adminUsername,
+        admin_display_name: adminName,
+        action_type: "verify_driver",
+        action_category: "DRIVERS",
+        description: `${adminName} verified rider ${driverName} after review`,
+        target_type: "rider",
+        target_id: id,
+        target_name: driverName,
+      }).catch(() => {})
 
-      if (riderUser) {
+      // Send notification to rider
+      if (driverUser) {
         // In-app notification
         try {
           await supabaseAdmin.from("messages").insert({
-            user_id: riderUser.id,
+            user_id: driverUser.id,
             title: "Account Verified",
             body: "Your account has been verified. You can now start accepting deliveries.",
             type: "VERIFICATION",
@@ -54,7 +75,7 @@ export async function POST(
             data: { verification_status: "verified" },
             created_at: new Date().toISOString(),
           })
-          console.log("[Driver Actions] In-app verification notification sent to", riderUser.id)
+          console.log("[Driver Actions] In-app verification notification sent to", driverUser.id)
         } catch (e) {
           console.error("[Driver Actions] Failed to send in-app notification:", e)
         }
@@ -68,7 +89,7 @@ export async function POST(
               method: "POST",
               headers: { "Content-Type": "application/json", Authorization: `Bearer ${serviceKey}` },
               body: JSON.stringify({
-                userId: riderUser.id,
+                userId: driverUser.id,
                 title: "Account Verified",
                 body: "Your account has been verified. You can now start accepting deliveries.",
                 type: "VERIFICATION",
@@ -82,15 +103,15 @@ export async function POST(
 
         // Email notification
         try {
-          if (riderUser.email) {
+          if (driverUser.email) {
             const { sendEmail, buildReviewNotificationEmail } = await import("@/lib/sendbyte")
             const email = buildReviewNotificationEmail("user", {
-              userName: riderUser.full_name || riderUser.email || "Driver",
-              userEmail: riderUser.email,
+              userName: driverUser.full_name || driverUser.email || "Driver",
+              userEmail: driverUser.email,
               status: "verified",
             })
-            await sendEmail({ to: riderUser.email, subject: email.subject, html: email.html })
-            console.log("[Driver Actions] Verification email sent to", riderUser.email)
+            await sendEmail({ to: driverUser.email, subject: email.subject, html: email.html })
+            console.log("[Driver Actions] Verification email sent to", driverUser.email)
           }
         } catch (e) {
           console.error("[Driver Actions] Failed to send email:", e)
@@ -107,20 +128,27 @@ export async function POST(
         .upsert({ id, verification_status: "rejected", is_suspended: false, review_reason: reason || null }, { onConflict: "id" })
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-      // Send notification to rider
-      const { data: riderUser } = await supabaseAdmin
-        .from("users")
-        .select("id, email, full_name")
-        .eq("id", id)
-        .single()
+      logAdminActivity({
+        admin_id: adminId,
+        admin_username: adminUsername,
+        admin_display_name: adminName,
+        action_type: "reject_driver",
+        action_category: "DRIVERS",
+        description: `${adminName} rejected verification for rider ${driverName}${reason ? ` — Reason: ${reason}` : ""}`,
+        target_type: "rider",
+        target_id: id,
+        target_name: driverName,
+        reason: reason || undefined,
+      }).catch(() => {})
 
-      if (riderUser) {
+      // Send notification to rider
+      if (driverUser) {
         const reasonText = reason ? ` Reason: ${reason}` : ""
 
         // In-app notification
         try {
           await supabaseAdmin.from("messages").insert({
-            user_id: riderUser.id,
+            user_id: driverUser.id,
             title: "Submission Not Approved",
             body: `Your verification was not approved.${reasonText} Please review and resubmit.`,
             type: "VERIFICATION",
@@ -128,7 +156,7 @@ export async function POST(
             data: { verification_status: "rejected", review_reason: reason },
             created_at: new Date().toISOString(),
           })
-          console.log("[Driver Actions] In-app rejection notification sent to", riderUser.id)
+          console.log("[Driver Actions] In-app rejection notification sent to", driverUser.id)
         } catch (e) {
           console.error("[Driver Actions] Failed to send in-app notification:", e)
         }
@@ -142,7 +170,7 @@ export async function POST(
               method: "POST",
               headers: { "Content-Type": "application/json", Authorization: `Bearer ${serviceKey}` },
               body: JSON.stringify({
-                userId: riderUser.id,
+                userId: driverUser.id,
                 title: "Submission Not Approved",
                 body: `Your verification was not approved.${reasonText} Please review and resubmit.`,
                 type: "VERIFICATION",
@@ -156,16 +184,16 @@ export async function POST(
 
         // Email notification
         try {
-          if (riderUser.email) {
+          if (driverUser.email) {
             const { sendEmail, buildReviewNotificationEmail } = await import("@/lib/sendbyte")
             const email = buildReviewNotificationEmail("user", {
-              userName: riderUser.full_name || riderUser.email || "Driver",
-              userEmail: riderUser.email,
+              userName: driverUser.full_name || driverUser.email || "Driver",
+              userEmail: driverUser.email,
               status: "rejected",
               reason: reason || undefined,
             })
-            await sendEmail({ to: riderUser.email, subject: email.subject, html: email.html })
-            console.log("[Driver Actions] Rejection email sent to", riderUser.email)
+            await sendEmail({ to: driverUser.email, subject: email.subject, html: email.html })
+            console.log("[Driver Actions] Rejection email sent to", driverUser.email)
           }
         } catch (e) {
           console.error("[Driver Actions] Failed to send email:", e)
@@ -181,6 +209,20 @@ export async function POST(
         .from("driver_profiles")
         .upsert({ id, verification_status: "rejected", is_suspended: true, review_reason: note || "Suspended by admin" }, { onConflict: "id" })
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+      logAdminActivity({
+        admin_id: adminId,
+        admin_username: adminUsername,
+        admin_display_name: adminName,
+        action_type: "suspend_driver",
+        action_category: "DRIVERS",
+        description: `${adminName} suspended rider ${driverName}${note ? ` — Reason: ${note}` : ""}`,
+        target_type: "rider",
+        target_id: id,
+        target_name: driverName,
+        reason: note || undefined,
+      }).catch(() => {})
+
       return NextResponse.json({ success: true, message: "Driver suspended" })
     }
 
@@ -216,6 +258,24 @@ export async function POST(
 
       await sendUserNotification(id, "Wallet Credited", `₦${Number(amount).toLocaleString()} has been added to your wallet by admin.`, "PAYMENT")
 
+      logAdminActivity({
+        admin_id: adminId,
+        admin_username: adminUsername,
+        admin_display_name: adminName,
+        action_type: "credit_wallet",
+        action_category: "FINANCE",
+        description: `${adminName} credited rider ${driverName} ₦${Number(amount).toLocaleString()}${note ? ` for ${note}` : ""}`,
+        target_type: "rider",
+        target_id: id,
+        target_name: driverName,
+        amount: Number(amount),
+        reason: note || undefined,
+        metadata: {
+          previous_balance: wallet ? Number(wallet.balance) : 0,
+          new_balance: wallet ? Number(wallet.balance) + Number(amount) : Number(amount),
+        },
+      }).catch(() => {})
+
       return NextResponse.json({ success: true, message: `₦${Number(amount).toLocaleString()} credited to wallet` })
     }
 
@@ -225,6 +285,19 @@ export async function POST(
         .from("driver_profiles")
         .upsert({ id, verification_status: "rejected", is_suspended: false, is_deleted: true, review_reason: "Account deactivated" }, { onConflict: "id" })
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+      logAdminActivity({
+        admin_id: adminId,
+        admin_username: adminUsername,
+        admin_display_name: adminName,
+        action_type: "delete_driver",
+        action_category: "DRIVERS",
+        description: `${adminName} deactivated rider ${driverName}`,
+        target_type: "rider",
+        target_id: id,
+        target_name: driverName,
+      }).catch(() => {})
+
       return NextResponse.json({ success: true, message: "Driver deactivated" })
     }
 
@@ -233,6 +306,19 @@ export async function POST(
       const { data: result, error } = await supabaseAdmin.rpc("admin_hard_delete_user", { p_user_id: id })
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })
       if (result && !result.success) return NextResponse.json({ error: result.error }, { status: 500 })
+
+      logAdminActivity({
+        admin_id: adminId,
+        admin_username: adminUsername,
+        admin_display_name: adminName,
+        action_type: "delete_driver",
+        action_category: "DRIVERS",
+        description: `${adminName} permanently deleted rider ${driverName}`,
+        target_type: "rider",
+        target_id: id,
+        target_name: driverName,
+      }).catch(() => {})
+
       return NextResponse.json({ success: true, message: "Driver permanently deleted" })
     }
 
@@ -247,6 +333,19 @@ export async function POST(
         .update({ status: newStatus, updated_at: new Date().toISOString() })
         .eq("id", payout_id)
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+      logAdminActivity({
+        admin_id: adminId,
+        admin_username: adminUsername,
+        admin_display_name: adminName,
+        action_type: payout_action === "approve" ? "approve_payout" : "reject_payout",
+        action_category: "FINANCE",
+        description: `${adminName} ${payout_action === "approve" ? "approved" : "rejected"} payout request #${payout_id.slice(0, 8)} for rider ${driverName}`,
+        target_type: "payout",
+        target_id: payout_id,
+        target_name: driverName,
+      }).catch(() => {})
+
       return NextResponse.json({ success: true, message: `Payout ${newStatus}` })
     }
 

@@ -168,10 +168,28 @@ export async function activateAdmin(adminId: string): Promise<boolean> {
   return !error;
 }
 
-export async function deleteAdmin(adminId: string): Promise<boolean> {
-  const { error } = await supabaseAdmin
-    .from("admin_users")
-    .delete()
-    .eq("id", adminId);
-  return !error;
+export async function deleteAdmin(adminId: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    // Nullify or clean up any dependent references before deleting
+    await supabaseAdmin.from("admin_otp_codes").delete().eq("admin_id", adminId);
+    await supabaseAdmin.from("admin_sessions").delete().eq("admin_id", adminId);
+    await supabaseAdmin.from("route_pricing").update({ created_by: null }).eq("created_by", adminId);
+    await supabaseAdmin.from("pricing_overrides").update({ created_by: null }).eq("created_by", adminId);
+    await supabaseAdmin.from("pricing_logs").update({ changed_by: null }).eq("changed_by", adminId);
+
+    const { error } = await supabaseAdmin
+      .from("admin_users")
+      .delete()
+      .eq("id", adminId);
+
+    if (error) {
+      console.error("[DB] deleteAdmin error:", error);
+      return { success: false, error: error.message };
+    }
+    return { success: true };
+  } catch (err: any) {
+    console.error("[DB] deleteAdmin unexpected error:", err);
+    return { success: false, error: err.message || "Failed to delete admin" };
+  }
 }
+

@@ -365,10 +365,22 @@ function FeeSettingsTab({ settings, onSave, saving }: { settings: Record<string,
   )
 }
 
-function AdminsTab({ admins }: { admins: AdminUser[] }) {
+function AdminsTab({
+  admins,
+  currentAdminId,
+  onAdminDeleted,
+  onRefresh,
+}: {
+  admins: AdminUser[]
+  currentAdminId?: string
+  onAdminDeleted?: (id: string) => void
+  onRefresh?: () => void
+}) {
   const [showCreate, setShowCreate] = useState(false)
   const [step, setStep] = useState<"form" | "otp">("form")
   const [loading, setLoading] = useState(false)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
   const [error, setError] = useState("")
   const [newAdminId, setNewAdminId] = useState("")
   const [username, setUsername] = useState("")
@@ -413,14 +425,51 @@ function AdminsTab({ admins }: { admins: AdminUser[] }) {
       })
       const data = await res.json()
       if (!res.ok) { setError(data.error); setLoading(false); return }
-      resetForm(); window.location.reload()
+      resetForm()
+      if (onRefresh) onRefresh()
+      else window.location.reload()
     } catch { setError("Network error"); setLoading(false) }
   }
 
-  const handleDelete = async (id: string) => {
-    if (!confirm("Delete this admin account?")) return
-    const res = await fetch(`/api/admin/admins/${id}`, { method: "DELETE" })
-    if (res.ok) window.location.reload()
+  const handleDelete = async (id: string, name: string) => {
+    if (id === currentAdminId) {
+      alert("You cannot delete your own account while logged in.")
+      return
+    }
+    if (!confirm(`Are you sure you want to permanently delete admin account "${name}"?`)) return
+
+    setDeletingId(id)
+    setActionError(null)
+
+    try {
+      const res = await fetch(`/api/admin/admins/${id}`, {
+        method: "DELETE",
+        cache: "no-store",
+      })
+      const data = await res.json().catch(() => ({}))
+
+      if (!res.ok) {
+        const msg = data.error || `Failed to delete admin (HTTP ${res.status})`
+        setActionError(msg)
+        alert(`Deletion Failed: ${msg}`)
+        setDeletingId(null)
+        return
+      }
+
+      // Optimistically remove from list immediately
+      if (onAdminDeleted) {
+        onAdminDeleted(id)
+      }
+      if (onRefresh) {
+        onRefresh()
+      }
+    } catch (err: any) {
+      const msg = err.message || "Network error while deleting admin"
+      setActionError(msg)
+      alert(`Deletion Failed: ${msg}`)
+    } finally {
+      setDeletingId(null)
+    }
   }
 
   return (
@@ -525,6 +574,18 @@ function AdminsTab({ admins }: { admins: AdminUser[] }) {
         </div>
       )}
 
+      {actionError && (
+        <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-600 font-medium flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <AlertTriangle size={14} className="shrink-0" />
+            <span>{actionError}</span>
+          </div>
+          <button onClick={() => setActionError(null)} className="text-red-400 hover:text-red-700">
+            <X size={14} />
+          </button>
+        </div>
+      )}
+
       <div className="bg-white border border-border-default rounded-lg overflow-hidden">
         <table className="w-full">
           <thead>
@@ -537,45 +598,68 @@ function AdminsTab({ admins }: { admins: AdminUser[] }) {
             </tr>
           </thead>
           <tbody>
-            {admins.map((admin) => (
-              <tr key={admin.id} className="border-b border-border-light last:border-0 hover:bg-surface-secondary/50 transition-colors">
-                <td className="px-4 py-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 bg-sendme-50 rounded-full flex items-center justify-center text-sendme text-xs font-bold shrink-0">
-                      {admin.display_name?.[0] || "?"}
+            {admins.map((admin) => {
+              const isMe = admin.id === currentAdminId
+              const isDeleting = deletingId === admin.id
+
+              return (
+                <tr key={admin.id} className="border-b border-border-light last:border-0 hover:bg-surface-secondary/50 transition-colors">
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 bg-sendme-50 rounded-full flex items-center justify-center text-sendme text-xs font-bold shrink-0">
+                        {admin.display_name?.[0] || "?"}
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-1.5">
+                          <p className="text-xs font-semibold text-text-primary">{admin.display_name}</p>
+                          {isMe && (
+                            <span className="text-[9px] font-bold px-1.5 py-0.5 bg-sendme/10 text-sendme rounded border border-sendme/20">
+                              You
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[10px] text-text-muted">@{admin.username} &middot; {admin.email}</p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="text-xs font-semibold text-text-primary">{admin.display_name}</p>
-                      <p className="text-[10px] text-text-muted">@{admin.username} &middot; {admin.email}</p>
-                    </div>
-                  </div>
-                </td>
-                <td className="px-4 py-3">
-                  <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
-                    admin.role === "super_admin" ? "bg-sendme-50 text-sendme" : "bg-surface-secondary text-text-muted"
-                  }`}>
-                    {admin.role === "super_admin" ? "Super Admin" : "Admin"}
-                  </span>
-                </td>
-                <td className="px-4 py-3">
-                  <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
-                    admin.is_active ? "bg-sendme-50 text-sendme" : "bg-warning-light text-warning"
-                  }`}>
-                    {admin.is_active ? "Active" : "Pending"}
-                  </span>
-                </td>
-                <td className="px-4 py-3">
-                  <p className="text-[10px] text-text-muted">
-                    {admin.last_login ? new Date(admin.last_login).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "Never"}
-                  </p>
-                </td>
-                <td className="px-4 py-3 text-right">
-                  <button onClick={() => handleDelete(admin.id)} className="p-1.5 text-text-muted hover:text-danger transition-colors" title="Delete">
-                    <Trash2 size={14} />
-                  </button>
-                </td>
-              </tr>
-            ))}
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                      admin.role === "super_admin" ? "bg-sendme-50 text-sendme" : "bg-surface-secondary text-text-muted"
+                    }`}>
+                      {admin.role === "super_admin" ? "Super Admin" : "Admin"}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                      admin.is_active ? "bg-sendme-50 text-sendme" : "bg-warning-light text-warning"
+                    }`}>
+                      {admin.is_active ? "Active" : "Pending"}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <p className="text-[10px] text-text-muted">
+                      {admin.last_login ? new Date(admin.last_login).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "Never"}
+                    </p>
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    {isMe ? (
+                      <span className="text-[10px] text-text-muted italic px-2 py-1 bg-surface-secondary rounded">
+                        Current Account
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => handleDelete(admin.id, admin.display_name || `@${admin.username}`)}
+                        disabled={isDeleting}
+                        className="p-1.5 text-text-muted hover:text-danger disabled:opacity-40 transition-colors"
+                        title="Delete admin account"
+                      >
+                        {isDeleting ? <Loader2 size={14} className="animate-spin text-danger" /> : <Trash2 size={14} />}
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              )
+            })}
             {admins.length === 0 && (
               <tr><td colSpan={5} className="px-4 py-8 text-center text-xs text-text-muted">No admins found</td></tr>
             )}
@@ -851,6 +935,7 @@ export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<Tab>("otp")
   const [settings, setSettings] = useState<Record<string, any>>({})
   const [admins, setAdmins] = useState<AdminUser[]>([])
+  const [currentAdminId, setCurrentAdminId] = useState<string>("")
   const [saving, setSaving] = useState(false)
   const [loading, setLoading] = useState(true)
   const [accessDenied, setAccessDenied] = useState(false)
@@ -858,9 +943,9 @@ export default function SettingsPage() {
   const fetchData = useCallback(async () => {
     try {
       const [settingsRes, platformRes, adminsRes] = await Promise.all([
-        fetch("/api/admin/settings"),
-        fetch("/api/admin/platform-settings"),
-        fetch("/api/admin/admins"),
+        fetch("/api/admin/settings", { cache: "no-store" }),
+        fetch("/api/admin/platform-settings", { cache: "no-store" }),
+        fetch("/api/admin/admins", { cache: "no-store" }),
       ])
       if (settingsRes.status === 403) { setAccessDenied(true); setLoading(false); return }
       const settingsData = await settingsRes.json()
@@ -869,6 +954,9 @@ export default function SettingsPage() {
       // Merge platform_settings (what the app actually reads for fees) on top
       setSettings({ ...(settingsData.settings || {}), ...(platformData.settings || {}) })
       setAdmins(adminsData.admins || [])
+      if (adminsData.currentAdminId) {
+        setCurrentAdminId(adminsData.currentAdminId)
+      }
     } catch { /* ignore */ }
     setLoading(false)
   }, [])
@@ -948,7 +1036,14 @@ export default function SettingsPage() {
         {activeTab === "fees" && <WithdrawalFeeTab settings={settings} onSave={handleSave} saving={saving} />}
         {activeTab === "howto" && <HelpTopicsTab />}
         {activeTab === "support_team" && <SupportTeamTab />}
-        {activeTab === "admins" && <AdminsTab admins={admins} />}
+        {activeTab === "admins" && (
+          <AdminsTab
+            admins={admins}
+            currentAdminId={currentAdminId}
+            onAdminDeleted={(id) => setAdmins((prev) => prev.filter((a) => a.id !== id))}
+            onRefresh={fetchData}
+          />
+        )}
       </div>
     </div>
   )

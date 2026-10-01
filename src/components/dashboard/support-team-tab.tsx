@@ -91,7 +91,7 @@ export function SupportTeamTab() {
   };
 
   const handleRegenerateCode = async (id: string, memberName: string) => {
-    if (!confirm(`Generate a new 8-digit access code for ${memberName}? Their previous code will immediately stop working.`)) return;
+    if (!confirm(`Generate a new 9-letter access code (XXX - XXX - XXX) for ${memberName}? Their previous code will immediately stop working.`)) return;
     try {
       const res = await fetch("/api/admin/support-team", {
         method: "PATCH",
@@ -418,7 +418,7 @@ export function SupportTeamTab() {
                 </div>
                 <div>
                   <h3 className="text-sm font-bold text-text-primary">Add Support Team Member</h3>
-                  <p className="text-[11px] text-text-muted">Generates a unique 8-digit access code on submit</p>
+                  <p className="text-[11px] text-text-muted">Generates a unique 9-letter access code (XXX - XXX - XXX) for WhatsApp</p>
                 </div>
               </div>
               <button
@@ -437,6 +437,10 @@ export function SupportTeamTab() {
                 </div>
               )}
 
+              <div className="p-3 bg-sendme-50/70 border border-sendme/20 rounded-xl text-[11px] text-sendme-dark leading-relaxed">
+                <span className="font-semibold">Note:</span> A team member can be any user type (marketer, sender, rider, org). They will activate and access support by sending this code to our WhatsApp bot.
+              </div>
+
               <div>
                 <label className="text-xs font-semibold text-text-primary block mb-1">
                   Full Name <span className="text-danger">*</span>
@@ -453,11 +457,11 @@ export function SupportTeamTab() {
 
               <div>
                 <label className="text-xs font-semibold text-text-primary block mb-1">
-                  Phone Number <span className="text-danger">*</span>
+                  WhatsApp Phone Number <span className="text-danger">*</span>
                 </label>
                 <input
                   type="tel"
-                  placeholder="e.g. +234 801 234 5678"
+                  placeholder="e.g. 08012345678 or +234 801 234 5678"
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
                   className="w-full text-xs text-text-primary bg-surface-secondary border border-border-default rounded-lg px-3 py-2.5 focus:outline-none focus:border-sendme font-mono"
@@ -536,13 +540,13 @@ export function SupportTeamTab() {
 
             <h3 className="text-base font-bold text-text-primary">Support Agent Added!</h3>
             <p className="text-xs text-text-muted mt-1 max-w-sm mx-auto">
-              A unique 8-digit access code has been generated for <span className="font-bold text-text-primary">{createdMember.name}</span>.
+              A unique 9-letter access code has been generated for <span className="font-bold text-text-primary">{createdMember.name}</span>.
             </p>
 
             {/* Generated Code Display */}
             <div className="my-5 p-4 bg-surface-secondary rounded-xl border border-border-default">
               <p className="text-[10px] font-bold uppercase tracking-wider text-text-muted mb-1.5">
-                8-Digit Support Access Code
+                9-Letter WhatsApp Access Code
               </p>
               <div className="flex items-center justify-center gap-2">
                 <span className="font-mono text-2xl font-extrabold text-sendme tracking-widest select-all">
@@ -561,7 +565,7 @@ export function SupportTeamTab() {
                 </button>
               </div>
               <p className="text-[11px] text-text-muted mt-2">
-                This is what they will use to authenticate and access the Support & Disputes dashboard.
+                Give this code to <span className="font-medium text-text-primary">{createdMember.name}</span>. They simply send this code to our WhatsApp bot from <span className="font-mono text-text-primary">{createdMember.phone}</span> to start their support session.
               </p>
             </div>
 

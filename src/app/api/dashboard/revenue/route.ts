@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
-import { getOperationalCosts } from "@/lib/costs-store"
+import { getOperationalCosts, calculateMonthlyRunningCostSummary } from "@/lib/costs-store"
 
 export async function GET(req: NextRequest) {
   try {
@@ -248,6 +248,8 @@ export async function GET(req: NextRequest) {
       )
     }
 
+    const monthlyRunningCost = calculateMonthlyRunningCostSummary()
+
     return NextResponse.json({
       summary: {
         totalGrossGMV,
@@ -266,12 +268,15 @@ export async function GET(req: NextRequest) {
         totalPayoutsPendingFormatted: `₦${totalPayoutsPending.toLocaleString()}`,
         totalOperationalCosts,
         totalOperationalCostsFormatted: `₦${totalOperationalCosts.toLocaleString()}`,
+        totalMonthlyRunningCost: monthlyRunningCost.totalEstimatedMonthly,
+        totalMonthlyRunningCostFormatted: monthlyRunningCost.totalEstimatedMonthlyFormatted,
         netOperatingProfit,
         netOperatingProfitFormatted: `₦${netOperatingProfit.toLocaleString()}`,
         netProfitMargin,
         deliveredOrdersCount,
         totalOrdersCount: orders.length,
       },
+      monthlyRunningCost,
       ridesLedger: filteredRides.slice(0, 100),
       fundingRecords: fundingRecords.slice(0, 50),
       payouts: allPayoutsList.slice(0, 50),

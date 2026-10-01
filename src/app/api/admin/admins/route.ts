@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getAllAdmins, createAdmin } from "@/lib/db";
 
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   try {
     const session = await getSession();
@@ -10,7 +12,18 @@ export async function GET() {
     }
 
     const admins = await getAllAdmins();
-    return NextResponse.json({ admins });
+    return NextResponse.json(
+      {
+        admins,
+        currentAdminId: session.id,
+        currentUsername: session.username,
+      },
+      {
+        headers: {
+          "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+        },
+      }
+    );
   } catch (err) {
     console.error("[Admins] Error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

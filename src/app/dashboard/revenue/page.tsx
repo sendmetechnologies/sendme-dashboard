@@ -4,10 +4,11 @@ import { useState, useEffect, useCallback, useMemo } from "react"
 import { Card } from "@/components/ui/card"
 import { FilterSelect, StateFilter, DateRangeFilter } from "@/components/dashboard/filters"
 import {
-  TrendingUp, TrendingDown, DollarSign, Wallet, ArrowDownRight, ArrowUpRight,
-  Search, Download, Plus, Filter, RotateCcw, ChevronLeft, ChevronRight,
-  Loader2, CheckCircle, Clock, AlertTriangle, Trash2, Calendar, FileText,
-  PieChart, Building2, User, Layers, ShieldCheck, X, Receipt, Server, Globe
+  TrendingUp, DollarSign, Wallet, ArrowDownRight,
+  Search, Download, Plus, RotateCcw,
+  Loader2, CheckCircle, Clock, AlertTriangle, Trash2, Calendar,
+  Layers, ShieldCheck, X, Receipt, RefreshCw,
+  Tag, ExternalLink, ArrowRight
 } from "lucide-react"
 
 interface SummaryData {
@@ -126,8 +127,11 @@ interface CostRecord {
   nextPaymentNote?: string
 }
 
+type TabType = "costs" | "rides" | "payouts" | "funding"
+type SideviewMode = "none" | "create_cost" | "view_cost" | "view_ride"
+
 export default function RevenuePage() {
-  const [activeTab, setActiveTab] = useState<"rides" | "payouts" | "funding" | "costs">("rides")
+  const [activeTab, setActiveTab] = useState<TabType>("costs")
   const [loading, setLoading] = useState(true)
   const [summary, setSummary] = useState<SummaryData | null>(null)
   const [monthlyRunning, setMonthlyRunning] = useState<MonthlyRunningCostSummary | null>(null)
@@ -142,19 +146,28 @@ export default function RevenuePage() {
   const [dateRangeFilter, setDateRangeFilter] = useState("all")
   const [streamFilter, setStreamFilter] = useState("all")
 
-  // Add Cost Modal
-  const [isCostModalOpen, setIsCostModalOpen] = useState(false)
+  // Sideview Bar State
+  const [sideviewMode, setSideviewMode] = useState<SideviewMode>("none")
+  const [selectedCost, setSelectedCost] = useState<CostRecord | null>(null)
+  const [selectedRide, setSelectedRide] = useState<RideRecord | null>(null)
+
+  // Cost Form State
   const [costForm, setCostForm] = useState({
     category: "cloud_server",
     title: "",
     amount: "",
     vendor: "",
     date: new Date().toISOString().slice(0, 10),
+    frequency: "monthly",
+    nextPaymentDate: "",
+    nextPaymentAmount: "",
+    nextPaymentNote: "",
     notes: "",
   })
   const [submittingCost, setSubmittingCost] = useState(false)
+  const [formError, setFormError] = useState("")
 
-  // Derived cost figures
+  // Derived figures
   const totalLoggedCostsAmount = useMemo(() => {
     return costs.reduce((sum, c) => sum + (Number(c.amount) || 0), 0)
   }, [costs])
@@ -165,11 +178,6 @@ export default function RevenuePage() {
       : summary?.totalOperationalCostsFormatted || "₦477,000"
   }, [totalLoggedCostsAmount, summary])
 
-  // Core recurring burn (monthly)
-  const monthlyBurnAmount = 126500
-  const oct5BatchDueAmount = 112500
-  const annualCommitmentsAmount = 168000
-
   const fetchRevenueData = useCallback(async () => {
     setLoading(true)
     try {
@@ -179,7 +187,7 @@ export default function RevenuePage() {
       if (dateRangeFilter && dateRangeFilter !== "all") params.set("date_range", dateRangeFilter)
       if (streamFilter && streamFilter !== "all") params.set("stream", streamFilter)
 
-      const res = await fetch(`/api/dashboard/revenue?${params.toString()}`)
+      const res = await fetch(`/api/dashboard/revenue?${params.toString()}`, { cache: "no-store" })
       if (!res.ok) throw new Error("Failed to load revenue data")
       const data = await res.json()
 
@@ -215,10 +223,46 @@ export default function RevenuePage() {
     searchQuery || stateFilter || (dateRangeFilter && dateRangeFilter !== "all") || (streamFilter && streamFilter !== "all")
   )
 
+  const openCreateCostSideview = () => {
+    setCostForm({
+      category: "cloud_server",
+      title: "",
+      amount: "",
+      vendor: "",
+      date: new Date().toISOString().slice(0, 10),
+      frequency: "monthly",
+      nextPaymentDate: "",
+      nextPaymentAmount: "",
+      nextPaymentNote: "",
+      notes: "",
+    })
+    setFormError("")
+    setSideviewMode("create_cost")
+  }
+
+  const openViewCostSideview = (cost: CostRecord) => {
+    setSelectedCost(cost)
+    setSideviewMode("view_cost")
+  }
+
+  const openViewRideSideview = (ride: RideRecord) => {
+    setSelectedRide(ride)
+    setSideviewMode("view_ride")
+  }
+
+  const closeSideview = () => {
+    setSideviewMode("none")
+    setSelectedCost(null)
+    setSelectedRide(null)
+    setFormError("")
+  }
+
   const handleAddCost = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!costForm.title || !costForm.amount) {
-      alert("Please fill in the expense title and amount.")
+    setFormError("")
+
+    if (!costForm.title.trim() || !costForm.amount) {
+      setFormError("Please provide an expense title and amount.")
       return
     }
 
@@ -229,29 +273,26 @@ export default function RevenuePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(costForm),
       })
-      if (!res.ok) throw new Error("Failed to add cost")
-      setIsCostModalOpen(false)
-      setCostForm({
-        category: "cloud_server",
-        title: "",
-        amount: "",
-        vendor: "",
-        date: new Date().toISOString().slice(0, 10),
-        notes: "",
-      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || "Failed to record expense")
+
+      closeSideview()
       fetchRevenueData()
     } catch (err: any) {
-      alert("Error: " + err.message)
+      setFormError(err.message || "Failed to save expense")
     } finally {
       setSubmittingCost(false)
     }
   }
 
   const handleDeleteCost = async (id: string) => {
-    if (!confirm("Are you sure you want to remove this operational cost record?")) return
+    if (!confirm("Are you sure you want to permanently delete this operational expense record?")) return
     try {
-      await fetch(`/api/dashboard/revenue/costs?id=${id}`, { method: "DELETE" })
-      fetchRevenueData()
+      const res = await fetch(`/api/dashboard/revenue/costs?id=${id}`, { method: "DELETE" })
+      if (res.ok) {
+        closeSideview()
+        fetchRevenueData()
+      }
     } catch (err) {
       console.error("Delete cost error:", err)
     }
@@ -260,7 +301,7 @@ export default function RevenuePage() {
   const handleExportCSV = () => {
     let headers: string[] = []
     let rows: (string | number)[][] = []
-    let filename = `sendme-financials-${new Date().toISOString().slice(0, 10)}.csv`
+    const filename = `sendme-${activeTab}-${new Date().toISOString().slice(0, 10)}.csv`
 
     if (activeTab === "rides") {
       headers = ["Order ID", "Date", "Customer", "Driver", "Route", "State", "Vehicle", "Fare (₦)", "Commission (₦)", "Commission %", "Driver Earning (₦)", "Status"]
@@ -272,8 +313,8 @@ export default function RevenuePage() {
       headers = ["Reference", "Date", "Gross Amount (₦)", "Novac Fee (₦)", "Net Credited (₦)", "Status", "Note"]
       rows = funding.map(f => [f.ref, f.date, f.grossAmount, f.feeDeducted, f.netCredited, f.status, `"${f.note}"`])
     } else {
-      headers = ["ID", "Category", "Expense Title", "Vendor", "Amount (₦)", "Date"]
-      rows = costs.map(c => [c.id, c.categoryLabel, `"${c.title}"`, `"${c.vendor}"`, c.amount, c.date])
+      headers = ["ID", "Category", "Expense Title", "Vendor", "Amount (₦)", "Date Paid", "Frequency", "Next Due", "Logged By"]
+      rows = costs.map(c => [c.id, c.categoryLabel, `"${c.title}"`, `"${c.vendor}"`, c.amount, c.date, c.frequency || "monthly", c.nextPaymentDate || "—", c.recordedBy || "admin"])
     }
 
     const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map(r => r.join(","))].join("\n")
@@ -286,33 +327,114 @@ export default function RevenuePage() {
     link.remove()
   }
 
+  // Unified Stat Cards
+  const statCards = [
+    {
+      label: "Platform Revenue",
+      value: summary?.totalPlatformRevenueFormatted || "₦0",
+      sub: "15% commission + ₦50 Novac fees",
+      icon: DollarSign,
+      color: "text-sendme",
+      bg: "bg-sendme-50",
+    },
+    {
+      label: "Gross Delivery GMV",
+      value: summary?.totalGrossGMVFormatted || "₦0",
+      sub: `${summary?.deliveredOrdersCount || 0} completed deliveries`,
+      icon: TrendingUp,
+      color: "text-sendme",
+      bg: "bg-sendme-50",
+    },
+    {
+      label: "Driver Payout Base",
+      value: summary?.totalDriverEarningsFormatted || "₦0",
+      sub: "85% retained by riders",
+      icon: Wallet,
+      color: "text-text-primary",
+      bg: "bg-surface-secondary",
+    },
+    {
+      label: "Operating Expenses",
+      value: totalLoggedCostsFormatted,
+      sub: `${costs.length} verified records · ~₦126.5k/mo`,
+      icon: Layers,
+      color: "text-danger",
+      bg: "bg-danger-light",
+    },
+    {
+      label: "Net EBITDA Profit",
+      value: summary?.netOperatingProfitFormatted || "₦0",
+      sub: `${(summary?.netProfitMargin ?? 0) >= 0 ? "+" : ""}${summary?.netProfitMargin ?? 0}% profit margin`,
+      icon: ShieldCheck,
+      color: (summary?.netOperatingProfit ?? 0) >= 0 ? "text-sendme" : "text-danger",
+      bg: (summary?.netOperatingProfit ?? 0) >= 0 ? "bg-sendme-50" : "bg-danger-light",
+    },
+  ]
+
+  const tabs: { id: TabType; label: string; count: number }[] = [
+    { id: "costs", label: "Operating Expenses", count: costs.length },
+    { id: "rides", label: "Ride Commissions", count: rides.length },
+    { id: "payouts", label: "Payout Records", count: payouts.length },
+    { id: "funding", label: "Novac ₦50 Fee Logs", count: funding.length },
+  ]
+
   return (
     <div className="space-y-5 animate-in fade-in duration-500 pb-12">
       {/* Page Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-xl font-bold text-text-primary">Revenue & Financial Breakdown</h1>
+          <h1 className="text-xl font-bold text-text-primary">Revenue & Financials</h1>
           <p className="text-sm text-text-muted mt-0.5">
             Audit platform cash inflows, ride commissions, Novac funding charges, driver payouts, and operational expenses.
           </p>
         </div>
         <div className="flex items-center gap-2">
           <button
-            onClick={() => setIsCostModalOpen(true)}
-            className="flex items-center gap-2 bg-white border border-border-default hover:bg-surface-hover px-3.5 py-2 rounded-lg text-xs font-semibold text-text-primary transition-colors shadow-xs"
+            onClick={() => fetchRevenueData()}
+            className="p-2 bg-white border border-border-default rounded-lg text-text-muted hover:text-text-primary hover:bg-surface-hover transition-colors"
+            title="Refresh data"
           >
-            <Plus size={14} className="text-sendme" /> Add Cost / Expense
+            <RefreshCw size={14} className={loading ? "animate-spin text-sendme" : ""} />
+          </button>
+          <button
+            onClick={openCreateCostSideview}
+            className="flex items-center gap-2 bg-sendme text-white px-3.5 py-2 rounded-lg text-xs font-semibold hover:bg-sendme-dark transition-colors shadow-xs"
+          >
+            <Plus size={14} /> Record Expense
           </button>
           <button
             onClick={handleExportCSV}
-            className="flex items-center gap-2 bg-sendme text-white px-3.5 py-2 rounded-lg text-xs font-semibold hover:bg-sendme-dark transition-colors shadow-xs"
+            className="flex items-center gap-2 bg-white border border-border-default hover:bg-surface-hover px-3.5 py-2 rounded-lg text-xs font-semibold text-text-primary transition-colors shadow-xs"
           >
-            <Download size={14} /> Export Financials (CSV)
+            <Download size={14} /> Export CSV
           </button>
         </div>
       </div>
 
-      {/* Filter Bar */}
+      {/* Realigned 5-Card Metric Overview (Matches standard dashboard layout) */}
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+        {statCards.map((card) => {
+          const Icon = card.icon
+          return (
+            <Card key={card.label} className="p-3.5 min-w-0 overflow-hidden bg-white border border-border-default rounded-xl">
+              <div className="flex items-start justify-between mb-1.5">
+                <p className="text-[11px] font-medium text-text-muted truncate">{card.label}</p>
+                <div className={`p-1.5 rounded-lg ${card.bg} ${card.color} shrink-0`}>
+                  <Icon size={14} />
+                </div>
+              </div>
+              <p className="text-lg lg:text-xl font-bold text-text-primary truncate font-mono tracking-tight">
+                {card.value}
+              </p>
+              <p className="text-[10px] text-text-muted mt-0.5 truncate">
+                {card.sub}
+              </p>
+            </Card>
+          )
+        })}
+      </div>
+
+      {/* Filter Toolbar */}
       <div className="bg-white border border-border-default rounded-xl p-3 shadow-xs space-y-2.5">
         <div className="flex items-center gap-2 flex-wrap">
           {/* Search */}
@@ -320,7 +442,7 @@ export default function RevenuePage() {
             <Search size={14} className="text-text-muted shrink-0" />
             <input
               type="text"
-              placeholder="Search by order ID, customer, rider or transaction ref..."
+              placeholder="Search order ID, rider, recipient, vendor or expense..."
               className="flex-1 text-xs text-text-primary placeholder:text-text-muted focus:outline-none bg-transparent"
               value={searchQuery}
               onChange={(e) => handleSearch(e.target.value)}
@@ -350,10 +472,10 @@ export default function RevenuePage() {
         </div>
 
         {hasActiveFilters && (
-          <div className="pt-1 border-t border-border-light flex items-center justify-between">
+          <div className="pt-2 border-t border-border-light flex items-center justify-between">
             <button
               onClick={resetFilters}
-              className="flex items-center gap-1.5 text-xs text-danger font-medium hover:underline px-2 py-1"
+              className="flex items-center gap-1.5 text-xs text-danger font-medium hover:underline px-1 py-0.5"
             >
               <RotateCcw size={12} /> Reset Filters
             </button>
@@ -361,222 +483,171 @@ export default function RevenuePage() {
         )}
       </div>
 
-      {/* KPI Financial Overview Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3">
-        {/* Gross GMV */}
-        <Card className="p-3.5 min-w-0 overflow-hidden bg-white">
-          <div className="flex items-start justify-between mb-1.5">
-            <p className="text-[11px] text-text-muted truncate">Gross GMV (Inflow)</p>
-            <div className="p-1 rounded-lg bg-sendme-50 text-sendme shrink-0">
-              <TrendingUp size={14} />
-            </div>
-          </div>
-          <p className="text-lg font-bold text-text-primary truncate">
-            {summary?.totalGrossGMVFormatted || "₦0"}
-          </p>
-          <p className="text-[10px] text-text-muted mt-0.5">
-            {summary?.deliveredOrdersCount || 0} rides completed
-          </p>
-        </Card>
-
-        {/* Platform Revenue */}
-        <Card className="p-3.5 min-w-0 overflow-hidden bg-white border-sendme/30 ring-1 ring-sendme/20">
-          <div className="flex items-start justify-between mb-1.5">
-            <p className="text-[11px] font-semibold text-sendme truncate">Platform Gross Cut</p>
-            <div className="p-1 rounded-lg bg-sendme text-white shrink-0">
-              <DollarSign size={14} />
-            </div>
-          </div>
-          <p className="text-lg font-bold text-sendme truncate">
-            {summary?.totalPlatformRevenueFormatted || "₦0"}
-          </p>
-          <p className="text-[10px] text-text-muted mt-0.5 truncate">
-            Commissions + ₦50 Novac fees
-          </p>
-        </Card>
-
-        {/* Driver Earnings */}
-        <Card className="p-3.5 min-w-0 overflow-hidden bg-white">
-          <div className="flex items-start justify-between mb-1.5">
-            <p className="text-[11px] text-text-muted truncate">Driver Share (85%)</p>
-            <div className="p-1 rounded-lg bg-info-light text-info shrink-0">
-              <Wallet size={14} />
-            </div>
-          </div>
-          <p className="text-lg font-bold text-text-primary truncate">
-            {summary?.totalDriverEarningsFormatted || "₦0"}
-          </p>
-          <p className="text-[10px] text-text-muted mt-0.5 truncate">
-            Retained in driver wallets
-          </p>
-        </Card>
-
-        {/* Disbursed Payouts */}
-        <Card className="p-3.5 min-w-0 overflow-hidden bg-white">
-          <div className="flex items-start justify-between mb-1.5">
-            <p className="text-[11px] text-text-muted truncate">Disbursed Payouts</p>
-            <div className="p-1 rounded-lg bg-warning-light text-warning shrink-0">
-              <ArrowDownRight size={14} />
-            </div>
-          </div>
-          <p className="text-lg font-bold text-text-primary truncate">
-            {summary?.totalPayoutsDisbursedFormatted || "₦0"}
-          </p>
-          <p className="text-[10px] text-warning font-medium mt-0.5 truncate">
-            {summary?.totalPayoutsPendingFormatted || "₦0"} pending
-          </p>
-        </Card>
-
-        {/* Operational Costs */}
-        <Card className="p-3.5 min-w-0 overflow-hidden bg-white">
-          <div className="flex items-start justify-between mb-1.5">
-            <p className="text-[11px] text-text-muted truncate">Operating Expenses</p>
-            <div className="p-1 rounded-lg bg-danger-light text-danger shrink-0">
-              <Layers size={14} />
-            </div>
-          </div>
-          <p className="text-lg font-bold text-danger truncate">
-            {totalLoggedCostsFormatted}
-          </p>
-          <p className="text-[10px] text-text-muted mt-0.5 truncate">
-            {costs.length > 0 ? `${costs.length} verified ledger records` : "Historical logged expenses"}
-          </p>
-        </Card>
-
-        {/* Monthly Running Burn */}
-        <Card className="p-3.5 min-w-0 overflow-hidden bg-white border-danger/30 ring-1 ring-danger/10">
-          <div className="flex items-start justify-between mb-1.5">
-            <p className="text-[11px] font-semibold text-danger truncate">Monthly Running Burn</p>
-            <div className="p-1 rounded-lg bg-danger-light text-danger shrink-0">
-              <Clock size={14} />
-            </div>
-          </div>
-          <p className="text-lg font-bold text-danger truncate">
-            {monthlyRunning?.totalEstimatedMonthlyFormatted || "₦126,500"} / mo
-          </p>
-          <p className="text-[10px] text-text-muted mt-0.5 truncate">
-            Next renewal: 5th Oct (₦112,500 batch)
-          </p>
-        </Card>
-
-        {/* Net Operating Profit */}
-        <Card className={`p-3.5 min-w-0 overflow-hidden ${
-          (summary?.netOperatingProfit ?? 0) >= 0 ? "bg-sendme-50/50 border-sendme/40" : "bg-danger-light/50 border-danger/40"
-        }`}>
-          <div className="flex items-start justify-between mb-1.5">
-            <p className="text-[11px] font-bold text-text-primary truncate">Net EBITDA Profit</p>
-            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
-              (summary?.netProfitMargin ?? 0) >= 0 ? "bg-sendme text-white" : "bg-danger text-white"
-            }`}>
-              {(summary?.netProfitMargin ?? 0) >= 0 ? "+" : ""}{summary?.netProfitMargin ?? 0}% Margin
+      {/* Tab Navigation */}
+      <div className="flex items-center gap-1 bg-white border border-border-default rounded-xl p-1 w-full sm:w-fit overflow-x-auto no-scrollbar shadow-xs">
+        {tabs.map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors ${
+              activeTab === tab.id
+                ? "bg-sendme text-white shadow-xs"
+                : "text-text-muted hover:text-text-primary hover:bg-surface-hover"
+            }`}
+          >
+            <span>{tab.label}</span>
+            <span
+              className={`text-[10px] font-bold px-1.5 py-0.2 rounded-full ${
+                activeTab === tab.id
+                  ? "bg-white/20 text-white"
+                  : "bg-surface-secondary text-text-muted"
+              }`}
+            >
+              {tab.count}
             </span>
-          </div>
-          <p className={`text-lg font-bold truncate ${
-            (summary?.netOperatingProfit ?? 0) >= 0 ? "text-sendme" : "text-danger"
-          }`}>
-            {summary?.netOperatingProfitFormatted || "₦0"}
-          </p>
-          <p className="text-[10px] text-text-muted mt-0.5 truncate">
-            Revenue minus operating costs
-          </p>
-        </Card>
+          </button>
+        ))}
       </div>
 
-      {/* Visual Proportional Cashflow Bar */}
-      <Card className="p-4 space-y-2">
-        <div className="flex items-center justify-between text-xs">
-          <span className="font-semibold text-text-primary">Capital Flow Distribution</span>
-          <span className="text-text-muted text-[11px]">Gross Volume: {summary?.totalGrossGMVFormatted || "₦0"}</span>
-        </div>
-        <div className="w-full h-3 bg-surface-secondary rounded-full overflow-hidden flex">
-          <div className="bg-info h-full" style={{ width: "80%" }} title="Driver Earnings Share (80-85%)" />
-          <div className="bg-sendme h-full" style={{ width: "15%" }} title="SendMe Platform Cut (15%)" />
-          <div className="bg-danger h-full" style={{ width: "5%" }} title="Operational Costs (5%)" />
-        </div>
-        <div className="flex items-center gap-4 text-[11px] text-text-muted pt-1 flex-wrap">
-          <div className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-info" />
-            <span>Driver Payout Base: ~85%</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-sendme" />
-            <span>SendMe Gross Commission: ~15%</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-danger" />
-            <span>Infrastructure & API Costs</span>
-          </div>
-        </div>
-      </Card>
-
-      {/* Navigation Tabs for Details */}
-      <div className="border-b border-border-light flex items-center gap-0 overflow-x-auto">
-        <button
-          onClick={() => setActiveTab("rides")}
-          className={`flex items-center gap-2 px-4 py-2.5 text-xs font-semibold whitespace-nowrap border-b-2 transition-colors ${
-            activeTab === "rides"
-              ? "border-sendme text-sendme"
-              : "border-transparent text-text-muted hover:text-text-primary"
-          }`}
-        >
-          <DollarSign size={14} /> Ride Profit Ledger
-          <span className="text-[10px] font-semibold bg-sendme-50 text-sendme px-1.5 py-0.5 rounded-full">
-            {rides.length}
-          </span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab("payouts")}
-          className={`flex items-center gap-2 px-4 py-2.5 text-xs font-semibold whitespace-nowrap border-b-2 transition-colors ${
-            activeTab === "payouts"
-              ? "border-sendme text-sendme"
-              : "border-transparent text-text-muted hover:text-text-primary"
-          }`}
-        >
-          <ArrowDownRight size={14} /> Payout Records
-          <span className="text-[10px] font-semibold bg-surface-secondary text-text-muted px-1.5 py-0.5 rounded-full">
-            {payouts.length}
-          </span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab("funding")}
-          className={`flex items-center gap-2 px-4 py-2.5 text-xs font-semibold whitespace-nowrap border-b-2 transition-colors ${
-            activeTab === "funding"
-              ? "border-sendme text-sendme"
-              : "border-transparent text-text-muted hover:text-text-primary"
-          }`}
-        >
-          <Wallet size={14} /> Novac ₦50 Fee Logs
-          <span className="text-[10px] font-semibold bg-surface-secondary text-text-muted px-1.5 py-0.5 rounded-full">
-            {funding.length}
-          </span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab("costs")}
-          className={`flex items-center gap-2 px-4 py-2.5 text-xs font-semibold whitespace-nowrap border-b-2 transition-colors ${
-            activeTab === "costs"
-              ? "border-sendme text-sendme"
-              : "border-transparent text-text-muted hover:text-text-primary"
-          }`}
-        >
-          <Layers size={14} /> Operational Costs Ledger
-          <span className="text-[10px] font-semibold bg-surface-secondary text-text-muted px-1.5 py-0.5 rounded-full">
-            {costs.length}
-          </span>
-        </button>
-      </div>
-
-      {/* Main Tabbed Content */}
-      <Card className="overflow-hidden">
+      {/* Main Tabbed Content Card */}
+      <Card className="overflow-hidden bg-white border border-border-default rounded-xl shadow-xs">
         {loading ? (
           <div className="h-64 flex flex-col items-center justify-center">
             <Loader2 size={24} className="animate-spin text-sendme mb-2" />
             <p className="text-xs text-text-muted">Loading live financial records...</p>
           </div>
+        ) : activeTab === "costs" ? (
+          /* Operational Costs Ledger */
+          <div className="divide-y divide-border-light">
+            {/* Clean Monthly Subscriptions Summary Bar (Realigned from scattered boxes) */}
+            <div className="p-4 bg-surface-secondary/50 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-danger-light text-danger flex items-center justify-center shrink-0">
+                  <Layers size={18} />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-text-primary uppercase tracking-wider">
+                      Operational Running Costs
+                    </span>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-sendme border border-sendme/20">
+                      PostgreSQL Ledger
+                    </span>
+                  </div>
+                  <p className="text-xs text-text-muted mt-0.5">
+                    Estimated monthly burn: <span className="font-semibold text-text-primary font-mono">~₦126,500/mo</span> (Supabase, Expo, Sendbyte, Maps, Termii) · Next batch due <span className="font-semibold text-warning">5th Oct (₦112,500)</span>
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 w-full md:w-auto">
+                <button
+                  onClick={openCreateCostSideview}
+                  className="flex items-center gap-1.5 bg-sendme text-white px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-sendme-dark transition-colors shadow-xs"
+                >
+                  <Plus size={14} /> Record Expense
+                </button>
+              </div>
+            </div>
+
+            {/* Expenses Table */}
+            <div className="overflow-x-auto">
+              {costs.length === 0 ? (
+                <div className="h-48 flex flex-col items-center justify-center text-text-muted text-xs">
+                  <p>No operational expenses recorded.</p>
+                  <button
+                    onClick={openCreateCostSideview}
+                    className="mt-2 text-xs font-semibold text-sendme underline"
+                  >
+                    + Record first operational expense
+                  </button>
+                </div>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-[10px] text-text-muted font-semibold uppercase tracking-wider border-b border-border-light bg-surface-secondary/40">
+                      <th className="px-4 py-3 font-semibold">Expense / Service</th>
+                      <th className="px-4 py-3 font-semibold">Category</th>
+                      <th className="px-4 py-3 font-semibold">Vendor</th>
+                      <th className="px-4 py-3 font-semibold">Amount Paid</th>
+                      <th className="px-4 py-3 font-semibold">Date Paid</th>
+                      <th className="px-4 py-3 font-semibold">Billing Schedule</th>
+                      <th className="px-4 py-3 font-semibold">Logged By</th>
+                      <th className="px-4 py-3 font-semibold text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border-light">
+                    {costs.map((c) => (
+                      <tr
+                        key={c.id}
+                        onClick={() => openViewCostSideview(c)}
+                        className="hover:bg-surface-hover/80 transition-colors cursor-pointer group"
+                      >
+                        <td className="px-4 py-3">
+                          <p className="text-xs font-semibold text-text-primary group-hover:text-sendme transition-colors">
+                            {c.title}
+                          </p>
+                          {c.notes && (
+                            <p className="text-[10px] text-text-muted truncate max-w-[220px]">
+                              {c.notes}
+                            </p>
+                          )}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="text-[10px] font-semibold bg-surface-secondary text-text-secondary px-2 py-0.5 rounded-md border border-border-light">
+                            {c.categoryLabel}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-xs text-text-secondary">
+                          {c.vendor}
+                        </td>
+                        <td className="px-4 py-3 text-xs font-bold text-danger font-mono">
+                          ₦{c.amount.toLocaleString()}
+                        </td>
+                        <td className="px-4 py-3 text-xs text-text-muted">
+                          {c.date}
+                        </td>
+                        <td className="px-4 py-3 text-xs">
+                          {c.nextPaymentNote ? (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-semibold bg-warning-light/70 text-warning px-2 py-0.5 rounded">
+                              <Clock size={10} /> {c.nextPaymentNote}
+                            </span>
+                          ) : c.nextPaymentDate ? (
+                            <span className="text-[10px] text-text-secondary font-medium">
+                              Next: {c.nextPaymentDate}
+                            </span>
+                          ) : (
+                            <span className="text-[10px] text-text-muted">
+                              {c.frequency || "one_off"}
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-xs font-medium text-text-secondary">
+                          <span className="inline-flex items-center gap-1 bg-surface-secondary px-2 py-0.5 rounded-full text-[10px] font-semibold text-text-primary">
+                            @{c.recordedBy || "admin"}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleDeleteCost(c.id)
+                            }}
+                            className="p-1.5 text-text-muted hover:text-danger hover:bg-danger-light rounded-md transition-colors"
+                            title="Delete expense"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
         ) : activeTab === "rides" ? (
-          // Ride Profit Dossier Table
+          /* Ride Profit Dossier Table */
           <div className="overflow-x-auto">
             {rides.length === 0 ? (
               <div className="h-48 flex items-center justify-center text-text-muted text-xs">
@@ -585,21 +656,27 @@ export default function RevenuePage() {
             ) : (
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="text-left text-[10px] text-text-muted font-semibold uppercase tracking-wider border-b border-border-light bg-surface-secondary/50">
+                  <tr className="text-left text-[10px] text-text-muted font-semibold uppercase tracking-wider border-b border-border-light bg-surface-secondary/40">
                     <th className="px-4 py-3 font-semibold">Order</th>
                     <th className="px-4 py-3 font-semibold">Route & State</th>
                     <th className="px-4 py-3 font-semibold">Customer / Driver</th>
-                    <th className="px-4 py-3 font-semibold">Customer Paid</th>
-                    <th className="px-4 py-3 font-semibold">SendMe Cut (15%)</th>
-                    <th className="px-4 py-3 font-semibold">Driver Share</th>
+                    <th className="px-4 py-3 font-semibold">Gross Fare</th>
+                    <th className="px-4 py-3 font-semibold">Platform Cut (15%)</th>
+                    <th className="px-4 py-3 font-semibold">Driver Share (85%)</th>
                     <th className="px-4 py-3 font-semibold">Payment / Status</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border-light">
                   {rides.map((r) => (
-                    <tr key={r.id} className="hover:bg-surface-hover transition-colors">
+                    <tr
+                      key={r.id}
+                      onClick={() => openViewRideSideview(r)}
+                      className="hover:bg-surface-hover/80 transition-colors cursor-pointer group"
+                    >
                       <td className="px-4 py-3">
-                        <p className="font-semibold text-xs text-text-primary">{r.shortId}</p>
+                        <p className="font-semibold text-xs text-text-primary group-hover:text-sendme transition-colors">
+                          {r.shortId}
+                        </p>
                         <p className="text-[10px] text-text-muted">{r.date} · {r.time}</p>
                       </td>
                       <td className="px-4 py-3">
@@ -607,22 +684,22 @@ export default function RevenuePage() {
                         <p className="text-[10px] text-text-muted">{r.state} · {r.vehicle}</p>
                       </td>
                       <td className="px-4 py-3">
-                        <p className="text-xs text-text-primary">{r.customer}</p>
+                        <p className="text-xs text-text-primary font-medium">{r.customer}</p>
                         <p className="text-[10px] text-text-muted">Rider: {r.driver}</p>
                       </td>
                       <td className="px-4 py-3">
-                        <span className="text-xs font-bold text-text-primary">{r.fareFormatted}</span>
+                        <span className="text-xs font-bold text-text-primary font-mono">{r.fareFormatted}</span>
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-1.5">
-                          <span className="text-xs font-bold text-sendme">{r.commissionFormatted}</span>
-                          <span className="text-[9px] font-semibold bg-sendme-50 text-sendme px-1 py-0.5 rounded">
+                          <span className="text-xs font-bold text-sendme font-mono">{r.commissionFormatted}</span>
+                          <span className="text-[9px] font-semibold bg-sendme-50 text-sendme px-1.5 py-0.2 rounded">
                             {r.commissionRate}
                           </span>
                         </div>
                       </td>
                       <td className="px-4 py-3">
-                        <span className="text-xs font-semibold text-text-secondary">{r.driverEarningFormatted}</span>
+                        <span className="text-xs font-semibold text-text-secondary font-mono">{r.driverEarningFormatted}</span>
                       </td>
                       <td className="px-4 py-3">
                         <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${r.statusColor}`}>
@@ -637,7 +714,7 @@ export default function RevenuePage() {
             )}
           </div>
         ) : activeTab === "payouts" ? (
-          // Payout Records Table
+          /* Payout Records Table */
           <div className="overflow-x-auto">
             {payouts.length === 0 ? (
               <div className="h-48 flex items-center justify-center text-text-muted text-xs">
@@ -646,9 +723,9 @@ export default function RevenuePage() {
             ) : (
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="text-left text-[10px] text-text-muted font-semibold uppercase tracking-wider border-b border-border-light bg-surface-secondary/50">
+                  <tr className="text-left text-[10px] text-text-muted font-semibold uppercase tracking-wider border-b border-border-light bg-surface-secondary/40">
                     <th className="px-4 py-3 font-semibold">Reference</th>
-                    <th className="px-4 py-3 font-semibold">Account Holder</th>
+                    <th className="px-4 py-3 font-semibold">Recipient</th>
                     <th className="px-4 py-3 font-semibold">Type</th>
                     <th className="px-4 py-3 font-semibold">Amount</th>
                     <th className="px-4 py-3 font-semibold">Status</th>
@@ -658,7 +735,7 @@ export default function RevenuePage() {
                 </thead>
                 <tbody className="divide-y divide-border-light">
                   {payouts.map((p) => (
-                    <tr key={p.id} className="hover:bg-surface-hover transition-colors">
+                    <tr key={p.id} className="hover:bg-surface-hover/80 transition-colors">
                       <td className="px-4 py-3 font-mono text-xs font-semibold text-text-primary">{p.shortId}</td>
                       <td className="px-4 py-3">
                         <p className="text-xs font-semibold text-text-primary">{p.name}</p>
@@ -669,7 +746,7 @@ export default function RevenuePage() {
                           {p.type}
                         </span>
                       </td>
-                      <td className="px-4 py-3 font-bold text-xs text-text-primary">{p.amountFormatted}</td>
+                      <td className="px-4 py-3 font-bold text-xs text-text-primary font-mono">{p.amountFormatted}</td>
                       <td className="px-4 py-3">
                         <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${p.statusColor}`}>
                           {p.status}
@@ -683,8 +760,8 @@ export default function RevenuePage() {
               </table>
             )}
           </div>
-        ) : activeTab === "funding" ? (
-          // Novac Funding & Debit Logs Table
+        ) : (
+          /* Novac Funding & Debit Logs Table */
           <div className="overflow-x-auto">
             {funding.length === 0 ? (
               <div className="h-48 flex items-center justify-center text-text-muted text-xs">
@@ -693,7 +770,7 @@ export default function RevenuePage() {
             ) : (
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="text-left text-[10px] text-text-muted font-semibold uppercase tracking-wider border-b border-border-light bg-surface-secondary/50">
+                  <tr className="text-left text-[10px] text-text-muted font-semibold uppercase tracking-wider border-b border-border-light bg-surface-secondary/40">
                     <th className="px-4 py-3 font-semibold">Transaction Ref</th>
                     <th className="px-4 py-3 font-semibold">Deposit Date</th>
                     <th className="px-4 py-3 font-semibold">Gross Funded (Novac)</th>
@@ -704,15 +781,15 @@ export default function RevenuePage() {
                 </thead>
                 <tbody className="divide-y divide-border-light">
                   {funding.map((f) => (
-                    <tr key={f.id} className="hover:bg-surface-hover transition-colors">
+                    <tr key={f.id} className="hover:bg-surface-hover/80 transition-colors">
                       <td className="px-4 py-3 font-mono text-xs font-semibold text-text-primary">{f.ref}</td>
                       <td className="px-4 py-3 text-xs text-text-muted">{f.date}</td>
-                      <td className="px-4 py-3 text-xs font-semibold text-text-primary">{f.grossFormatted}</td>
+                      <td className="px-4 py-3 text-xs font-semibold text-text-primary font-mono">{f.grossFormatted}</td>
                       <td className="px-4 py-3">
-                        <span className="text-xs font-bold text-sendme">+{f.feeFormatted}</span>
+                        <span className="text-xs font-bold text-sendme font-mono">+{f.feeFormatted}</span>
                         <span className="text-[10px] text-text-muted ml-1">(Platform Revenue)</span>
                       </td>
-                      <td className="px-4 py-3 text-xs font-bold text-text-secondary">{f.netFormatted}</td>
+                      <td className="px-4 py-3 text-xs font-bold text-text-secondary font-mono">{f.netFormatted}</td>
                       <td className="px-4 py-3">
                         <span className="text-[10px] font-semibold bg-sendme-50 text-sendme px-2 py-0.5 rounded-full">
                           {f.status}
@@ -724,406 +801,376 @@ export default function RevenuePage() {
               </table>
             )}
           </div>
-        ) : (
-          // Operational Costs & Expenses Section
-          <div className="space-y-4">
-            {/* Proper Cost Figures & Intelligence Cards */}
-            <div className="p-4 sm:p-5 bg-surface-secondary/40 border-b border-border-light space-y-4">
-              {/* Header Title & Actions */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold text-text-primary uppercase tracking-wider">
-                      Operational Cost Command Center
-                    </span>
-                    <span className="bg-emerald-50 text-sendme border border-sendme/20 text-[10px] font-bold px-2 py-0.5 rounded-full">
-                      PostgreSQL Ledger · Audited Expenses
-                    </span>
-                  </div>
-                  <p className="text-xs text-text-muted mt-0.5">
-                    Clear figures for all recurring cloud subscriptions, API quotas, messaging gateways, and developer licenses.
-                  </p>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => setIsCostModalOpen(true)}
-                    className="flex items-center gap-1.5 bg-sendme text-white px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-sendme-dark transition-colors shadow-xs"
-                  >
-                    <Plus size={14} />
-                    <span>Record New Expense</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* 4 Primary Proper Cost Metric Cards */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 pt-1">
-                {/* Card 1: Cumulative Logged Expenses */}
-                <div className="p-4 rounded-2xl bg-white border border-border-light shadow-xs relative overflow-hidden">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-text-muted">
-                      Total Incurred (All-Time)
-                    </span>
-                    <div className="w-7 h-7 rounded-lg bg-rose-50 text-danger flex items-center justify-center">
-                      <Receipt size={15} />
-                    </div>
-                  </div>
-                  <p className="text-2xl font-extrabold text-danger font-mono tracking-tight">
-                    {totalLoggedCostsFormatted}
-                  </p>
-                  <div className="flex items-center justify-between mt-2 pt-2 border-t border-border-light/70 text-[11px] text-text-muted">
-                    <span>{costs.length} recorded items</span>
-                    <span className="font-semibold text-text-primary">Audited Ledger</span>
-                  </div>
-                </div>
-
-                {/* Card 2: Active Monthly Burn Rate */}
-                <div className="p-4 rounded-2xl bg-white border border-border-light shadow-xs relative overflow-hidden">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-text-muted">
-                      Monthly Running Burn
-                    </span>
-                    <div className="w-7 h-7 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center">
-                      <Clock size={15} />
-                    </div>
-                  </div>
-                  <p className="text-2xl font-extrabold text-text-primary font-mono tracking-tight">
-                    ~₦126,500 <span className="text-xs font-normal text-text-muted">/ mo</span>
-                  </p>
-                  <div className="flex items-center justify-between mt-2 pt-2 border-t border-border-light/70 text-[11px] text-text-muted">
-                    <span>Core operational burn</span>
-                    <span className="text-amber-600 font-semibold">Active</span>
-                  </div>
-                </div>
-
-                {/* Card 3: Upcoming Renewal Batch */}
-                <div className="p-4 rounded-2xl bg-white border border-warning/30 ring-1 ring-warning/20 shadow-xs relative overflow-hidden">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-warning">
-                      Next Batch Due (Oct 5th)
-                    </span>
-                    <div className="w-7 h-7 rounded-lg bg-warning-light text-warning flex items-center justify-center">
-                      <Calendar size={15} />
-                    </div>
-                  </div>
-                  <p className="text-2xl font-extrabold text-warning font-mono tracking-tight">
-                    ₦112,500
-                  </p>
-                  <div className="flex items-center justify-between mt-2 pt-2 border-t border-border-light/70 text-[11px] text-text-muted">
-                    <span>Supabase, Expo, Sendbyte, Maps</span>
-                    <span className="font-semibold text-warning">Due 5th Oct</span>
-                  </div>
-                </div>
-
-                {/* Card 4: Annual Commitments */}
-                <div className="p-4 rounded-2xl bg-white border border-border-light shadow-xs relative overflow-hidden">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-text-muted">
-                      Annual Commitments
-                    </span>
-                    <div className="w-7 h-7 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
-                      <ShieldCheck size={15} />
-                    </div>
-                  </div>
-                  <p className="text-2xl font-extrabold text-indigo-700 font-mono tracking-tight">
-                    ₦168,000 <span className="text-xs font-normal text-text-muted">/ yr</span>
-                  </p>
-                  <div className="flex items-center justify-between mt-2 pt-2 border-t border-border-light/70 text-[11px] text-text-muted">
-                    <span>Apple ($99) + Domain</span>
-                    <span className="font-semibold text-indigo-600">Next: 2027</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Individual Vendor Figures Matrix */}
-              <div className="pt-2">
-                <span className="text-[11px] font-bold text-text-muted uppercase tracking-wider block mb-2">
-                  Service & Vendor Cost Breakdown
-                </span>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
-                  {/* Supabase */}
-                  <div className="p-3 rounded-xl bg-white border border-border-light hover:border-sendme/40 transition-colors">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-text-primary">Supabase Pro Tier</span>
-                      <span className="text-xs font-bold text-danger font-mono">₦51,000/mo</span>
-                    </div>
-                    <p className="text-[11px] text-text-muted mt-1">Upgraded to $35/mo from 5th Oct</p>
-                    <div className="flex items-center justify-between text-[10px] text-text-secondary mt-2 pt-1.5 border-t border-border-light">
-                      <span>Backfilled: ₦148,000 (4 mos)</span>
-                      <span className="font-semibold text-warning">Next: 5th Oct</span>
-                    </div>
-                  </div>
-
-                  {/* Expo Pro */}
-                  <div className="p-3 rounded-xl bg-white border border-border-light hover:border-sendme/40 transition-colors">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-text-primary">Expo Pro (EAS Builds)</span>
-                      <span className="text-xs font-bold text-danger font-mono">₦28,000/mo</span>
-                    </div>
-                    <p className="text-[11px] text-text-muted mt-1">Mobile cloud build subscription</p>
-                    <div className="flex items-center justify-between text-[10px] text-text-secondary mt-2 pt-1.5 border-t border-border-light">
-                      <span>Backfilled: ₦84,000 (3 mos)</span>
-                      <span className="font-semibold text-warning">Next: 5th Oct</span>
-                    </div>
-                  </div>
-
-                  {/* Sendbyte */}
-                  <div className="p-3 rounded-xl bg-white border border-border-light hover:border-sendme/40 transition-colors">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-text-primary">Sendbyte WhatsApp</span>
-                      <span className="text-xs font-bold text-danger font-mono">₦15,000/mo</span>
-                    </div>
-                    <p className="text-[11px] text-text-muted mt-1">WhatsApp notification gateway</p>
-                    <div className="flex items-center justify-between text-[10px] text-text-secondary mt-2 pt-1.5 border-t border-border-light">
-                      <span>Backfilled: ₦15,000</span>
-                      <span className="font-semibold text-warning">Next: 5th Oct</span>
-                    </div>
-                  </div>
-
-                  {/* Google Maps */}
-                  <div className="p-3 rounded-xl bg-white border border-border-light hover:border-sendme/40 transition-colors">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-text-primary">Google Maps Utility</span>
-                      <span className="text-xs font-bold text-danger font-mono">~₦18,500/mo</span>
-                    </div>
-                    <p className="text-[11px] text-text-muted mt-1">Expected $9–$15 range (₦14k–₦23k)</p>
-                    <div className="flex items-center justify-between text-[10px] text-text-secondary mt-2 pt-1.5 border-t border-border-light">
-                      <span>Last Bill: ₦30,000</span>
-                      <span className="font-semibold text-warning">Next: 5th Oct</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Additional 3 Service Cards */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 mt-2.5">
-                  {/* Termii */}
-                  <div className="p-3 rounded-xl bg-white border border-border-light">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-text-primary">Termii SMS & WhatsApp OTP</span>
-                      <span className="text-xs font-bold text-text-primary font-mono">₦32,000</span>
-                    </div>
-                    <p className="text-[11px] text-text-muted mt-1">Pay-as-you-go (~₦14,000/mo average burn rate)</p>
-                    <div className="flex items-center justify-between text-[10px] text-text-secondary mt-2 pt-1.5 border-t border-border-light">
-                      <span>3 top-ups backfilled</span>
-                      <span className="font-semibold text-sendme">Active Balance</span>
-                    </div>
-                  </div>
-
-                  {/* Apple Dev */}
-                  <div className="p-3 rounded-xl bg-white border border-border-light">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-text-primary">Apple Developer Membership</span>
-                      <span className="text-xs font-bold text-indigo-700 font-mono">₦148,000</span>
-                    </div>
-                    <p className="text-[11px] text-text-muted mt-1">iOS App Store distribution license ($99/year)</p>
-                    <div className="flex items-center justify-between text-[10px] text-text-secondary mt-2 pt-1.5 border-t border-border-light">
-                      <span>Paid Sep 4, 2026</span>
-                      <span className="font-semibold text-text-primary">Next: Sep 4, 2027</span>
-                    </div>
-                  </div>
-
-                  {/* senndme.com */}
-                  <div className="p-3 rounded-xl bg-white border border-border-light">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-text-primary">senndme.com Domain</span>
-                      <span className="text-xs font-bold text-indigo-700 font-mono">₦20,000</span>
-                    </div>
-                    <p className="text-[11px] text-text-muted mt-1">Annual domain renewal fee</p>
-                    <div className="flex items-center justify-between text-[10px] text-text-secondary mt-2 pt-1.5 border-t border-border-light">
-                      <span>Paid Feb 15, 2026</span>
-                      <span className="font-semibold text-text-primary">Next: Feb 2027</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Table of Backfilled & Logged Expenses */}
-            <div className="overflow-x-auto">
-              {costs.length === 0 ? (
-                <div className="h-48 flex flex-col items-center justify-center text-text-muted text-xs">
-                  <p>No operational expenses recorded.</p>
-                  <button
-                    onClick={() => setIsCostModalOpen(true)}
-                    className="mt-2 text-xs font-semibold text-sendme underline"
-                  >
-                    + Add first cost item
-                  </button>
-                </div>
-              ) : (
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-left text-[10px] text-text-muted font-semibold uppercase tracking-wider border-b border-border-light bg-surface-secondary/50">
-                      <th className="px-4 py-3 font-semibold">Category</th>
-                      <th className="px-4 py-3 font-semibold">Expense Description</th>
-                      <th className="px-4 py-3 font-semibold">Vendor / Service</th>
-                      <th className="px-4 py-3 font-semibold">Amount Paid</th>
-                      <th className="px-4 py-3 font-semibold">Date Paid</th>
-                      <th className="px-4 py-3 font-semibold">Next Billing Schedule</th>
-                      <th className="px-4 py-3 font-semibold">Logged By</th>
-                      <th className="px-4 py-3 font-semibold text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border-light">
-                    {costs.map((c) => (
-                      <tr key={c.id} className="hover:bg-surface-hover transition-colors">
-                        <td className="px-4 py-3">
-                          <span className="text-[10px] font-semibold bg-surface-secondary text-text-secondary px-2 py-0.5 rounded-full">
-                            {c.categoryLabel}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3">
-                          <p className="text-xs font-semibold text-text-primary">{c.title}</p>
-                          {c.notes && <p className="text-[10px] text-text-muted">{c.notes}</p>}
-                        </td>
-                        <td className="px-4 py-3 text-xs text-text-secondary">{c.vendor}</td>
-                        <td className="px-4 py-3 text-xs font-bold text-danger">₦{c.amount.toLocaleString()}</td>
-                        <td className="px-4 py-3 text-xs text-text-muted">{c.date}</td>
-                        <td className="px-4 py-3 text-xs">
-                          {c.nextPaymentNote ? (
-                            <span className="inline-flex items-center gap-1 text-[10px] font-semibold bg-warning-light/70 text-warning px-2 py-0.5 rounded">
-                              <Clock size={10} /> {c.nextPaymentNote}
-                            </span>
-                          ) : c.nextPaymentDate ? (
-                            <span className="text-[10px] text-text-secondary">Next: {c.nextPaymentDate}</span>
-                          ) : (
-                            <span className="text-[10px] text-text-muted">—</span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3 text-xs font-medium text-text-secondary">
-                          <span className="inline-flex items-center gap-1 bg-surface-secondary px-2 py-0.5 rounded-full text-[10px] font-semibold text-text-primary">
-                            @{c.recordedBy || "admin"}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          <button
-                            onClick={() => handleDeleteCost(c.id)}
-                            className="p-1 text-text-muted hover:text-danger transition-colors"
-                            title="Delete expense entry"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-          </div>
         )}
       </Card>
 
-      {/* Add Cost / Expense Modal */}
-      {isCostModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs animate-in fade-in duration-200">
-          <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-xl border border-border-default space-y-4">
-            <div className="flex items-center justify-between border-b border-border-light pb-3">
-              <div>
-                <h3 className="text-base font-bold text-text-primary">Add Operational Cost</h3>
-                <p className="text-xs text-text-muted mt-0.5">Record platform overhead, SMS, Map API, or marketing fees.</p>
+      {/* ========================================================================= */}
+      {/* SIDEVIEW BAR DISPLAY (Slide-over drawer on the right edge - NO POPUP)     */}
+      {/* ========================================================================= */}
+      {sideviewMode !== "none" && (
+        <div className="fixed inset-0 z-50 overflow-hidden">
+          {/* Backdrop */}
+          <div
+            className="fixed inset-0 bg-black/40 backdrop-blur-2xs transition-opacity animate-in fade-in duration-200"
+            onClick={closeSideview}
+          />
+
+          {/* Slide-over Right Panel */}
+          <div className="fixed inset-y-0 right-0 max-w-full flex pl-10">
+            <div className="w-screen max-w-md bg-white shadow-2xl border-l border-border-default flex flex-col animate-in slide-in-from-right duration-300">
+              {/* Sideview Header */}
+              <div className="px-5 py-4 border-b border-border-light flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-bold text-text-primary">
+                    {sideviewMode === "create_cost"
+                      ? "Record Operating Expense"
+                      : sideviewMode === "view_cost"
+                      ? "Expense Record Details"
+                      : "Ride Profit Breakdown"}
+                  </h3>
+                  <p className="text-xs text-text-muted mt-0.5">
+                    {sideviewMode === "create_cost"
+                      ? "Add a recurring subscription, API quota or overhead fee."
+                      : sideviewMode === "view_cost"
+                      ? "Audit details and payment renewal schedule."
+                      : "Platform 15% commission vs rider earning."}
+                  </p>
+                </div>
+                <button
+                  onClick={closeSideview}
+                  className="p-1.5 text-text-muted hover:text-text-primary hover:bg-surface-hover rounded-lg transition-colors"
+                >
+                  <X size={16} />
+                </button>
               </div>
-              <button onClick={() => setIsCostModalOpen(false)} className="text-text-muted hover:text-text-primary">
-                <X size={18} />
-              </button>
+
+              {/* Sideview Body */}
+              <div className="flex-1 overflow-y-auto p-5 space-y-4">
+                {sideviewMode === "create_cost" && (
+                  <form id="cost-sideview-form" onSubmit={handleAddCost} className="space-y-4">
+                    {formError && (
+                      <div className="p-3 bg-danger-light border border-danger/20 rounded-lg text-xs text-danger font-medium flex items-center gap-2">
+                        <AlertTriangle size={14} className="shrink-0" />
+                        <span>{formError}</span>
+                      </div>
+                    )}
+
+                    <div>
+                      <label className="text-xs font-semibold text-text-secondary block mb-1.5">
+                        Expense Category *
+                      </label>
+                      <select
+                        value={costForm.category}
+                        onChange={(e) => setCostForm({ ...costForm, category: e.target.value })}
+                        className="w-full text-xs border border-border-default rounded-lg px-3 py-2.5 bg-white focus:outline-none focus:border-sendme font-medium"
+                      >
+                        <option value="cloud_server">Cloud Hosting & Mobile Builds (Supabase, Expo)</option>
+                        <option value="maps_api">Google Maps & Geocoding API</option>
+                        <option value="sms_otp">SMS & OTP Verification (Termii, Twilio)</option>
+                        <option value="marketing">Marketing & WhatsApp Gateway (Sendbyte)</option>
+                        <option value="legal">Developer Licenses & Legal (Apple, Google Play)</option>
+                        <option value="other">Domain Registration & General Overhead</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-semibold text-text-secondary block mb-1.5">
+                        Expense Title *
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Supabase Pro Database (October)"
+                        value={costForm.title}
+                        onChange={(e) => setCostForm({ ...costForm, title: e.target.value })}
+                        className="w-full text-xs border border-border-default rounded-lg px-3 py-2.5 focus:outline-none focus:border-sendme"
+                        required
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-xs font-semibold text-text-secondary block mb-1.5">
+                          Amount (₦) *
+                        </label>
+                        <input
+                          type="number"
+                          placeholder="e.g. 51000"
+                          value={costForm.amount}
+                          onChange={(e) => setCostForm({ ...costForm, amount: e.target.value })}
+                          className="w-full text-xs border border-border-default rounded-lg px-3 py-2.5 focus:outline-none focus:border-sendme font-mono"
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-text-secondary block mb-1.5">
+                          Vendor / Service
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Supabase Inc."
+                          value={costForm.vendor}
+                          onChange={(e) => setCostForm({ ...costForm, vendor: e.target.value })}
+                          className="w-full text-xs border border-border-default rounded-lg px-3 py-2.5 focus:outline-none focus:border-sendme"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-xs font-semibold text-text-secondary block mb-1.5">
+                          Date Paid
+                        </label>
+                        <input
+                          type="date"
+                          value={costForm.date}
+                          onChange={(e) => setCostForm({ ...costForm, date: e.target.value })}
+                          className="w-full text-xs border border-border-default rounded-lg px-3 py-2.5 focus:outline-none focus:border-sendme"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-text-secondary block mb-1.5">
+                          Billing Frequency
+                        </label>
+                        <select
+                          value={costForm.frequency}
+                          onChange={(e) => setCostForm({ ...costForm, frequency: e.target.value })}
+                          className="w-full text-xs border border-border-default rounded-lg px-3 py-2.5 bg-white focus:outline-none focus:border-sendme"
+                        >
+                          <option value="monthly">Monthly Recurring</option>
+                          <option value="yearly">Yearly Commitment</option>
+                          <option value="usage_based">Usage-based Credit</option>
+                          <option value="one_off">One-off Payment</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="p-3 bg-surface-secondary/70 rounded-xl border border-border-light space-y-3">
+                      <span className="text-[11px] font-bold text-text-primary uppercase tracking-wider block">
+                        Renewal & Next Schedule (Optional)
+                      </span>
+                      <div className="grid grid-cols-2 gap-2.5">
+                        <div>
+                          <label className="text-[10px] text-text-muted block mb-1">Next Payment Date</label>
+                          <input
+                            type="text"
+                            placeholder="e.g. 2026-10-05"
+                            value={costForm.nextPaymentDate}
+                            onChange={(e) => setCostForm({ ...costForm, nextPaymentDate: e.target.value })}
+                            className="w-full text-xs border border-border-default rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:border-sendme"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-text-muted block mb-1">Expected Amount (₦)</label>
+                          <input
+                            type="number"
+                            placeholder="e.g. 51000"
+                            value={costForm.nextPaymentAmount}
+                            onChange={(e) => setCostForm({ ...costForm, nextPaymentAmount: e.target.value })}
+                            className="w-full text-xs border border-border-default rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:border-sendme font-mono"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-[10px] text-text-muted block mb-1">Renewal Note / Plan Tier</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Due 5th Oct: $35 upward"
+                          value={costForm.nextPaymentNote}
+                          onChange={(e) => setCostForm({ ...costForm, nextPaymentNote: e.target.value })}
+                          className="w-full text-xs border border-border-default rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:border-sendme"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-semibold text-text-secondary block mb-1.5">
+                        Notes & Invoice Details
+                      </label>
+                      <textarea
+                        rows={3}
+                        placeholder="Add invoice reference, billing period, receipt notes..."
+                        value={costForm.notes}
+                        onChange={(e) => setCostForm({ ...costForm, notes: e.target.value })}
+                        className="w-full text-xs border border-border-default rounded-lg p-2.5 focus:outline-none focus:border-sendme resize-none"
+                      />
+                    </div>
+                  </form>
+                )}
+
+                {sideviewMode === "view_cost" && selectedCost && (
+                  <div className="space-y-4">
+                    {/* Amount Banner */}
+                    <div className="p-4 bg-surface-secondary/70 rounded-xl border border-border-light text-center">
+                      <span className="text-[10px] font-semibold text-text-muted uppercase tracking-wider block">
+                        Expense Amount Paid
+                      </span>
+                      <p className="text-2xl font-bold text-danger font-mono mt-1">
+                        ₦{selectedCost.amount.toLocaleString()}
+                      </p>
+                      <div className="mt-2 inline-flex items-center gap-1.5 text-xs text-text-secondary">
+                        <Tag size={12} className="text-sendme" />
+                        <span>{selectedCost.categoryLabel}</span>
+                      </div>
+                    </div>
+
+                    {/* Breakdown Items */}
+                    <div className="space-y-2.5 text-xs">
+                      <div className="flex items-center justify-between p-2.5 bg-white rounded-lg border border-border-light">
+                        <span className="text-text-muted">Expense Item</span>
+                        <span className="font-semibold text-text-primary text-right">{selectedCost.title}</span>
+                      </div>
+                      <div className="flex items-center justify-between p-2.5 bg-white rounded-lg border border-border-light">
+                        <span className="text-text-muted">Vendor / Provider</span>
+                        <span className="font-semibold text-text-primary">{selectedCost.vendor}</span>
+                      </div>
+                      <div className="flex items-center justify-between p-2.5 bg-white rounded-lg border border-border-light">
+                        <span className="text-text-muted">Payment Date</span>
+                        <span className="font-semibold text-text-primary font-mono">{selectedCost.date}</span>
+                      </div>
+                      <div className="flex items-center justify-between p-2.5 bg-white rounded-lg border border-border-light">
+                        <span className="text-text-muted">Billing Cycle</span>
+                        <span className="font-semibold text-text-primary capitalize">{selectedCost.frequency || "Monthly"}</span>
+                      </div>
+                      {selectedCost.nextPaymentNote && (
+                        <div className="flex items-start justify-between p-2.5 bg-warning-light/40 rounded-lg border border-warning/20">
+                          <span className="text-warning font-medium">Renewal Schedule</span>
+                          <span className="font-bold text-warning text-right">{selectedCost.nextPaymentNote}</span>
+                        </div>
+                      )}
+                      <div className="flex items-center justify-between p-2.5 bg-white rounded-lg border border-border-light">
+                        <span className="text-text-muted">Logged By Admin</span>
+                        <span className="font-semibold text-text-primary bg-surface-secondary px-2 py-0.5 rounded-full text-[11px]">
+                          @{selectedCost.recordedBy || "admin"}
+                        </span>
+                      </div>
+                    </div>
+
+                    {selectedCost.notes && (
+                      <div className="p-3 bg-surface-secondary/40 rounded-xl border border-border-light">
+                        <span className="text-[10px] font-bold text-text-muted uppercase tracking-wider block mb-1">
+                          Notes & Ledger Record
+                        </span>
+                        <p className="text-xs text-text-secondary leading-relaxed">
+                          {selectedCost.notes}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {sideviewMode === "view_ride" && selectedRide && (
+                  <div className="space-y-4">
+                    {/* Fare Summary Box */}
+                    <div className="p-4 bg-surface-secondary/70 rounded-xl border border-border-light text-center">
+                      <span className="text-[10px] font-semibold text-text-muted uppercase tracking-wider block">
+                        Customer Paid (Gross Fare)
+                      </span>
+                      <p className="text-2xl font-bold text-text-primary font-mono mt-1">
+                        {selectedRide.fareFormatted}
+                      </p>
+                      <div className="mt-2.5 grid grid-cols-2 gap-2 text-xs pt-2 border-t border-border-light">
+                        <div>
+                          <span className="text-[10px] text-text-muted block">Platform Cut (15%)</span>
+                          <span className="font-bold text-sendme font-mono">{selectedRide.commissionFormatted}</span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-text-muted block">Driver Share (85%)</span>
+                          <span className="font-bold text-text-secondary font-mono">{selectedRide.driverEarningFormatted}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Trip Details */}
+                    <div className="space-y-2.5 text-xs">
+                      <div className="flex items-center justify-between p-2.5 bg-white rounded-lg border border-border-light">
+                        <span className="text-text-muted">Order ID</span>
+                        <span className="font-semibold text-text-primary font-mono">{selectedRide.shortId}</span>
+                      </div>
+                      <div className="flex items-center justify-between p-2.5 bg-white rounded-lg border border-border-light">
+                        <span className="text-text-muted">Delivery Route</span>
+                        <span className="font-semibold text-text-primary truncate max-w-[200px]">{selectedRide.route}</span>
+                      </div>
+                      <div className="flex items-center justify-between p-2.5 bg-white rounded-lg border border-border-light">
+                        <span className="text-text-muted">State / Territory</span>
+                        <span className="font-semibold text-text-primary">{selectedRide.state}</span>
+                      </div>
+                      <div className="flex items-center justify-between p-2.5 bg-white rounded-lg border border-border-light">
+                        <span className="text-text-muted">Customer</span>
+                        <span className="font-semibold text-text-primary">{selectedRide.customer}</span>
+                      </div>
+                      <div className="flex items-center justify-between p-2.5 bg-white rounded-lg border border-border-light">
+                        <span className="text-text-muted">Rider Assigned</span>
+                        <span className="font-semibold text-text-primary">{selectedRide.driver}</span>
+                      </div>
+                      <div className="flex items-center justify-between p-2.5 bg-white rounded-lg border border-border-light">
+                        <span className="text-text-muted">Payment Method</span>
+                        <span className="font-semibold text-text-primary">{selectedRide.paymentMethod}</span>
+                      </div>
+                      <div className="flex items-center justify-between p-2.5 bg-white rounded-lg border border-border-light">
+                        <span className="text-text-muted">Delivery Status</span>
+                        <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${selectedRide.statusColor}`}>
+                          {selectedRide.status}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Sideview Footer */}
+              <div className="px-5 py-3.5 border-t border-border-light bg-surface-secondary/40 flex items-center justify-between">
+                {sideviewMode === "create_cost" ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={closeSideview}
+                      className="px-3.5 py-2 text-xs font-semibold text-text-muted hover:text-text-primary transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      form="cost-sideview-form"
+                      disabled={submittingCost}
+                      className="flex items-center gap-1.5 bg-sendme text-white px-4 py-2 rounded-lg text-xs font-semibold hover:bg-sendme-dark transition-colors shadow-xs disabled:opacity-50"
+                    >
+                      {submittingCost ? (
+                        <>
+                          <Loader2 size={13} className="animate-spin" /> Saving...
+                        </>
+                      ) : (
+                        "Save Expense"
+                      )}
+                    </button>
+                  </>
+                ) : sideviewMode === "view_cost" && selectedCost ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteCost(selectedCost.id)}
+                      className="flex items-center gap-1 text-xs font-semibold text-danger hover:underline px-1 py-1"
+                    >
+                      <Trash2 size={13} /> Delete Record
+                    </button>
+                    <button
+                      type="button"
+                      onClick={closeSideview}
+                      className="px-3.5 py-2 bg-white border border-border-default hover:bg-surface-hover rounded-lg text-xs font-semibold text-text-primary transition-colors"
+                    >
+                      Close
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={closeSideview}
+                    className="w-full py-2 bg-white border border-border-default hover:bg-surface-hover rounded-lg text-xs font-semibold text-text-primary transition-colors"
+                  >
+                    Close
+                  </button>
+                )}
+              </div>
             </div>
-
-            <form onSubmit={handleAddCost} className="space-y-3.5">
-              <div>
-                <label className="text-xs font-semibold text-text-primary block mb-1">Expense Category</label>
-                <select
-                  value={costForm.category}
-                  onChange={(e) => setCostForm({ ...costForm, category: e.target.value })}
-                  className="w-full text-xs border border-border-default rounded-lg px-3 py-2 bg-white focus:outline-none focus:border-sendme"
-                >
-                  <option value="cloud_server">Cloud Hosting & Supabase DB</option>
-                  <option value="maps_api">Google Maps & Geocoding API</option>
-                  <option value="sms_otp">SMS & OTP Verification (Termii/Twilio)</option>
-                  <option value="marketing">Rider & Customer Acquisition Promo</option>
-                  <option value="refunds">Customer / Rider Dispute Refund</option>
-                  <option value="equipment">Branding (Vests, Helmets, Delivery Boxes)</option>
-                  <option value="legal">Legal, CAC & Compliance</option>
-                  <option value="other">General Administrative Overhead</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="text-xs font-semibold text-text-primary block mb-1">Expense Title / Item</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Google Cloud Maps billing for current month"
-                  value={costForm.title}
-                  onChange={(e) => setCostForm({ ...costForm, title: e.target.value })}
-                  className="w-full text-xs border border-border-default rounded-lg px-3 py-2 focus:outline-none focus:border-sendme"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs font-semibold text-text-primary block mb-1">Amount (₦)</label>
-                  <input
-                    type="number"
-                    required
-                    min="1"
-                    placeholder="e.g. 35000"
-                    value={costForm.amount}
-                    onChange={(e) => setCostForm({ ...costForm, amount: e.target.value })}
-                    className="w-full text-xs border border-border-default rounded-lg px-3 py-2 focus:outline-none focus:border-sendme font-mono"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs font-semibold text-text-primary block mb-1">Date Incurred</label>
-                  <input
-                    type="date"
-                    required
-                    value={costForm.date}
-                    onChange={(e) => setCostForm({ ...costForm, date: e.target.value })}
-                    className="w-full text-xs border border-border-default rounded-lg px-3 py-2 focus:outline-none focus:border-sendme"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="text-xs font-semibold text-text-primary block mb-1">Vendor / Payee</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Google Cloud, Termii, Facebook Ads"
-                  value={costForm.vendor}
-                  onChange={(e) => setCostForm({ ...costForm, vendor: e.target.value })}
-                  className="w-full text-xs border border-border-default rounded-lg px-3 py-2 focus:outline-none focus:border-sendme"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-semibold text-text-primary block mb-1">Optional Notes</label>
-                <textarea
-                  rows={2}
-                  placeholder="Additional context or invoice reference number..."
-                  value={costForm.notes}
-                  onChange={(e) => setCostForm({ ...costForm, notes: e.target.value })}
-                  className="w-full text-xs border border-border-default rounded-lg px-3 py-2 focus:outline-none focus:border-sendme"
-                />
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-border-light">
-                <button
-                  type="button"
-                  onClick={() => setIsCostModalOpen(false)}
-                  className="px-4 py-2 text-xs font-medium text-text-muted hover:text-text-primary"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={submittingCost}
-                  className="bg-sendme text-white px-5 py-2 rounded-lg text-xs font-semibold hover:bg-sendme-dark transition-colors disabled:opacity-50"
-                >
-                  {submittingCost ? "Recording..." : "Save Cost"}
-                </button>
-              </div>
-            </form>
           </div>
         </div>
       )}

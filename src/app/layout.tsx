@@ -5,6 +5,11 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "SendMe Admin Dashboard",
   description: "SendMe platform administration panel",
+  icons: {
+    icon: "/icon.png",
+    shortcut: "/favicon.ico",
+    apple: "/icon.png",
+  },
 };
 
 export default function RootLayout({

@@ -3,11 +3,13 @@
 import { useState, useEffect, useCallback } from "react"
 import {
   Mail, Users, Save, Loader2, Plus, Trash2, X,
-  ToggleLeft, ToggleRight, ChevronRight, Check, AlertTriangle, Key, DollarSign, Play, GripVertical, Headphones
+  ToggleLeft, ToggleRight, ChevronRight, Check, AlertTriangle, Key, DollarSign, Play, GripVertical, Headphones, Megaphone, Smartphone
 } from "lucide-react"
 import { SupportTeamTab } from "@/components/dashboard/support-team-tab"
+import { BannersManagementTab } from "@/components/dashboard/banners-management-tab"
+import { AppVersionsTab } from "@/components/dashboard/app-versions-tab"
 
-type Tab = "otp" | "referral" | "admins" | "support_team" | "fees" | "platform" | "howto"
+type Tab = "otp" | "referral" | "admins" | "support_team" | "fees" | "platform" | "howto" | "banners" | "versions"
 
 interface AdminUser {
   id: string
@@ -1004,6 +1006,8 @@ export default function SettingsPage() {
     { key: "referral", label: "Referral System", icon: Users },
     { key: "fees", label: "Withdrawal Fee", icon: DollarSign },
     { key: "howto", label: "How To Use", icon: Play },
+    { key: "banners", label: "Banners & Popups", icon: Megaphone },
+    { key: "versions", label: "App Versions", icon: Smartphone },
     { key: "support_team", label: "Manage Support Team", icon: Headphones },
     { key: "admins", label: "Admin Management", icon: Users },
   ]
@@ -1035,6 +1039,8 @@ export default function SettingsPage() {
         {activeTab === "referral" && <ReferralTab settings={settings} onSave={handleSave} saving={saving} />}
         {activeTab === "fees" && <WithdrawalFeeTab settings={settings} onSave={handleSave} saving={saving} />}
         {activeTab === "howto" && <HelpTopicsTab />}
+        {activeTab === "banners" && <BannersManagementTab />}
+        {activeTab === "versions" && <AppVersionsTab />}
         {activeTab === "support_team" && <SupportTeamTab />}
         {activeTab === "admins" && (
           <AdminsTab

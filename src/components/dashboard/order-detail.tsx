@@ -2,7 +2,7 @@
 
 import { toast } from "sonner"
 import { useState, useEffect } from "react"
-import { X, MapPin, Phone, Loader2, Trash2, Ban, AlertTriangle } from "lucide-react"
+import { X, MapPin, Phone, Loader2, Trash2, Ban, AlertTriangle, Radio, MessageCircle } from "lucide-react"
 
 interface OrderDetailProps {
   orderId: string
@@ -85,7 +85,7 @@ interface OrderData {
   }[]
 }
 
-const tabs = ["Overview", "Timeline", "Details", "Activity"]
+const tabs = ["Overview", "Timeline", "Details", "Activity", "Broadcast Log"]
 
 function OverviewTab({ data }: { data: OrderData }) {
   const { order, customer, driver, item, pricing } = data
@@ -398,6 +398,145 @@ function ActivityTab({ data }: { data: OrderData }) {
   )
 }
 
+function BroadcastLogTab({ orderId }: { orderId: string }) {
+  const [logs, setLogs] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    async function fetchLogs() {
+      setLoading(true)
+      try {
+        const res = await fetch(`/api/dashboard/deliveries/${orderId}/broadcast-logs`)
+        const data = await res.json()
+        if (data.success) {
+          setLogs(data.logs || [])
+        } else {
+          setError(data.error || "Failed to load broadcast logs")
+        }
+      } catch (err: any) {
+        setError(err.message)
+      } finally {
+        setLoading(false)
+      }
+    }
+    fetchLogs()
+  }, [orderId])
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-48">
+        <Loader2 size={24} className="animate-spin text-sendme" />
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="p-4 text-center">
+        <p className="text-xs text-danger">{error}</p>
+      </div>
+    )
+  }
+
+  if (logs.length === 0) {
+    return (
+      <div className="p-8 text-center space-y-2">
+        <Radio size={28} className="mx-auto text-text-muted opacity-50" />
+        <p className="text-xs font-medium text-text-primary">No Broadcast Logs Found</p>
+        <p className="text-[11px] text-text-muted">
+          No riders have received or acknowledged this order broadcast yet.
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Header Metric */}
+      <div className="bg-sendme-50/60 border border-sendme/20 rounded-xl p-3 flex items-center justify-between">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-lg bg-sendme/10 flex items-center justify-center text-sendme">
+            <Radio size={16} />
+          </div>
+          <div>
+            <p className="text-xs font-bold text-text-primary">
+              {logs.length} Rider{logs.length === 1 ? "" : "s"} Reached
+            </p>
+            <p className="text-[10px] text-text-muted">
+              Call riders directly to confirm immediate pickup
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* List of Riders Logged */}
+      <div className="space-y-2.5">
+        {logs.map((log) => {
+          const statusColors: Record<string, string> = {
+            ringing: "bg-warning-light text-warning border-warning/30",
+            broadcasted: "bg-surface-secondary text-text-muted border-border-default",
+            viewed: "bg-info-light text-info border-info/30",
+            ignored: "bg-surface-secondary text-text-muted border-border-default",
+            missed: "bg-danger-light text-danger border-danger/30",
+            bidded: "bg-purple-50 text-purple-700 border-purple-200",
+            accepted: "bg-sendme-50 text-sendme border-sendme/30",
+          }
+          const badgeClass = statusColors[log.status] || "bg-surface-secondary text-text-muted"
+          const phone = log.driver_phone || log.driver?.phone
+
+          return (
+            <div
+              key={log.id}
+              className="p-3 bg-surface border border-border-light rounded-xl hover:border-sendme/40 transition-colors space-y-2"
+            >
+              <div className="flex items-start justify-between">
+                <div>
+                  <p className="text-xs font-semibold text-text-primary">
+                    {log.driver_name || log.driver?.full_name || "Rider"}
+                  </p>
+                  <p className="text-[11px] text-text-muted">
+                    {log.distance_km ? `${Number(log.distance_km).toFixed(1)} km away` : "Nearby"}
+                  </p>
+                </div>
+                <span
+                  className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border ${badgeClass} capitalize`}
+                >
+                  {log.status}
+                </span>
+              </div>
+
+              {/* Contact Actions for Customer Care */}
+              {phone ? (
+                <div className="flex items-center gap-2 pt-1 border-t border-border-light">
+                  <a
+                    href={`tel:${phone}`}
+                    className="flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 bg-sendme/10 hover:bg-sendme/15 text-sendme rounded-lg text-[11px] font-semibold transition-colors"
+                  >
+                    <Phone size={12} />
+                    <span>Call ({phone})</span>
+                  </a>
+                  <a
+                    href={`https://wa.me/${phone.replace(/[^0-9]/g, "")}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center justify-center p-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg transition-colors"
+                    title="Chat on WhatsApp"
+                  >
+                    <MessageCircle size={14} />
+                  </a>
+                </div>
+              ) : (
+                <p className="text-[10px] text-text-muted italic">No phone on file</p>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 export function OrderDetail({ orderId, onClose }: OrderDetailProps) {
   const [activeTab, setActiveTab] = useState("Overview")
   const [loading, setLoading] = useState(true)
@@ -498,6 +637,7 @@ export function OrderDetail({ orderId, onClose }: OrderDetailProps) {
             {activeTab === "Overview" && <OverviewTab data={data} />}
             {activeTab === "Details" && <DetailsTab data={data} />}
             {activeTab === "Activity" && <ActivityTab data={data} />}
+            {activeTab === "Broadcast Log" && <BroadcastLogTab orderId={orderId} />}
             {activeTab === "Timeline" && (
               <div className="flex items-center justify-center h-32">
                 <p className="text-xs text-text-muted">Timeline view coming soon</p>

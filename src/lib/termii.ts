@@ -28,9 +28,14 @@ export async function sendSMS({
   // Format to E.164 digits only (e.g. 2348123456789)
   let formattedPhone = phone.replace(/[^\d]/g, "");
 
-  // Common Nigerian mismatch: +234080... should be 23480...
+  // Common Nigerian mismatch: +234080... or 080...
   if (formattedPhone.startsWith("2340")) {
     formattedPhone = "234" + formattedPhone.slice(4);
+  } else if (formattedPhone.startsWith("0")) {
+    formattedPhone = "234" + formattedPhone.slice(1);
+  }
+  if (!formattedPhone.startsWith("234")) {
+    formattedPhone = "234" + formattedPhone;
   }
 
   try {

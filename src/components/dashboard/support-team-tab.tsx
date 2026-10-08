@@ -41,6 +41,7 @@ export function SupportTeamTab() {
     "internal_notes",
     "telemetry_access",
     "sla_monitoring",
+    "receive_broadcast_alerts",
   ]);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState("");
@@ -505,6 +506,7 @@ export function SupportTeamTab() {
                   <span className="flex items-center gap-1.5"><CheckCircle2 size={13} className="text-sendme" /> Live Customer Chat</span>
                   <span className="flex items-center gap-1.5"><CheckCircle2 size={13} className="text-sendme" /> Internal Case Notes</span>
                   <span className="flex items-center gap-1.5"><CheckCircle2 size={13} className="text-sendme" /> Order Route Audit</span>
+                  <span className="flex items-center gap-1.5 col-span-2"><CheckCircle2 size={13} className="text-sendme" /> WhatsApp Broadcast Alerts (New Order Riders)</span>
                 </div>
               </div>
 

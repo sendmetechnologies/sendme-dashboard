@@ -203,6 +203,11 @@ function EmailCampaignsContent() {
           if (result.campaign) {
             setActiveCampaign(result.campaign)
           }
+
+          // If there's another batch waiting, pause 3.5s to let the SMTP/SendByte rate limit bucket refresh
+          if (i + 1 < updated.length && updated[i + 1].status !== "completed") {
+            await new Promise((r) => setTimeout(r, 3500))
+          }
         } else {
           updated[i] = {
             ...updated[i],
@@ -506,6 +511,42 @@ function EmailCampaignsContent() {
                       >
                         {resumingBatch ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}
                         Dispatch Next Queued Batch (100)
+                      </button>
+                    )}
+
+                    {detail.recipients.some((r) => r.status === "failed") && (
+                      <button
+                        onClick={async () => {
+                          setResumingBatch(true)
+                          try {
+                            const res = await fetch("/api/dashboard/email-campaigns/send-batch", {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({
+                                campaignId: detail.campaign.id,
+                                batchIndex: 0,
+                                batchSize: 100,
+                                retryFailed: true,
+                              }),
+                            })
+                            const data = await res.json()
+                            if (res.ok) {
+                              if (selected) openDetail(selected)
+                              fetchCampaigns()
+                            } else {
+                              alert(data.error || "Failed to retry")
+                            }
+                          } catch {
+                            alert("Network error while retrying failed emails")
+                          } finally {
+                            setResumingBatch(false)
+                          }
+                        }}
+                        disabled={resumingBatch}
+                        className="w-full mt-1.5 py-1.5 bg-amber-500 text-white text-[11px] font-semibold rounded-lg flex items-center justify-center gap-1.5 hover:bg-amber-600 transition-colors shadow-2xs"
+                      >
+                        {resumingBatch ? <Loader2 size={12} className="animate-spin" /> : <RotateCcw size={12} />}
+                        Retry All Failed Recipients ({detail.campaign.failed_count})
                       </button>
                     )}
                   </div>

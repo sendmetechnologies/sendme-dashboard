@@ -11,7 +11,7 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { campaignId, batchIndex = 0, batchSize = 100 } = body;
+    const { campaignId, batchIndex = 0, batchSize = 100, retryFailed = false } = body;
 
     if (!campaignId) {
       return NextResponse.json({ error: "campaignId is required" }, { status: 400 });
@@ -26,6 +26,15 @@ export async function POST(req: NextRequest) {
 
     if (campaignError || !campaign) {
       return NextResponse.json({ error: "Campaign not found" }, { status: 404 });
+    }
+
+    // If retryFailed is requested, reset failed recipients to queued first
+    if (retryFailed) {
+      await supabaseAdmin
+        .from("email_campaign_recipients")
+        .update({ status: "queued", error: null, updated_at: new Date().toISOString() })
+        .eq("campaign_id", campaignId)
+        .eq("status", "failed");
     }
 
     // 2. Fetch up to batchSize recipients for this campaign that are queued
@@ -71,7 +80,7 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // 3. Dispatch batch to SendByte
+    // 3. Dispatch batch to SendByte with smart concurrency and rate-limit backoff
     const from = getCampaignFromAddress(campaign.sender_name);
     const subject = campaign.subject;
     const bodyHtml = campaign.body_html;
@@ -80,19 +89,39 @@ export async function POST(req: NextRequest) {
     let batchSent = 0;
     let batchFailed = 0;
 
-    // Concurrency 5 with small pacing to ensure SendByte rate-limit compliance
-    const SUB_CONCURRENCY = 5;
+    // Concurrency 4 with 250ms spacing to comfortably stay under SendByte per-minute rate limit
+    const SUB_CONCURRENCY = 4;
     for (let i = 0; i < recipients.length; i += SUB_CONCURRENCY) {
       const chunk = recipients.slice(i, i + SUB_CONCURRENCY);
       const results = await Promise.all(
         chunk.map(async (recipient) => {
-          const res = await sendEmail({
+          let res = await sendEmail({
             to: recipient.email,
             subject,
             html: bodyHtml,
             text: bodyText,
             from,
           });
+
+          // If rate limited (429 or 'Too many requests' or 'limit'), pause 2.5s and retry once
+          const isRateLimit = res.error && (
+            res.error.includes("429") ||
+            res.error.toLowerCase().includes("rate") ||
+            res.error.toLowerCase().includes("limit") ||
+            res.error.toLowerCase().includes("too many")
+          );
+
+          if (!res.success && isRateLimit) {
+            await new Promise((r) => setTimeout(r, 2500));
+            res = await sendEmail({
+              to: recipient.email,
+              subject,
+              html: bodyHtml,
+              text: bodyText,
+              from,
+            });
+          }
+
           return {
             id: recipient.id,
             status: res.success ? "sent" : "failed",
@@ -118,7 +147,8 @@ export async function POST(req: NextRequest) {
       }
 
       if (i + SUB_CONCURRENCY < recipients.length) {
-        await new Promise((resolve) => setTimeout(resolve, 60));
+        // 250ms breathing delay between sub-chunks
+        await new Promise((resolve) => setTimeout(resolve, 250));
       }
     }
 

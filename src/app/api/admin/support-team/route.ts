@@ -208,7 +208,7 @@ export async function PATCH(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { id, action, status, name, phone, role } = body;
+    const { id, action, status, name, phone, role, email, permissions } = body;
 
     if (!id) {
       return NextResponse.json({ error: "Member ID required" }, { status: 400 });
@@ -235,10 +235,12 @@ export async function PATCH(req: NextRequest) {
     } else if (action === "toggle_status") {
       updatedFields.status = member.status === "active" ? "suspended" : "active";
     } else {
-      if (status) updatedFields.status = status;
-      if (name) updatedFields.name = name.trim();
-      if (phone) updatedFields.phone = normalizePhone(phone.trim());
-      if (role) updatedFields.role = role;
+      if (status !== undefined) updatedFields.status = status;
+      if (name !== undefined && name.trim()) updatedFields.name = name.trim();
+      if (phone !== undefined && phone.trim()) updatedFields.phone = normalizePhone(phone.trim());
+      if (role !== undefined && role.trim()) updatedFields.role = role.trim();
+      if (email !== undefined) updatedFields.email = email?.trim() ? email.trim() : null;
+      if (permissions !== undefined && Array.isArray(permissions)) updatedFields.permissions = permissions;
     }
 
     const { data: updated, error: updateErr } = await supabaseAdmin
@@ -262,6 +264,19 @@ export async function PATCH(req: NextRequest) {
         await setAppSetting("support_team_members", list);
       }
     } catch {}
+
+    logAdminActivity({
+      admin_id: session.id,
+      admin_username: session.username,
+      admin_display_name: session.displayName || session.username,
+      action_type: action === "regenerate_code" ? "regenerate_support_code" : action === "toggle_status" ? "toggle_support_status" : "update_support_member",
+      action_category: "SUPPORT",
+      description: `${session.displayName || session.username} updated support member ${updated.name} (${updated.phone})`,
+      target_type: "support_member",
+      target_id: updated.id,
+      target_name: `${updated.name} (${updated.phone})`,
+      metadata: updatedFields,
+    }).catch(() => {});
 
     return NextResponse.json({
       success: true,

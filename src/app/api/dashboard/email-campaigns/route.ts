@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { supabaseAdmin } from "@/lib/supabase";
 import { getCampaignRecipients, type TargetAudience, type CampaignRecipient } from "@/lib/email-campaigns";
-import { sendEmail, getCampaignFromAddress, buildCampaignEmailHtml } from "@/lib/sendbyte";
+import { buildCampaignEmailHtml } from "@/lib/sendbyte";
 
 const TARGETS: TargetAudience[] = ["all", "marketers", "senders", "riders", "organizations", "individuals"];
 
@@ -93,7 +93,6 @@ export async function POST(req: NextRequest) {
     const subject = name.trim();
     const bodyHtml = buildCampaignEmailHtml(senderName.trim(), messageToHtml(message.trim()));
     const bodyText = message.trim();
-    const from = getCampaignFromAddress(senderName.trim());
 
     const { data: campaign, error: campaignError } = await supabaseAdmin
       .from("email_campaigns")
@@ -107,6 +106,8 @@ export async function POST(req: NextRequest) {
         sub_audience: subAudience || "all",
         status: "sending",
         total_recipients: recipients.length,
+        sent_count: 0,
+        failed_count: 0,
         created_by: session.id,
       })
       .select()
@@ -117,69 +118,47 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: campaignError?.message || "Failed to create campaign" }, { status: 500 });
     }
 
-    let sent = 0;
-    let failed = 0;
-    const recipientRows: Record<string, unknown>[] = [];
+    // Queue all recipients in email_campaign_recipients
+    const recipientRows = recipients.map((r) => ({
+      campaign_id: campaign.id,
+      user_id: r.user_id,
+      email: r.email,
+      name: r.name,
+      status: "queued",
+    }));
 
-    const CONCURRENCY = 10;
-    for (let i = 0; i < recipients.length; i += CONCURRENCY) {
-      const batch = recipients.slice(i, i + CONCURRENCY);
-      const results = await Promise.all(
-        batch.map(async (recipient) => {
-          const res = await sendEmail({
-            to: recipient.email,
-            subject,
-            html: bodyHtml,
-            text: bodyText,
-            from,
-          });
-          return {
-            campaign_id: campaign.id,
-            user_id: recipient.user_id,
-            email: recipient.email,
-            name: recipient.name,
-            status: res.success ? "sent" : "failed",
-            sendbyte_id: res.id || null,
-            error: res.success ? null : res.error || "Send failed",
-          };
-        })
-      );
-
-      for (const row of results) {
-        recipientRows.push(row);
-        if (row.status === "sent") sent++;
-        else failed++;
+    const BULK_CHUNK = 500;
+    for (let i = 0; i < recipientRows.length; i += BULK_CHUNK) {
+      const { error: insErr } = await supabaseAdmin
+        .from("email_campaign_recipients")
+        .insert(recipientRows.slice(i, i + BULK_CHUNK));
+      if (insErr) {
+        console.error("[EmailCampaigns] Recipients insert error:", insErr);
       }
     }
 
-    if (recipientRows.length > 0) {
-      const BATCH = 500;
-      for (let i = 0; i < recipientRows.length; i += BATCH) {
-        await supabaseAdmin
-          .from("email_campaign_recipients")
-          .insert(recipientRows.slice(i, i + BATCH));
-      }
-    }
-
-    const { data: updated, error: updateError } = await supabaseAdmin
-      .from("email_campaigns")
-      .update({
-        status: sent > 0 ? "sent" : "failed",
-        sent_count: sent,
-        failed_count: failed,
-      })
-      .eq("id", campaign.id)
-      .select()
-      .single();
-
-    if (updateError) {
-      console.error("[EmailCampaigns] Update error:", updateError);
+    // Build batch distribution breakdown (100 emails per batch)
+    const totalRecipients = recipients.length;
+    const batchSize = 100;
+    const totalBatches = Math.ceil(totalRecipients / batchSize);
+    const batches = [];
+    for (let i = 0; i < totalBatches; i++) {
+      const count = Math.min(batchSize, totalRecipients - i * batchSize);
+      batches.push({
+        batchIndex: i,
+        batchNumber: i + 1,
+        count,
+        status: "queued" as const,
+      });
     }
 
     return NextResponse.json({
-      campaign: updated || { ...campaign, status: sent > 0 ? "sent" : "failed", sent_count: sent, failed_count: failed },
-      sentCount: sent,
-      failedCount: failed,
+      success: true,
+      campaign,
+      totalRecipients,
+      totalBatches,
+      batchSize,
+      batches,
     });
   } catch (err) {
     console.error("[EmailCampaigns] Create error:", err);

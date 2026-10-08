@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import {
   Users, Plus, Search, ShieldCheck, Key, Copy, Check, RefreshCw,
   Trash2, X, AlertTriangle, MessageSquare, Scale, StickyNote,
-  MapPin, CheckCircle2, Ban, Loader2, Sparkles, Phone, Mail
+  MapPin, CheckCircle2, Loader2, Mail, Edit2, Bell
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 
@@ -22,6 +22,22 @@ export interface SupportTeamMember {
   resolved_count: number;
 }
 
+const AVAILABLE_PERMISSIONS = [
+  { id: "resolve_disputes", label: "Dispute Resolution", desc: "Resolve delivery & payment complaints" },
+  { id: "live_chat", label: "Live Customer Chat", desc: "Direct 2-way chat with senders & riders" },
+  { id: "internal_notes", label: "Internal Case Notes", desc: "Audit logs & confidential case notes" },
+  { id: "telemetry_access", label: "Telemetry & Route Audit", desc: "Live GPS tracking & order route inspection" },
+  { id: "sla_monitoring", label: "SLA Monitoring", desc: "Resolution tracking & performance" },
+  { id: "receive_broadcast_alerts", label: "WhatsApp Broadcast Alerts", desc: "Immediate DM alerts with rider contact details on new orders" },
+];
+
+const ROLE_OPTIONS = [
+  "Support Agent",
+  "Dispute Resolution Specialist",
+  "Senior Support Lead",
+  "Customer Experience Executive",
+];
+
 export function SupportTeamTab() {
   const [members, setMembers] = useState<SupportTeamMember[]>([]);
   const [stats, setStats] = useState({ total: 0, active: 0, suspended: 0 });
@@ -29,7 +45,7 @@ export function SupportTeamTab() {
   const [searchQuery, setSearchQuery] = useState("");
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  // Modal states
+  // Modal states - Add
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
@@ -45,6 +61,17 @@ export function SupportTeamTab() {
   ]);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState("");
+
+  // Modal states - Edit
+  const [editingMember, setEditingMember] = useState<SupportTeamMember | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editPhone, setEditPhone] = useState("");
+  const [editEmail, setEditEmail] = useState("");
+  const [editRole, setEditRole] = useState("Support Agent");
+  const [editStatus, setEditStatus] = useState<"active" | "suspended">("active");
+  const [editPermissions, setEditPermissions] = useState<string[]>([]);
+  const [editSubmitting, setEditSubmitting] = useState(false);
+  const [editError, setEditError] = useState("");
 
   // Code Created Success Modal
   const [createdMember, setCreatedMember] = useState<SupportTeamMember | null>(null);
@@ -165,10 +192,72 @@ export function SupportTeamTab() {
       setRole("Support Agent");
       setIsAddModalOpen(false);
       fetchMembers();
-    } catch (err: any) {
-      setFormError(err.message || "Network error");
+    } catch (err: unknown) {
+      setFormError(err instanceof Error ? err.message : "Network error");
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleOpenEdit = (member: SupportTeamMember) => {
+    setEditingMember(member);
+    setEditName(member.name);
+    setEditPhone(member.phone);
+    setEditEmail(member.email || "");
+    setEditRole(member.role || "Support Agent");
+    setEditStatus(member.status || "active");
+    setEditPermissions(Array.isArray(member.permissions) ? [...member.permissions] : []);
+    setEditError("");
+  };
+
+  const toggleEditPermission = (permId: string) => {
+    setEditPermissions((prev) =>
+      prev.includes(permId) ? prev.filter((p) => p !== permId) : [...prev, permId]
+    );
+  };
+
+  const handleSaveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingMember) return;
+    if (!editName.trim()) {
+      setEditError("Agent name is required");
+      return;
+    }
+    if (!editPhone.trim()) {
+      setEditError("Phone number is required");
+      return;
+    }
+
+    setEditSubmitting(true);
+    setEditError("");
+    try {
+      const res = await fetch("/api/admin/support-team", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: editingMember.id,
+          name: editName.trim(),
+          phone: editPhone.trim(),
+          email: editEmail.trim() || null,
+          role: editRole,
+          status: editStatus,
+          permissions: editPermissions,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        setEditError(data.error || "Failed to update member");
+        setEditSubmitting(false);
+        return;
+      }
+
+      setEditingMember(null);
+      fetchMembers();
+    } catch (err: unknown) {
+      setEditError(err instanceof Error ? err.message : "Network error");
+    } finally {
+      setEditSubmitting(false);
     }
   };
 
@@ -306,8 +395,8 @@ export function SupportTeamTab() {
               <thead>
                 <tr className="text-left text-[10px] text-text-muted font-semibold uppercase tracking-wider border-b border-border-light bg-surface-secondary/50">
                   <th className="px-4 py-3 font-semibold">Agent</th>
-                  <th className="px-4 py-3 font-semibold">Role</th>
-                  <th className="px-4 py-3 font-semibold">8-Digit Access Code</th>
+                  <th className="px-4 py-3 font-semibold">Role & Capabilities</th>
+                  <th className="px-4 py-3 font-semibold">WhatsApp Access Code</th>
                   <th className="px-4 py-3 font-semibold">Status</th>
                   <th className="px-4 py-3 font-semibold">Date Added</th>
                   <th className="px-4 py-3 font-semibold text-right">Actions</th>
@@ -316,6 +405,7 @@ export function SupportTeamTab() {
               <tbody className="divide-y divide-border-light">
                 {filteredMembers.map((member) => {
                   const isCopied = copiedId === member.id;
+                  const hasAlerts = member.permissions?.includes("receive_broadcast_alerts");
 
                   return (
                     <tr key={member.id} className="hover:bg-surface-secondary/40 transition-colors">
@@ -328,19 +418,28 @@ export function SupportTeamTab() {
                             <p className="font-semibold text-xs text-text-primary">{member.name}</p>
                             <p className="text-[11px] text-text-muted font-mono">{member.phone}</p>
                             {member.email && (
-                              <p className="text-[10px] text-text-muted">{member.email}</p>
+                              <p className="text-[10px] text-text-muted flex items-center gap-1 mt-0.5">
+                                <Mail size={10} className="text-text-muted/60" /> {member.email}
+                              </p>
                             )}
                           </div>
                         </div>
                       </td>
 
                       <td className="px-4 py-3">
-                        <span className="text-[11px] font-semibold bg-surface-secondary text-text-primary px-2 py-0.5 rounded-full border border-border-light">
-                          {member.role}
-                        </span>
+                        <div className="flex flex-col items-start gap-1">
+                          <span className="text-[11px] font-semibold bg-surface-secondary text-text-primary px-2 py-0.5 rounded-full border border-border-light">
+                            {member.role}
+                          </span>
+                          {hasAlerts && (
+                            <span className="inline-flex items-center gap-1 text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-emerald-50 text-sendme border border-emerald-200" title="Receives WhatsApp alerts when new orders are broadcast to riders">
+                              <Bell size={10} /> Order Alerts
+                            </span>
+                          )}
+                        </div>
                       </td>
 
-                      {/* 8-Digit Access Code */}
+                      {/* WhatsApp Access Code */}
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
                           <span className="font-mono text-xs font-bold text-text-primary bg-surface-secondary border border-border-default px-2.5 py-1 rounded-md tracking-wider shadow-2xs select-all">
@@ -376,6 +475,13 @@ export function SupportTeamTab() {
 
                       <td className="px-4 py-3 text-right">
                         <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            onClick={() => handleOpenEdit(member)}
+                            className="p-1.5 text-text-muted hover:text-sendme hover:bg-surface-secondary rounded transition-colors"
+                            title="Edit Agent Details"
+                          >
+                            <Edit2 size={13} />
+                          </button>
                           <button
                             onClick={() => handleToggleStatus(member.id)}
                             className="text-[11px] font-medium text-text-secondary hover:text-text-primary px-2 py-1 rounded border border-border-default hover:bg-surface-secondary transition-colors"
@@ -525,6 +631,159 @@ export function SupportTeamTab() {
                 >
                   {submitting && <Loader2 size={13} className="animate-spin" />}
                   Generate Access Code & Add
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Support Member Modal */}
+      {editingMember && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-2xs flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden border border-border-default">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-border-light bg-surface-secondary/30">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-sendme-50 text-sendme flex items-center justify-center">
+                  <Edit2 size={16} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-text-primary">Edit Support Team Member</h3>
+                  <p className="text-[11px] text-text-muted">Update agent details, role, status, and permissions</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setEditingMember(null)}
+                className="p-1 text-text-muted hover:text-text-primary rounded-lg"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEdit} className="p-5 space-y-4 max-h-[80vh] overflow-y-auto">
+              {editError && (
+                <div className="p-3 bg-danger-light rounded-lg text-xs text-danger font-medium flex items-center gap-2">
+                  <AlertTriangle size={14} className="shrink-0" />
+                  <span>{editError}</span>
+                </div>
+              )}
+
+              <div>
+                <label className="text-xs font-semibold text-text-primary block mb-1">
+                  Full Name <span className="text-danger">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  className="w-full text-xs text-text-primary bg-surface-secondary border border-border-default rounded-lg px-3 py-2.5 focus:outline-none focus:border-sendme"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-text-primary block mb-1">
+                  WhatsApp Phone Number <span className="text-danger">*</span>
+                </label>
+                <input
+                  type="tel"
+                  value={editPhone}
+                  onChange={(e) => setEditPhone(e.target.value)}
+                  className="w-full text-xs text-text-primary bg-surface-secondary border border-border-default rounded-lg px-3 py-2.5 focus:outline-none focus:border-sendme font-mono"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-text-primary block mb-1">
+                  Email Address <span className="text-text-muted font-normal">(Optional)</span>
+                </label>
+                <input
+                  type="email"
+                  placeholder="e.g. agent@senndme.com"
+                  value={editEmail}
+                  onChange={(e) => setEditEmail(e.target.value)}
+                  className="w-full text-xs text-text-primary bg-surface-secondary border border-border-default rounded-lg px-3 py-2.5 focus:outline-none focus:border-sendme"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-semibold text-text-primary block mb-1">
+                    Role / Team Type
+                  </label>
+                  <select
+                    value={editRole}
+                    onChange={(e) => setEditRole(e.target.value)}
+                    className="w-full text-xs text-text-primary bg-surface-secondary border border-border-default rounded-lg px-3 py-2.5 focus:outline-none focus:border-sendme"
+                  >
+                    {ROLE_OPTIONS.map((r) => (
+                      <option key={r} value={r}>{r}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-text-primary block mb-1">
+                    Status
+                  </label>
+                  <select
+                    value={editStatus}
+                    onChange={(e) => setEditStatus(e.target.value as "active" | "suspended")}
+                    className="w-full text-xs text-text-primary bg-surface-secondary border border-border-default rounded-lg px-3 py-2.5 focus:outline-none focus:border-sendme"
+                  >
+                    <option value="active">Active</option>
+                    <option value="suspended">Suspended</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="pt-2 border-t border-border-light">
+                <p className="text-[11px] font-semibold text-text-muted mb-2">Granted Capabilities / Permissions:</p>
+                <div className="space-y-2">
+                  {AVAILABLE_PERMISSIONS.map((perm) => {
+                    const isChecked = editPermissions.includes(perm.id);
+                    return (
+                      <label
+                        key={perm.id}
+                        onClick={() => toggleEditPermission(perm.id)}
+                        className={`flex items-start gap-2.5 p-2 rounded-lg border cursor-pointer transition-colors ${
+                          isChecked
+                            ? "bg-sendme-50/50 border-sendme/30 text-text-primary"
+                            : "bg-surface-secondary/40 border-border-light text-text-muted hover:bg-surface-secondary"
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => {}} // handled by label onClick
+                          className="mt-0.5 rounded text-sendme focus:ring-sendme accent-sendme"
+                        />
+                        <div className="min-w-0">
+                          <p className="text-xs font-semibold leading-tight">{perm.label}</p>
+                          <p className="text-[10px] text-text-muted mt-0.5">{perm.desc}</p>
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-border-light">
+                <button
+                  type="button"
+                  onClick={() => setEditingMember(null)}
+                  className="px-4 py-2 text-xs font-medium text-text-secondary hover:bg-surface-secondary rounded-lg transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={editSubmitting}
+                  className="flex items-center gap-1.5 px-4 py-2 bg-sendme text-white text-xs font-semibold rounded-lg hover:bg-sendme-dark transition-colors disabled:opacity-50"
+                >
+                  {editSubmitting && <Loader2 size={13} className="animate-spin" />}
+                  Save Changes
                 </button>
               </div>
             </form>

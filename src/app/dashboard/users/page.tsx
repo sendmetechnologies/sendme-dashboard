@@ -5,10 +5,11 @@ import { Card } from "@/components/ui/card"
 import { formatCardValue } from "@/lib/format"
 import { SenderDetail } from "@/components/dashboard/sender-detail"
 import { FilterSelect, StateFilter, DateRangeFilter } from "@/components/dashboard/filters"
+import Link from "next/link"
 import {
   Users, Package, DollarSign, ChevronDown,
   Search, Download, ArrowUpDown, Filter, RotateCcw,
-  ChevronLeft, ChevronRight, Loader2, ShoppingBag
+  ChevronLeft, ChevronRight, Loader2, ShoppingBag, FileSpreadsheet
 } from "lucide-react"
 
 interface SenderRow {
@@ -183,21 +184,30 @@ export default function SendersPage() {
                 )}
               </div>
 
-              <button
-                onClick={() => {
-                  const csv = "data:text/csv;charset=utf-8," + ["Name,Phone,Email,Orders,Total Spent,Status,Joined", ...senders.map(s => `"${s.name}","${s.phone}","${s.email}","${s.orders}","${s.totalSpent}","${s.status}","${s.joined}"`)].join("\n")
-                  const uri = encodeURI(csv)
-                  const link = document.createElement("a")
-                  link.setAttribute("href", uri)
-                  link.setAttribute("download", `sendme-senders-${new Date().toISOString().slice(0, 10)}.csv`)
-                  document.body.appendChild(link)
-                  link.click()
-                  link.remove()
-                }}
-                className="flex items-center gap-1.5 bg-white border border-border-default rounded-lg px-3 py-1.5 text-xs font-medium text-text-primary hover:bg-surface-hover transition-colors"
-              >
-                <Download size={13} className="text-text-muted" /> Export CSV
-              </button>
+              <div className="flex items-center gap-2">
+                <Link
+                  href="/dashboard/csv-export?type=senders"
+                  className="flex items-center gap-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg px-3 py-1.5 text-xs font-semibold hover:bg-emerald-100 transition-colors shadow-2xs"
+                >
+                  <FileSpreadsheet size={13} className="text-emerald-600" /> Template CSV Export
+                </Link>
+
+                <button
+                  onClick={() => {
+                    const csv = "data:text/csv;charset=utf-8," + ["Name,Phone,Email,Orders,Total Spent,Status,Joined", ...senders.map(s => `"${s.name}","${s.phone}","${s.email}","${s.orders}","${s.totalSpent}","${s.status}","${s.joined}"`)].join("\n")
+                    const uri = encodeURI(csv)
+                    const link = document.createElement("a")
+                    link.setAttribute("href", uri)
+                    link.setAttribute("download", `sendme-senders-${new Date().toISOString().slice(0, 10)}.csv`)
+                    document.body.appendChild(link)
+                    link.click()
+                    link.remove()
+                  }}
+                  className="flex items-center gap-1.5 bg-white border border-border-default rounded-lg px-3 py-1.5 text-xs font-medium text-text-primary hover:bg-surface-hover transition-colors"
+                >
+                  <Download size={13} className="text-text-muted" /> Export CSV
+                </button>
+              </div>
             </div>
           </div>
 

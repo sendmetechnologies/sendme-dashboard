@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import Link from "next/link"
 import { Card } from "@/components/ui/card"
 import { formatCardValue } from "@/lib/format"
 import { DriverDetail } from "@/components/dashboard/driver-detail"
@@ -15,7 +16,8 @@ import { usePageRefresh } from "@/hooks/use-page-refresh"
 import {
   Users, CheckCircle, Clock, AlertTriangle, Ban, Wifi, ChevronDown,
   Search, Download, Plus, ArrowUpDown, Filter, RotateCcw,
-  ChevronLeft, ChevronRight, Star, Loader2, DollarSign, MapPin, Navigation
+  ChevronLeft, ChevronRight, Star, Loader2, DollarSign, MapPin, Navigation,
+  FileSpreadsheet
 } from "lucide-react"
 
 interface DriverRow {
@@ -258,6 +260,12 @@ export default function DriversPage() {
                     <span className="truncate">Filtering within {radiusFilter} km of {selectedLocation.label}</span>
                   </div>
                 )}
+                <Link
+                  href="/dashboard/csv-export?type=riders"
+                  className="flex items-center gap-1.5 bg-sendme-50 border border-sendme/30 rounded-lg px-3 py-1.5 text-xs font-semibold text-sendme hover:bg-sendme/10 transition-colors"
+                >
+                  <FileSpreadsheet size={13} /> Template CSV Export
+                </Link>
                 <button
                   onClick={() => {
                     const csv = "data:text/csv;charset=utf-8," + ["Name,Phone,Type,Vehicle,Plate,State,Status,Online,Rating,Trips", ...drivers.map(d => `"${d.name}","${d.phone}","${d.type}","${d.vehicle}","${d.vehiclePlate}","${d.city}","${d.status}","${d.online ? 'Online' : 'Offline'}","${d.rating}","${d.trips}"`)].join("\n")

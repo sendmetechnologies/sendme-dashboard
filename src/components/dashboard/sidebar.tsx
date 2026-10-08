@@ -6,7 +6,7 @@ import {
   LayoutDashboard, Package, MapPin, Calendar, Users, Building2,
   Car, DollarSign, Wallet, AlertCircle, CheckCircle, BarChart3, Bell,
   Settings, ChevronLeft, ChevronRight, Send, HelpCircle, ArrowLeftRight,
-  Megaphone, Trophy, Mail, TrendingUp, ShieldCheck
+  Megaphone, Trophy, Mail, TrendingUp, ShieldCheck, FileSpreadsheet
 } from "lucide-react"
 import { useState, useEffect } from "react"
 
@@ -70,6 +70,7 @@ const navSections: NavSection[] = [
       { name: "Reports & Insights", href: "/dashboard/reports", icon: BarChart3 },
       { name: "Notifications", href: "/dashboard/notifications", icon: Bell },
       { name: "Email Campaigns", href: "/dashboard/email-campaigns", icon: Mail },
+      { name: "CSV Data Export", href: "/dashboard/csv-export", icon: FileSpreadsheet },
     ],
   },
   {
@@ -81,11 +82,42 @@ const navSections: NavSection[] = [
   },
 ]
 
-export function Sidebar() {
+export function Sidebar({ isMobile = false, onCloseMobile }: { isMobile?: boolean; onCloseMobile?: () => void }) {
   const pathname = usePathname()
-  const [collapsed, setCollapsed] = useState(false)
+  // collapsed state: user manually clicked toggle to close sidebar
+  const [isToggledClosed, setIsToggledClosed] = useState(false)
+  // hover state: temporarily expand when cursor enters if toggled closed
+  const [isHovered, setIsHovered] = useState(false)
   const [isAdmin, setIsAdmin] = useState(false)
   const [openComplaints, setOpenComplaints] = useState(0)
+
+  // Load user collapse preference from localStorage on mount (desktop only)
+  useEffect(() => {
+    if (!isMobile) {
+      try {
+        const saved = localStorage.getItem("sendme_sidebar_collapsed")
+        if (saved !== null) {
+          setIsToggledClosed(saved === "true")
+        }
+      } catch {}
+    }
+  }, [isMobile])
+
+  // Effective visual state:
+  // If on mobile: always expanded full width.
+  // If desktop: expanded if NOT toggled closed OR if hovered.
+  // When toggled closed and not hovered: collapsed to mini icon rail (w-[68px]).
+  const isExpanded = isMobile || !isToggledClosed || isHovered
+
+  const handleToggle = () => {
+    setIsToggledClosed((prev) => {
+      const next = !prev
+      try {
+        localStorage.setItem("sendme_sidebar_collapsed", String(next))
+      } catch {}
+      return next
+    })
+  }
 
   useEffect(() => {
     fetch("/api/auth/session")
@@ -102,11 +134,6 @@ export function Sidebar() {
       })
       .catch(() => {})
   }, [])
-
-  const handleLogout = async () => {
-    await fetch("/api/auth/logout", { method: "POST" })
-    window.location.href = "/login"
-  }
 
   const filteredSections = navSections.map((section) => {
     if (section.title === "SYSTEM") {
@@ -130,86 +157,166 @@ export function Sidebar() {
 
   return (
     <aside
-      className={`${
-        collapsed ? "w-[68px]" : "w-60"
-      } bg-white border-r border-border-default flex flex-col shrink-0 transition-all duration-300 hidden lg:flex`}
+      onMouseEnter={() => {
+        if (!isMobile && isToggledClosed) setIsHovered(true)
+      }}
+      onMouseLeave={() => {
+        if (!isMobile && isToggledClosed) setIsHovered(false)
+      }}
+      className={`relative bg-white border-r border-border-default flex flex-col shrink-0 transition-all duration-300 ease-in-out z-30 select-none ${
+        isMobile
+          ? "w-64 h-full"
+          : isExpanded
+          ? "w-64 shadow-lg lg:shadow-none"
+          : "w-[68px]"
+      } ${!isMobile ? "hidden lg:flex" : "flex"}`}
     >
-      {/* Logo */}
-      <div className="h-16 flex items-center gap-3 px-4 border-b border-border-light shrink-0">
-        <div className="w-8 h-8 bg-sendme rounded-lg flex items-center justify-center shrink-0">
-          <Send size={16} className="text-white" />
-        </div>
-        {!collapsed && (
-          <span className="text-text-primary font-bold text-base tracking-tight">
-            Send<span className="text-sendme">Me</span>
-          </span>
+      {/* ── Brand Header & Toggle ── */}
+      <div className="h-16 flex items-center justify-between px-3.5 border-b border-border-light shrink-0">
+        <Link
+          href="/dashboard"
+          className="flex items-center gap-3 overflow-hidden min-w-0 group"
+          onClick={() => isMobile && onCloseMobile?.()}
+        >
+          <div className="w-9 h-9 bg-gradient-to-tr from-[#158A5E] to-[#1CA470] rounded-xl flex items-center justify-center shrink-0 shadow-md shadow-[#158A5E]/20 transition-transform group-hover:scale-105">
+            <Send size={18} className="text-white transform -rotate-12" />
+          </div>
+          <div
+            className={`transition-all duration-200 overflow-hidden whitespace-nowrap ${
+              isExpanded ? "opacity-100 max-w-[160px]" : "opacity-0 max-w-0"
+            }`}
+          >
+            <span className="text-base font-extrabold text-neutral-900 tracking-tight block leading-none">
+              Send<span className="text-[#158A5E]">Me</span>
+            </span>
+            <span className="text-[10px] font-semibold text-neutral-400 uppercase tracking-widest block mt-0.5">
+              Command
+            </span>
+          </div>
+        </Link>
+
+        {/* Toggle Button (Desktop only) */}
+        {!isMobile && (
+          <button
+            type="button"
+            onClick={handleToggle}
+            className={`w-7 h-7 rounded-lg border border-border-default bg-surface-secondary text-text-muted hover:text-text-primary hover:bg-surface-hover flex items-center justify-center transition-all ${
+              isExpanded ? "" : "mx-auto"
+            }`}
+            title={isToggledClosed ? "Pin Sidebar Open" : "Collapse Sidebar"}
+            aria-label="Toggle Sidebar"
+          >
+            {isToggledClosed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+          </button>
         )}
       </div>
 
-      {/* Nav */}
-      <nav className="flex-1 py-4 px-3 overflow-y-auto">
-        {filteredSections.map((section) => (
-          <div key={section.title} className="mb-5">
-            {!collapsed && (
-              <p className="text-[10px] font-semibold text-text-muted uppercase tracking-wider px-3 mb-2">
-                {section.title}
-              </p>
-            )}
-            <div className="space-y-0.5">
-              {section.items.map((item) => {
-                const active = item.href === "/dashboard"
-                  ? pathname === "/dashboard"
-                  : pathname === item.href || pathname.startsWith(item.href + "/")
-                const Icon = item.icon
-                return (
-                  <Link
-                    key={item.name + item.href}
-                    href={item.href}
-                    className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-all text-[13px] font-medium ${
-                      active
-                        ? "bg-sendme-50 text-sendme"
-                        : "text-text-secondary hover:text-text-primary hover:bg-surface-hover"
-                    }`}
-                    title={collapsed ? item.name : undefined}
-                  >
-                    <Icon size={18} className="shrink-0" />
-                    {!collapsed && (
-                      <>
-                        <span className="flex-1">{item.name}</span>
-                        {item.badge && (
-                          <span className="text-[10px] font-semibold bg-danger-light text-danger px-1.5 py-0.5 rounded-full">
-                            {item.badge}
-                          </span>
-                        )}
-                      </>
-                    )}
-                  </Link>
-                )
-              })}
+      {/* ── Nav Links ── */}
+      <nav className="flex-1 py-3 px-2.5 overflow-y-auto overflow-x-hidden space-y-4">
+        {filteredSections.map((section) => {
+          if (section.items.length === 0) return null
+          return (
+            <div key={section.title} className="space-y-1">
+              {/* Section Header */}
+              <div className="h-5 flex items-center px-2.5">
+                {isExpanded ? (
+                  <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider transition-opacity duration-200">
+                    {section.title}
+                  </p>
+                ) : (
+                  <div className="w-full border-t border-neutral-100 my-auto" />
+                )}
+              </div>
+
+              {/* Items */}
+              <div className="space-y-0.5">
+                {section.items.map((item) => {
+                  const active =
+                    item.href === "/dashboard"
+                      ? pathname === "/dashboard"
+                      : pathname === item.href || pathname.startsWith(item.href + "/")
+                  const Icon = item.icon
+
+                  return (
+                    <Link
+                      key={item.name + item.href}
+                      href={item.href}
+                      onClick={() => isMobile && onCloseMobile?.()}
+                      className={`relative flex items-center gap-3 px-2.5 py-2 rounded-xl transition-all text-xs font-semibold group ${
+                        active
+                          ? "bg-[#158A5E]/10 text-[#158A5E]"
+                          : "text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100/80"
+                      }`}
+                      title={!isExpanded ? item.name : undefined}
+                    >
+                      {/* Active Left Indicator Pill */}
+                      {active && (
+                        <span className="absolute left-0 top-1.5 bottom-1.5 w-1 bg-[#158A5E] rounded-r-full" />
+                      )}
+
+                      <div
+                        className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 transition-colors ${
+                          active
+                            ? "text-[#158A5E]"
+                            : "text-neutral-500 group-hover:text-neutral-900"
+                        }`}
+                      >
+                        <Icon size={18} />
+                      </div>
+
+                      {/* Label & Badge: Only visible when isExpanded */}
+                      {isExpanded && (
+                        <div className="flex-1 flex items-center justify-between min-w-0 transition-all duration-200 overflow-hidden whitespace-nowrap">
+                          <span className="truncate">{item.name}</span>
+                          {item.badge && (
+                            <span className="ml-2 text-[10px] font-bold bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full shrink-0">
+                              {item.badge}
+                            </span>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Tooltip on Mini Rail Mode */}
+                      {!isExpanded && (
+                        <div className="fixed left-[72px] scale-0 group-hover:scale-100 transition-transform origin-left z-50 bg-neutral-900 text-white text-xs font-medium px-2.5 py-1 rounded-md shadow-lg pointer-events-none whitespace-nowrap flex items-center gap-1.5">
+                          <span>{item.name}</span>
+                          {item.badge && (
+                            <span className="text-[10px] bg-red-500 text-white px-1.5 py-0.2 rounded-full">
+                              {item.badge}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </Link>
+                  )
+                })}
+              </div>
             </div>
-          </div>
-        ))}
+          )
+        })}
       </nav>
 
-      {/* Help & Support + Collapse */}
-      <div className="border-t border-border-light p-3 space-y-1">
-        {!collapsed && (
-          <Link
-            href="/dashboard/settings"
-            className="flex items-center gap-3 px-3 py-2 rounded-lg text-text-secondary hover:text-text-primary hover:bg-surface-hover transition-all text-[13px] font-medium"
-          >
-            <HelpCircle size={18} className="shrink-0" />
-            <span className="flex-1">Help & Support</span>
-            <ChevronRight size={14} className="shrink-0 text-text-muted" />
-          </Link>
-        )}
-        <button
-          onClick={() => setCollapsed(!collapsed)}
-          className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-text-muted hover:text-text-primary hover:bg-surface-hover transition-all text-[13px] font-medium"
+      {/* ── Footer Quick Actions ── */}
+      <div className="border-t border-border-light p-2.5 space-y-1 shrink-0">
+        <Link
+          href="/dashboard/settings"
+          onClick={() => isMobile && onCloseMobile?.()}
+          className={`flex items-center gap-3 px-2.5 py-2 rounded-xl text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100/80 transition-all text-xs font-medium group ${
+            pathname === "/dashboard/settings" ? "bg-[#158A5E]/10 text-[#158A5E] font-semibold" : ""
+          }`}
+          title={!isExpanded ? "Settings" : undefined}
         >
-          {collapsed ? <ChevronRight size={16} className="shrink-0" /> : <ChevronLeft size={16} className="shrink-0" />}
-          {!collapsed && <span>Collapse</span>}
-        </button>
+          <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 text-neutral-500 group-hover:text-neutral-900">
+            <Settings size={18} />
+          </div>
+          <div
+            className={`flex-1 flex items-center justify-between min-w-0 transition-all duration-200 overflow-hidden whitespace-nowrap ${
+              isExpanded ? "opacity-100 max-w-[200px]" : "opacity-0 max-w-0"
+            }`}
+          >
+            <span className="truncate">Settings & System</span>
+          </div>
+        </Link>
       </div>
     </aside>
   )

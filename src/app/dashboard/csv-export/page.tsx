@@ -36,12 +36,12 @@ const USER_TYPE_OPTIONS = [
 ];
 
 export default function CsvExportPage() {
-  const [userType, setUserType] = useState<string>("riders_unverified");
+  const [userType, setUserType] = useState<string>("all");
   const [requirePhone, setRequirePhone] = useState<boolean>(true);
   const [requireEmail, setRequireEmail] = useState<boolean>(false);
   const [stateFilter, setStateFilter] = useState<string>("all");
-  const [phoneFormat, setPhoneFormat] = useState<"10_digit" | "local" | "international" | "termii">("termii");
-  const [includeHeaders, setIncludeHeaders] = useState<boolean>(true);
+  const [phoneFormat, setPhoneFormat] = useState<"10_digit" | "local" | "international" | "termii">("10_digit");
+  const [includeHeaders, setIncludeHeaders] = useState<boolean>(false);
   const [headerStyle, setHeaderStyle] = useState<"termii" | "standard" | "legacy">("termii");
   const [searchQuery, setSearchQuery] = useState<string>("");
 
@@ -124,6 +124,35 @@ export default function CsvExportPage() {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  // Download reference sample template identical to Termii's provided sample
+  const handleDownloadSampleTemplate = () => {
+    const sampleCsv = `9023118167,chukwuemeka.okafor42@outlook.com,Chukwuemeka Okafor,Alimosho,FALSE,Lagos Island,6348291661
+8145575543,adaeze.adeyemi69@gmail.com,Adaeze Adeyemi,Ajeromi-Ifelodun,TRUE,Victoria Island,1482856470
+8062470387,oluwaseun.nwosu6@outlook.com,Oluwaseun Nwosu,Kosofe,FALSE,Lekki Phase 1,6405259450
+8067091689,fatima.bello97@icloud.com,Fatima Bello,Mushin,TRUE,Surulere,6361737611
+8051592213,emeka.eze36@yahoo.com,Emeka Eze,Oshodi-Isolo,FALSE,Yaba,6846637988
+9011954801,ngozi.ogundimu33@hotmail.com,Ngozi Ogundimu,Ikeja,TRUE,Ikeja,7819296884
+7064836881,tunde.chukwu3@outlook.com,Tunde Chukwu,Surulere,FALSE,Ogba,6577235783
+7064713263,amaka.adesanya78@outlook.com,Amaka Adesanya,Agege,FALSE,Agege,3040302151
+7067999419,segun.onwudiwe86@hotmail.com,Segun Onwudiwe,Eti-Osa,TRUE,Mushin,7683855952
+9015694202,chioma.fashola62@outlook.com,Chioma Fashola,Badagry,TRUE,Oshodi,4322949480
+8137536388,babatunde.okeke44@gmail.com,Babatunde Okeke,Apapa,TRUE,Apapa,1047310695
+9096346629,ifunanya.tinubu43@outlook.com,Ifunanya Tinubu,Lagos Island,TRUE,Festac,9306267808
+8141040558,olumide.nwachukwu12@yahoo.com,Olumide Nwachukwu,Ikorodu,FALSE,Gbagada,3346785015
+8058366739,blessing.obaseki89@yahoo.com,Blessing Obaseki,Epe,TRUE,Ogudu,5469640677
+8023379246,kelechi.obiora23@yahoo.com,Kelechi Obiora,Ibeju-Lekki,TRUE,Maryland,9174086340`;
+
+    const blob = new Blob([sampleCsv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", "termii-sample-template-reference.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="p-4 lg:p-6 space-y-5 max-w-7xl mx-auto">
       {/* Page Header */}
@@ -136,12 +165,21 @@ export default function CsvExportPage() {
             <h1 className="text-xl font-bold text-text-primary">CSV Data Export Hub</h1>
           </div>
           <p className="text-xs text-text-muted mt-1">
-            Export users, riders, senders, and organizations in the exact 7-column CSV template format.
+            Export users, riders, senders, and organizations matching Termii&apos;s exact 7-column SMS campaign template.
           </p>
         </div>
 
         {/* Action buttons */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={handleDownloadSampleTemplate}
+            className="flex items-center gap-1.5 px-3 py-2 bg-white border border-border-default rounded-xl text-xs font-semibold text-text-secondary hover:bg-surface-secondary/80 transition-all shadow-2xs"
+            title="Download the reference 7-column template file from Termii"
+          >
+            <Download size={13} className="text-sendme" />
+            Termii Reference Sample
+          </button>
+
           <button
             onClick={handleCopyClipboard}
             disabled={loading || totalCount === 0}
@@ -168,47 +206,51 @@ export default function CsvExportPage() {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-1">
           <div className="flex items-center gap-1.5 font-bold text-sendme-dark">
             <Info size={14} className="text-sendme shrink-0" />
-            <span>7-Column CSV Alignment (Termii SMS Auto-Mapped):</span>
+            <span>Termii SMS Campaign Template (10-Digit Mobile • 7 Columns • Exact Match):</span>
           </div>
-          <button
-            onClick={() => {
-              setIncludeHeaders(true);
-              setHeaderStyle("termii");
-              setPhoneFormat("termii");
-            }}
-            className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-lg bg-sendme text-white hover:bg-sendme-dark transition-all self-start sm:self-auto shadow-2xs"
-          >
-            <Sparkles size={12} /> Apply Termii Auto-Mapped Preset
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                setIncludeHeaders(false);
+                setPhoneFormat("10_digit");
+              }}
+              className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-lg bg-sendme text-white hover:bg-sendme-dark transition-all shadow-2xs"
+            >
+              <Sparkles size={12} /> Termii Default (No Header, 10-Digit)
+            </button>
+          </div>
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2 mt-2 font-mono text-[11px]">
+        <p className="text-[11px] text-text-muted mb-2">
+          Downloads start directly on line 1 without headers with 10-digit Nigerian numbers (e.g. <span className="font-mono text-sendme font-bold">9023118167</span>). In Termii SMS campaign mapping, Column 1 corresponds to recipient phone numbers.
+        </p>
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2 font-mono text-[11px]">
           <div className="bg-white p-2 rounded-lg border border-border-light text-center">
-            <span className="text-[10px] text-sendme font-bold block">phone_number</span>
-            <span className="font-semibold text-text-primary">234... / 10 Digits</span>
+            <span className="text-[10px] text-sendme font-bold block">Col 1: Phone</span>
+            <span className="font-semibold text-text-primary">9023118167</span>
           </div>
           <div className="bg-white p-2 rounded-lg border border-border-light text-center">
-            <span className="text-[10px] text-text-muted block">email</span>
-            <span className="font-semibold text-text-primary">Email Address</span>
+            <span className="text-[10px] text-text-muted block">Col 2: Email</span>
+            <span className="font-semibold text-text-primary truncate block">user@outlook.com</span>
           </div>
           <div className="bg-white p-2 rounded-lg border border-border-light text-center">
-            <span className="text-[10px] text-text-muted block">name</span>
-            <span className="font-semibold text-text-primary">Full Name</span>
+            <span className="text-[10px] text-text-muted block">Col 3: Full Name</span>
+            <span className="font-semibold text-text-primary">Chukwuemeka O.</span>
           </div>
           <div className="bg-white p-2 rounded-lg border border-border-light text-center">
-            <span className="text-[10px] text-text-muted block">primary_area</span>
-            <span className="font-semibold text-text-primary">Area / LGA</span>
+            <span className="text-[10px] text-text-muted block">Col 4: Primary Area</span>
+            <span className="font-semibold text-text-primary">Alimosho</span>
           </div>
           <div className="bg-white p-2 rounded-lg border border-border-light text-center">
-            <span className="text-[10px] text-text-muted block">status</span>
+            <span className="text-[10px] text-text-muted block">Col 5: Status</span>
             <span className="font-semibold text-sendme">TRUE / FALSE</span>
           </div>
           <div className="bg-white p-2 rounded-lg border border-border-light text-center">
-            <span className="text-[10px] text-text-muted block">secondary_location</span>
-            <span className="font-semibold text-text-primary">Location</span>
+            <span className="text-[10px] text-text-muted block">Col 6: Location</span>
+            <span className="font-semibold text-text-primary">Lagos Island</span>
           </div>
           <div className="bg-white p-2 rounded-lg border border-border-light text-center">
-            <span className="text-[10px] text-text-muted block">account_id</span>
-            <span className="font-semibold text-text-primary">Account ID</span>
+            <span className="text-[10px] text-text-muted block">Col 7: Account ID</span>
+            <span className="font-semibold text-text-primary">6348291661</span>
           </div>
         </div>
       </div>
@@ -299,8 +341,8 @@ export default function CsvExportPage() {
               onChange={(e) => setPhoneFormat(e.target.value as any)}
               className="w-full text-xs text-text-primary bg-surface-secondary border border-border-default rounded-lg px-3 py-2 focus:outline-none focus:border-sendme font-mono"
             >
-              <option value="termii">Termii SMS (2349023118167 - Auto)</option>
-              <option value="10_digit">10 Digits (Template: 9023118167)</option>
+              <option value="10_digit">10 Digits (Termii Template: 9023118167) [Default]</option>
+              <option value="termii">Termii with Country Code (2349023118167)</option>
               <option value="local">Local 11 Digits (09023118167)</option>
               <option value="international">E.164 (+2349023118167)</option>
             </select>
@@ -322,10 +364,10 @@ export default function CsvExportPage() {
               }}
               className="w-full text-xs text-text-primary bg-surface-secondary border border-border-default rounded-lg px-3 py-2 focus:outline-none focus:border-sendme"
             >
-              <option value="termii">Termii Auto-Mapped (phone_number, email...)</option>
-              <option value="standard">Standard (Phone Number, Email, Full Name...)</option>
-              <option value="legacy">Legacy (Phone, Email, Name...)</option>
-              <option value="none">No Header Row (Raw Data Only)</option>
+              <option value="none">No Header Row (Termii Template Default)</option>
+              <option value="termii">Termii Headers (phone_number, email...)</option>
+              <option value="standard">Standard Headers (Phone Number, Email, Full Name...)</option>
+              <option value="legacy">Legacy Headers (Phone, Email, Name...)</option>
             </select>
           </div>
         </div>

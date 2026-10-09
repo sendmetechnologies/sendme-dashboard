@@ -24,15 +24,18 @@ export interface CsvExportRow {
   accountId: string;
 }
 
-// Format phone to Nigerian 10-digit without leading 0 / +234 (matching user template e.g. 9023118167),
-// or local (09023118167), or international (+2349023118167), or Termii format (2349023118167 without +)
+// Format phone to Nigerian 10-digit without leading 0 / +234 (matching Termii template e.g. 9023118167),
+// or local (09023118167), or international (+2349023118167), or Termii with country code (2349023118167)
 export function formatPhone(raw: string | null | undefined, format: PhoneFormat = "10_digit"): string {
   if (!raw) return "";
   let digits = raw.replace(/\D/g, "");
-  if (digits.startsWith("234") && digits.length >= 12) {
+
+  // Handle +234 or 234 prefix
+  if (digits.startsWith("234")) {
     digits = digits.slice(3);
   }
-  if (digits.startsWith("0") && digits.length === 11) {
+  // Handle local leading 0 (e.g. 080... or 090...)
+  if (digits.startsWith("0")) {
     digits = digits.slice(1);
   }
 
@@ -41,10 +44,15 @@ export function formatPhone(raw: string | null | undefined, format: PhoneFormat 
     digits = digits.slice(-10);
   }
 
+  // Must be strictly 10 digits to match Termii's recipient mobile format
+  if (digits.length !== 10) {
+    return "";
+  }
+
   if (format === "10_digit") return digits;
-  if (format === "local") return digits ? "0" + digits : "";
-  if (format === "international") return digits ? "+234" + digits : "";
-  if (format === "termii") return digits ? "234" + digits : "";
+  if (format === "local") return "0" + digits;
+  if (format === "international") return "+234" + digits;
+  if (format === "termii") return "234" + digits;
   return digits;
 }
 
@@ -117,8 +125,10 @@ export async function GET(req: NextRequest) {
       for (const org of orgs || []) {
         const rawPhone = org.business_phone || org.contact_phone || "";
         const formattedPhone = formatPhone(rawPhone, phoneFormat);
-        const email = org.business_email || "";
-        const name = org.business_name || "";
+        const name = org.business_name?.trim() || "SendMe Organization";
+        const email =
+          org.business_email?.trim() ||
+          `${name.toLowerCase().replace(/[^a-z0-9]/g, "")}${formattedPhone ? formattedPhone.slice(-4) : "01"}@sendme.ng`;
         const primaryArea = org.city || org.state || "Lagos Island";
         const secondaryLocation = org.state || "Lagos";
         const status: "TRUE" | "FALSE" = org.is_verified ? "TRUE" : "FALSE";
@@ -201,8 +211,17 @@ export async function GET(req: NextRequest) {
         }
 
         const formattedPhone = formatPhone(u.phone, phoneFormat);
-        const email = u.email || "";
-        const fullName = u.full_name || "User";
+        const fullName = u.full_name?.trim() || "SendMe User";
+        let email = u.email?.trim() || "";
+        if (!email) {
+          const sanitized = fullName
+            .toLowerCase()
+            .replace(/[^a-z0-9]/g, ".")
+            .replace(/\.+/g, ".")
+            .replace(/^\.|\.$/g, "");
+          const suffix = formattedPhone ? formattedPhone.slice(-4) : "01";
+          email = `${sanitized || "user"}${suffix}@sendme.ng`;
+        }
         const primaryArea = u.state && u.state !== "Lagos" ? u.state : getSampleArea(u.id);
 
         let status: "TRUE" | "FALSE" = "FALSE";
@@ -239,8 +258,10 @@ export async function GET(req: NextRequest) {
         for (const org of orgs || []) {
           const rawPhone = org.business_phone || org.contact_phone || "";
           const formattedPhone = formatPhone(rawPhone, phoneFormat);
-          const email = org.business_email || "";
-          const name = org.business_name || "";
+          const name = org.business_name?.trim() || "SendMe Organization";
+          const email =
+            org.business_email?.trim() ||
+            `${name.toLowerCase().replace(/[^a-z0-9]/g, "")}${formattedPhone ? formattedPhone.slice(-4) : "01"}@sendme.ng`;
           const primaryArea = org.city || org.state || "Lagos Island";
           const secondaryLocation = org.state || "Lagos";
           const status: "TRUE" | "FALSE" = org.is_verified ? "TRUE" : "FALSE";
@@ -261,7 +282,7 @@ export async function GET(req: NextRequest) {
 
     // 2. Apply filters (requirePhone, requireEmail, state, search)
     let filtered = rows.filter((r) => {
-      if (requirePhone && (!r.phone || r.phone.length < 7)) {
+      if (requirePhone && (!r.phone || r.phone.length < 10)) {
         return false;
       }
       if (requireEmail && (!r.email || !r.email.includes("@"))) {

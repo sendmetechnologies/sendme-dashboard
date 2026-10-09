@@ -12,7 +12,7 @@ export type CsvUserType =
   | "riders_unverified"
   | "org";
 
-export type PhoneFormat = "10_digit" | "local" | "international";
+export type PhoneFormat = "10_digit" | "local" | "international" | "termii";
 
 export interface CsvExportRow {
   phone: string;
@@ -25,7 +25,7 @@ export interface CsvExportRow {
 }
 
 // Format phone to Nigerian 10-digit without leading 0 / +234 (matching user template e.g. 9023118167),
-// or local (09023118167), or international (+2349023118167)
+// or local (09023118167), or international (+2349023118167), or Termii format (2349023118167 without +)
 export function formatPhone(raw: string | null | undefined, format: PhoneFormat = "10_digit"): string {
   if (!raw) return "";
   let digits = raw.replace(/\D/g, "");
@@ -44,6 +44,7 @@ export function formatPhone(raw: string | null | undefined, format: PhoneFormat 
   if (format === "10_digit") return digits;
   if (format === "local") return digits ? "0" + digits : "";
   if (format === "international") return digits ? "+234" + digits : "";
+  if (format === "termii") return digits ? "234" + digits : "";
   return digits;
 }
 
@@ -288,11 +289,18 @@ export async function GET(req: NextRequest) {
       return true;
     });
 
-    // 3. Format into CSV lines matching the user's template:
-    // Phone,Email,FullName,PrimaryArea,Status,SecondaryLocation,AccountId
+    // 3. Format into CSV lines matching the template
+    // Termii auto-detects `phone_number` or `Phone Number`
+    const headerStyle = searchParams.get("headerStyle") || "termii";
     const csvLines: string[] = [];
     if (includeHeaders) {
-      csvLines.push("Phone,Email,Name,Area,Status,Location,AccountID");
+      if (headerStyle === "termii") {
+        csvLines.push("phone_number,email,name,primary_area,status,secondary_location,account_id");
+      } else if (headerStyle === "standard") {
+        csvLines.push("Phone Number,Email,Full Name,Primary Area,Status,Secondary Location,Account ID");
+      } else {
+        csvLines.push("Phone,Email,Name,Area,Status,Location,AccountID");
+      }
     }
 
     for (const r of filtered) {

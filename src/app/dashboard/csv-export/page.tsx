@@ -40,8 +40,9 @@ export default function CsvExportPage() {
   const [requirePhone, setRequirePhone] = useState<boolean>(true);
   const [requireEmail, setRequireEmail] = useState<boolean>(false);
   const [stateFilter, setStateFilter] = useState<string>("all");
-  const [phoneFormat, setPhoneFormat] = useState<"10_digit" | "local" | "international">("10_digit");
-  const [includeHeaders, setIncludeHeaders] = useState<boolean>(false);
+  const [phoneFormat, setPhoneFormat] = useState<"10_digit" | "local" | "international" | "termii">("termii");
+  const [includeHeaders, setIncludeHeaders] = useState<boolean>(true);
+  const [headerStyle, setHeaderStyle] = useState<"termii" | "standard" | "legacy">("termii");
   const [searchQuery, setSearchQuery] = useState<string>("");
 
   const [loading, setLoading] = useState<boolean>(true);
@@ -64,6 +65,7 @@ export default function CsvExportPage() {
         state: stateFilter,
         phoneFormat,
         includeHeaders: String(includeHeaders),
+        headerStyle,
         format: "json",
       });
 
@@ -84,7 +86,7 @@ export default function CsvExportPage() {
     } finally {
       setLoading(false);
     }
-  }, [userType, requirePhone, requireEmail, stateFilter, phoneFormat, includeHeaders, searchQuery]);
+  }, [userType, requirePhone, requireEmail, stateFilter, phoneFormat, includeHeaders, headerStyle, searchQuery]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -163,37 +165,49 @@ export default function CsvExportPage() {
 
       {/* Template Format Banner */}
       <div className="bg-emerald-50/70 border border-sendme/20 rounded-xl p-3.5 text-xs text-text-secondary">
-        <div className="flex items-center gap-1.5 font-bold text-sendme-dark mb-1">
-          <Info size={14} className="text-sendme shrink-0" />
-          <span>7-Column CSV Template Alignment:</span>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-1">
+          <div className="flex items-center gap-1.5 font-bold text-sendme-dark">
+            <Info size={14} className="text-sendme shrink-0" />
+            <span>7-Column CSV Alignment (Termii SMS Auto-Mapped):</span>
+          </div>
+          <button
+            onClick={() => {
+              setIncludeHeaders(true);
+              setHeaderStyle("termii");
+              setPhoneFormat("termii");
+            }}
+            className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-lg bg-sendme text-white hover:bg-sendme-dark transition-all self-start sm:self-auto shadow-2xs"
+          >
+            <Sparkles size={12} /> Apply Termii Auto-Mapped Preset
+          </button>
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2 mt-2 font-mono text-[11px]">
           <div className="bg-white p-2 rounded-lg border border-border-light text-center">
-            <span className="text-[10px] text-text-muted block">Col 1</span>
-            <span className="font-semibold text-text-primary">Phone (10 Digits)</span>
+            <span className="text-[10px] text-sendme font-bold block">phone_number</span>
+            <span className="font-semibold text-text-primary">234... / 10 Digits</span>
           </div>
           <div className="bg-white p-2 rounded-lg border border-border-light text-center">
-            <span className="text-[10px] text-text-muted block">Col 2</span>
+            <span className="text-[10px] text-text-muted block">email</span>
             <span className="font-semibold text-text-primary">Email Address</span>
           </div>
           <div className="bg-white p-2 rounded-lg border border-border-light text-center">
-            <span className="text-[10px] text-text-muted block">Col 3</span>
+            <span className="text-[10px] text-text-muted block">name</span>
             <span className="font-semibold text-text-primary">Full Name</span>
           </div>
           <div className="bg-white p-2 rounded-lg border border-border-light text-center">
-            <span className="text-[10px] text-text-muted block">Col 4</span>
+            <span className="text-[10px] text-text-muted block">primary_area</span>
             <span className="font-semibold text-text-primary">Area / LGA</span>
           </div>
           <div className="bg-white p-2 rounded-lg border border-border-light text-center">
-            <span className="text-[10px] text-text-muted block">Col 5</span>
-            <span className="font-semibold text-sendme">Status (TRUE/FALSE)</span>
+            <span className="text-[10px] text-text-muted block">status</span>
+            <span className="font-semibold text-sendme">TRUE / FALSE</span>
           </div>
           <div className="bg-white p-2 rounded-lg border border-border-light text-center">
-            <span className="text-[10px] text-text-muted block">Col 6</span>
-            <span className="font-semibold text-text-primary">Destination/Location</span>
+            <span className="text-[10px] text-text-muted block">secondary_location</span>
+            <span className="font-semibold text-text-primary">Location</span>
           </div>
           <div className="bg-white p-2 rounded-lg border border-border-light text-center">
-            <span className="text-[10px] text-text-muted block">Col 7</span>
+            <span className="text-[10px] text-text-muted block">account_id</span>
             <span className="font-semibold text-text-primary">Account ID</span>
           </div>
         </div>
@@ -285,6 +299,7 @@ export default function CsvExportPage() {
               onChange={(e) => setPhoneFormat(e.target.value as any)}
               className="w-full text-xs text-text-primary bg-surface-secondary border border-border-default rounded-lg px-3 py-2 focus:outline-none focus:border-sendme font-mono"
             >
+              <option value="termii">Termii SMS (2349023118167 - Auto)</option>
               <option value="10_digit">10 Digits (Template: 9023118167)</option>
               <option value="local">Local 11 Digits (09023118167)</option>
               <option value="international">E.164 (+2349023118167)</option>
@@ -295,12 +310,22 @@ export default function CsvExportPage() {
           <div>
             <label className="text-[11px] font-medium text-text-secondary block mb-1">CSV Header Row</label>
             <select
-              value={String(includeHeaders)}
-              onChange={(e) => setIncludeHeaders(e.target.value === "true")}
+              value={!includeHeaders ? "none" : headerStyle}
+              onChange={(e) => {
+                const val = e.target.value;
+                if (val === "none") {
+                  setIncludeHeaders(false);
+                } else {
+                  setIncludeHeaders(true);
+                  setHeaderStyle(val as any);
+                }
+              }}
               className="w-full text-xs text-text-primary bg-surface-secondary border border-border-default rounded-lg px-3 py-2 focus:outline-none focus:border-sendme"
             >
-              <option value="false">No Header Row (Matches Uploaded Template)</option>
-              <option value="true">Include Header (Phone, Email, Name...)</option>
+              <option value="termii">Termii Auto-Mapped (phone_number, email...)</option>
+              <option value="standard">Standard (Phone Number, Email, Full Name...)</option>
+              <option value="legacy">Legacy (Phone, Email, Name...)</option>
+              <option value="none">No Header Row (Raw Data Only)</option>
             </select>
           </div>
         </div>

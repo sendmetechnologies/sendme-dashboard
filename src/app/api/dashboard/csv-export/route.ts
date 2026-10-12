@@ -13,6 +13,7 @@ export type CsvUserType =
   | "org";
 
 export type PhoneFormat = "10_digit" | "local" | "international" | "termii";
+export type CsvSchema = "termii_engage" | "classic_7col";
 
 export interface CsvExportRow {
   phone: string;
@@ -22,6 +23,8 @@ export interface CsvExportRow {
   status: "TRUE" | "FALSE";
   secondaryLocation: string;
   accountId: string;
+  deviceTokens: string;
+  dataSource: string;
 }
 
 // Format phone to Nigerian 10-digit without leading 0 / +234 (matching Termii template e.g. 9023118167),
@@ -100,12 +103,17 @@ export async function GET(req: NextRequest) {
 
     const { searchParams } = new URL(req.url);
     const type = (searchParams.get("type") || "all") as CsvUserType;
+    const schema = (searchParams.get("schema") || "termii_engage") as CsvSchema;
     const requirePhone = searchParams.get("requirePhone") !== "false";
     const requireEmail = searchParams.get("requireEmail") === "true";
     const stateFilter = searchParams.get("state")?.trim() || null;
     const search = searchParams.get("search")?.trim().toLowerCase() || null;
     const phoneFormat = (searchParams.get("phoneFormat") || "10_digit") as PhoneFormat;
-    const includeHeaders = searchParams.get("includeHeaders") === "true";
+    // For termii_engage schema, includeHeaders defaults to true for direct attribute mapping; otherwise false
+    const hasIncludeHeadersParam = searchParams.has("includeHeaders");
+    const includeHeaders = hasIncludeHeadersParam
+      ? searchParams.get("includeHeaders") === "true"
+      : schema === "termii_engage";
     const outputFormat = searchParams.get("format") || "json";
 
     const rows: CsvExportRow[] = [];
@@ -142,6 +150,8 @@ export async function GET(req: NextRequest) {
           status,
           secondaryLocation,
           accountId,
+          deviceTokens: "",
+          dataSource: "SendMe Web Portal",
         });
       }
     } else {
@@ -161,7 +171,7 @@ export async function GET(req: NextRequest) {
       let q = supabaseAdmin
         .from("users")
         .select(`
-          id, full_name, phone, email, state, role, is_suspended, is_deleted, created_at,
+          id, full_name, phone, email, state, role, is_suspended, is_deleted, created_at, push_token,
           driver_profiles(verification_status, is_online, vehicle_info, rating, is_suspended)
         `)
         .order("created_at", { ascending: false });
@@ -236,6 +246,8 @@ export async function GET(req: NextRequest) {
 
         const secondaryLocation = getSecondaryLocation(u.id);
         const accountId = getDeterministicAccountId(u.id);
+        const deviceTokens = (u as any).push_token || "";
+        const dataSource = u.role === "driver" ? "SendMe Rider App" : "SendMe Customer App";
 
         rows.push({
           phone: formattedPhone,
@@ -245,6 +257,8 @@ export async function GET(req: NextRequest) {
           status,
           secondaryLocation,
           accountId,
+          deviceTokens,
+          dataSource,
         });
       }
 
@@ -275,6 +289,8 @@ export async function GET(req: NextRequest) {
             status,
             secondaryLocation,
             accountId,
+            deviceTokens: "",
+            dataSource: "SendMe Web Portal",
           });
         }
       }
@@ -310,46 +326,65 @@ export async function GET(req: NextRequest) {
       return true;
     });
 
-    // 3. Format into CSV lines matching the template
-    // Termii auto-detects `phone_number` or `Phone Number`
-    const headerStyle = searchParams.get("headerStyle") || "termii";
+    // 3. Format into CSV lines matching the selected schema
     const csvLines: string[] = [];
-    if (includeHeaders) {
-      if (headerStyle === "termii") {
-        csvLines.push("phone_number,email,name,primary_area,status,secondary_location,account_id");
-      } else if (headerStyle === "standard") {
-        csvLines.push("Phone Number,Email,Full Name,Primary Area,Status,Secondary Location,Account ID");
-      } else {
-        csvLines.push("Phone,Email,Name,Area,Status,Location,AccountID");
+    const escape = (val: string) => {
+      if (!val) return "";
+      if (val.includes(",") || val.includes('"') || val.includes("\n")) {
+        return `"${val.replace(/"/g, '""')}"`;
       }
-    }
+      return val;
+    };
 
-    for (const r of filtered) {
-      // Escape commas or quotes in values
-      const escape = (val: string) => {
-        if (!val) return "";
-        if (val.includes(",") || val.includes('"') || val.includes("\n")) {
-          return `"${val.replace(/"/g, '""')}"`;
+    if (schema === "termii_engage") {
+      // 5-Attribute Termii Engage Schema (Exact attribute names matching Termii)
+      if (includeHeaders) {
+        csvLines.push("Phone Number,Customer Name,Email,Device Tokens,Data Source");
+      }
+
+      for (const r of filtered) {
+        csvLines.push([
+          escape(r.phone),
+          escape(r.fullName),
+          escape(r.email),
+          escape(r.deviceTokens),
+          escape(r.dataSource),
+        ].join(","));
+      }
+    } else {
+      // Classic 7-Column Schema
+      const headerStyle = searchParams.get("headerStyle") || "termii";
+      if (includeHeaders) {
+        if (headerStyle === "termii") {
+          csvLines.push("phone_number,email,name,primary_area,status,secondary_location,account_id");
+        } else if (headerStyle === "standard") {
+          csvLines.push("Phone Number,Email,Full Name,Primary Area,Status,Secondary Location,Account ID");
+        } else {
+          csvLines.push("Phone,Email,Name,Area,Status,Location,AccountID");
         }
-        return val;
-      };
+      }
 
-      csvLines.push([
-        escape(r.phone),
-        escape(r.email),
-        escape(r.fullName),
-        escape(r.primaryArea),
-        r.status,
-        escape(r.secondaryLocation),
-        r.accountId,
-      ].join(","));
+      for (const r of filtered) {
+        csvLines.push([
+          escape(r.phone),
+          escape(r.email),
+          escape(r.fullName),
+          escape(r.primaryArea),
+          r.status,
+          escape(r.secondaryLocation),
+          r.accountId,
+        ].join(","));
+      }
     }
 
     const csvContent = csvLines.join("\n");
 
     // Return as CSV file download if requested
     if (outputFormat === "csv") {
-      const filename = `sendme-${type}-${new Date().toISOString().slice(0, 10)}.csv`;
+      const filename =
+        schema === "termii_engage"
+          ? `sendme-termii-engage-${type}-${new Date().toISOString().slice(0, 10)}.csv`
+          : `sendme-${type}-${new Date().toISOString().slice(0, 10)}.csv`;
       return new NextResponse(csvContent, {
         headers: {
           "Content-Type": "text/csv; charset=utf-8",
@@ -362,11 +397,13 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       success: true,
       type,
+      schema,
       totalCount: filtered.length,
       stats: {
         total: filtered.length,
-        withPhone: filtered.filter((r) => r.phone && r.phone.length >= 7).length,
+        withPhone: filtered.filter((r) => r.phone && r.phone.length >= 10).length,
         withEmail: filtered.filter((r) => r.email && r.email.includes("@")).length,
+        withPushToken: filtered.filter((r) => r.deviceTokens && r.deviceTokens.length > 5).length,
       },
       previewRows: filtered.slice(0, 50),
       csvContent,

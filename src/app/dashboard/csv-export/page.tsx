@@ -16,12 +16,15 @@ interface CsvPreviewRow {
   status: "TRUE" | "FALSE";
   secondaryLocation: string;
   accountId: string;
+  deviceTokens: string;
+  dataSource: string;
 }
 
 interface ExportStats {
   total: number;
   withPhone: number;
   withEmail: number;
+  withPushToken?: number;
 }
 
 const USER_TYPE_OPTIONS = [
@@ -36,19 +39,20 @@ const USER_TYPE_OPTIONS = [
 ];
 
 export default function CsvExportPage() {
+  const [schema, setSchema] = useState<"termii_engage" | "classic_7col">("termii_engage");
   const [userType, setUserType] = useState<string>("all");
   const [requirePhone, setRequirePhone] = useState<boolean>(true);
   const [requireEmail, setRequireEmail] = useState<boolean>(false);
   const [stateFilter, setStateFilter] = useState<string>("all");
   const [phoneFormat, setPhoneFormat] = useState<"10_digit" | "local" | "international" | "termii">("10_digit");
-  const [includeHeaders, setIncludeHeaders] = useState<boolean>(false);
+  const [includeHeaders, setIncludeHeaders] = useState<boolean>(true);
   const [headerStyle, setHeaderStyle] = useState<"termii" | "standard" | "legacy">("termii");
   const [searchQuery, setSearchQuery] = useState<string>("");
 
   const [loading, setLoading] = useState<boolean>(true);
   const [previewRows, setPreviewRows] = useState<CsvPreviewRow[]>([]);
   const [totalCount, setTotalCount] = useState<number>(0);
-  const [stats, setStats] = useState<ExportStats>({ total: 0, withPhone: 0, withEmail: 0 });
+  const [stats, setStats] = useState<ExportStats>({ total: 0, withPhone: 0, withEmail: 0, withPushToken: 0 });
   const [csvContent, setCsvContent] = useState<string>("");
 
   const [downloading, setDownloading] = useState<boolean>(false);
@@ -60,6 +64,7 @@ export default function CsvExportPage() {
     try {
       const params = new URLSearchParams({
         type: userType,
+        schema,
         requirePhone: String(requirePhone),
         requireEmail: String(requireEmail),
         state: stateFilter,
@@ -78,7 +83,7 @@ export default function CsvExportPage() {
         const data = await res.json();
         setPreviewRows(data.previewRows || []);
         setTotalCount(data.totalCount || 0);
-        setStats(data.stats || { total: 0, withPhone: 0, withEmail: 0 });
+        setStats(data.stats || { total: 0, withPhone: 0, withEmail: 0, withPushToken: 0 });
         setCsvContent(data.csvContent || "");
       }
     } catch (err) {
@@ -86,7 +91,7 @@ export default function CsvExportPage() {
     } finally {
       setLoading(false);
     }
-  }, [userType, requirePhone, requireEmail, stateFilter, phoneFormat, includeHeaders, headerStyle, searchQuery]);
+  }, [userType, schema, requirePhone, requireEmail, stateFilter, phoneFormat, includeHeaders, headerStyle, searchQuery]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -102,7 +107,8 @@ export default function CsvExportPage() {
       const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
-      const filename = `sendme-${userType}-${new Date().toISOString().slice(0, 10)}.csv`;
+      const prefix = schema === "termii_engage" ? "sendme-termii-engage" : "sendme-logistics";
+      const filename = `${prefix}-${userType}-${new Date().toISOString().slice(0, 10)}.csv`;
       link.setAttribute("href", url);
       link.setAttribute("download", filename);
       document.body.appendChild(link);
@@ -201,14 +207,102 @@ export default function CsvExportPage() {
         </div>
       </div>
 
-      {/* Template Format Banner */}
-      <div className="bg-emerald-50/70 border border-sendme/20 rounded-xl p-3.5 text-xs text-text-secondary">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-1">
-          <div className="flex items-center gap-1.5 font-bold text-sendme-dark">
-            <Info size={14} className="text-sendme shrink-0" />
-            <span>Termii SMS Campaign Template (10-Digit Mobile • 7 Columns • Exact Match):</span>
+      {/* Schema Mode Selector */}
+      <div className="bg-white p-2 rounded-2xl border border-border-default shadow-2xs grid grid-cols-1 md:grid-cols-2 gap-2.5">
+        <button
+          onClick={() => {
+            setSchema("termii_engage");
+            setIncludeHeaders(true);
+          }}
+          className={`p-3.5 rounded-xl text-left transition-all border ${
+            schema === "termii_engage"
+              ? "bg-emerald-50/90 border-sendme text-sendme-dark shadow-2xs"
+              : "bg-surface-secondary/40 border-transparent hover:bg-surface-secondary text-text-secondary"
+          }`}
+        >
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="font-bold text-xs flex items-center gap-1.5 text-sendme">
+              <Sparkles size={14} /> Termii Engage Format (5 Attributes)
+            </span>
+            <span className="text-[10px] bg-sendme text-white font-bold px-2 py-0.5 rounded-full">
+              Recommended • Active in Your Termii
+            </span>
           </div>
-          <div className="flex items-center gap-2">
+          <p className="text-[11px] text-text-muted leading-relaxed">
+            <span className="font-mono font-semibold text-text-primary">Phone Number • Customer Name • Email • Device Tokens • Data Source</span>. Direct 1:1 auto-mapping with Termii Customer Attributes table.
+          </p>
+        </button>
+
+        <button
+          onClick={() => {
+            setSchema("classic_7col");
+            setIncludeHeaders(false);
+          }}
+          className={`p-3.5 rounded-xl text-left transition-all border ${
+            schema === "classic_7col"
+              ? "bg-emerald-50/90 border-sendme text-sendme-dark shadow-2xs"
+              : "bg-surface-secondary/40 border-transparent hover:bg-surface-secondary text-text-secondary"
+          }`}
+        >
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="font-bold text-xs flex items-center gap-1.5 text-text-primary">
+              <FileSpreadsheet size={14} className="text-text-muted" /> Classic Template (7 Attributes)
+            </span>
+            <span className="text-[10px] bg-slate-200 text-slate-700 font-semibold px-2 py-0.5 rounded-full">
+              Full Logistics
+            </span>
+          </div>
+          <p className="text-[11px] text-text-muted leading-relaxed">
+            <span className="font-mono font-semibold text-text-primary">Phone • Email • Name • Primary Area • Status • Secondary Location • Account ID</span>.
+          </p>
+        </button>
+      </div>
+
+      {/* Dynamic Template Format Banner */}
+      {schema === "termii_engage" ? (
+        <div className="bg-emerald-50/70 border border-sendme/20 rounded-xl p-3.5 text-xs text-text-secondary">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-1">
+            <div className="flex items-center gap-1.5 font-bold text-sendme-dark">
+              <Info size={14} className="text-sendme shrink-0" />
+              <span>Termii Engage 5-Attribute Alignment (Matches Your Termii Screen):</span>
+            </div>
+            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-sendme bg-white px-2 py-0.5 rounded border border-sendme/30 shadow-2xs">
+              <Check size={13} /> 100% Auto-Maps in Termii Engage
+            </span>
+          </div>
+          <p className="text-[11px] text-text-muted mb-2">
+            Headers match your configured Termii attributes directly. Termii maps each column without errors:
+          </p>
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 font-mono text-[11px]">
+            <div className="bg-white p-2 rounded-lg border border-border-light text-center">
+              <span className="text-[10px] text-sendme font-bold block">Phone Number (PK)</span>
+              <span className="font-semibold text-text-primary">9023118167</span>
+            </div>
+            <div className="bg-white p-2 rounded-lg border border-border-light text-center">
+              <span className="text-[10px] text-text-muted block">Customer Name (PK)</span>
+              <span className="font-semibold text-text-primary truncate block">Chukwuemeka O.</span>
+            </div>
+            <div className="bg-white p-2 rounded-lg border border-border-light text-center">
+              <span className="text-[10px] text-text-muted block">Email (PK)</span>
+              <span className="font-semibold text-text-primary truncate block">user@sendme.ng</span>
+            </div>
+            <div className="bg-white p-2 rounded-lg border border-border-light text-center">
+              <span className="text-[10px] text-text-muted block">Device Tokens</span>
+              <span className="font-semibold text-text-primary truncate block">ExponentPush...</span>
+            </div>
+            <div className="bg-white p-2 rounded-lg border border-border-light text-center">
+              <span className="text-[10px] text-sendme font-bold block">Data Source</span>
+              <span className="font-semibold text-sendme">SendMe App</span>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="bg-emerald-50/70 border border-sendme/20 rounded-xl p-3.5 text-xs text-text-secondary">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-1">
+            <div className="flex items-center gap-1.5 font-bold text-sendme-dark">
+              <Info size={14} className="text-sendme shrink-0" />
+              <span>Classic 7-Column Template (Sample Structure):</span>
+            </div>
             <button
               onClick={() => {
                 setIncludeHeaders(false);
@@ -216,44 +310,44 @@ export default function CsvExportPage() {
               }}
               className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-lg bg-sendme text-white hover:bg-sendme-dark transition-all shadow-2xs"
             >
-              <Sparkles size={12} /> Termii Default (No Header, 10-Digit)
+              <Sparkles size={12} /> No Header, 10-Digit
             </button>
           </div>
+          <p className="text-[11px] text-text-muted mb-2">
+            7-column delivery app logistics template:
+          </p>
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2 font-mono text-[11px]">
+            <div className="bg-white p-2 rounded-lg border border-border-light text-center">
+              <span className="text-[10px] text-sendme font-bold block">Col 1: Phone</span>
+              <span className="font-semibold text-text-primary">9023118167</span>
+            </div>
+            <div className="bg-white p-2 rounded-lg border border-border-light text-center">
+              <span className="text-[10px] text-text-muted block">Col 2: Email</span>
+              <span className="font-semibold text-text-primary truncate block">user@outlook.com</span>
+            </div>
+            <div className="bg-white p-2 rounded-lg border border-border-light text-center">
+              <span className="text-[10px] text-text-muted block">Col 3: Full Name</span>
+              <span className="font-semibold text-text-primary">Chukwuemeka O.</span>
+            </div>
+            <div className="bg-white p-2 rounded-lg border border-border-light text-center">
+              <span className="text-[10px] text-text-muted block">Col 4: Primary Area</span>
+              <span className="font-semibold text-text-primary">Alimosho</span>
+            </div>
+            <div className="bg-white p-2 rounded-lg border border-border-light text-center">
+              <span className="text-[10px] text-text-muted block">Col 5: Status</span>
+              <span className="font-semibold text-sendme">TRUE / FALSE</span>
+            </div>
+            <div className="bg-white p-2 rounded-lg border border-border-light text-center">
+              <span className="text-[10px] text-text-muted block">Col 6: Location</span>
+              <span className="font-semibold text-text-primary">Lagos Island</span>
+            </div>
+            <div className="bg-white p-2 rounded-lg border border-border-light text-center">
+              <span className="text-[10px] text-text-muted block">Col 7: Account ID</span>
+              <span className="font-semibold text-text-primary">6348291661</span>
+            </div>
+          </div>
         </div>
-        <p className="text-[11px] text-text-muted mb-2">
-          Downloads start directly on line 1 without headers with 10-digit Nigerian numbers (e.g. <span className="font-mono text-sendme font-bold">9023118167</span>). In Termii SMS campaign mapping, Column 1 corresponds to recipient phone numbers.
-        </p>
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2 font-mono text-[11px]">
-          <div className="bg-white p-2 rounded-lg border border-border-light text-center">
-            <span className="text-[10px] text-sendme font-bold block">Col 1: Phone</span>
-            <span className="font-semibold text-text-primary">9023118167</span>
-          </div>
-          <div className="bg-white p-2 rounded-lg border border-border-light text-center">
-            <span className="text-[10px] text-text-muted block">Col 2: Email</span>
-            <span className="font-semibold text-text-primary truncate block">user@outlook.com</span>
-          </div>
-          <div className="bg-white p-2 rounded-lg border border-border-light text-center">
-            <span className="text-[10px] text-text-muted block">Col 3: Full Name</span>
-            <span className="font-semibold text-text-primary">Chukwuemeka O.</span>
-          </div>
-          <div className="bg-white p-2 rounded-lg border border-border-light text-center">
-            <span className="text-[10px] text-text-muted block">Col 4: Primary Area</span>
-            <span className="font-semibold text-text-primary">Alimosho</span>
-          </div>
-          <div className="bg-white p-2 rounded-lg border border-border-light text-center">
-            <span className="text-[10px] text-text-muted block">Col 5: Status</span>
-            <span className="font-semibold text-sendme">TRUE / FALSE</span>
-          </div>
-          <div className="bg-white p-2 rounded-lg border border-border-light text-center">
-            <span className="text-[10px] text-text-muted block">Col 6: Location</span>
-            <span className="font-semibold text-text-primary">Lagos Island</span>
-          </div>
-          <div className="bg-white p-2 rounded-lg border border-border-light text-center">
-            <span className="text-[10px] text-text-muted block">Col 7: Account ID</span>
-            <span className="font-semibold text-text-primary">6348291661</span>
-          </div>
-        </div>
-      </div>
+      )}
 
       {/* User Type Selection Tabs */}
       <div>
@@ -401,7 +495,7 @@ export default function CsvExportPage() {
       </div>
 
       {/* Metrics Row */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
         <Card className="p-3.5">
           <p className="text-[10px] text-text-muted uppercase tracking-wider">Matching Records</p>
           <p className="text-xl font-bold text-text-primary mt-1">{totalCount.toLocaleString()}</p>
@@ -413,6 +507,10 @@ export default function CsvExportPage() {
         <Card className="p-3.5">
           <p className="text-[10px] text-text-muted uppercase tracking-wider">With Email</p>
           <p className="text-xl font-bold text-blue-600 mt-1">{stats.withEmail.toLocaleString()}</p>
+        </Card>
+        <Card className="p-3.5">
+          <p className="text-[10px] text-text-muted uppercase tracking-wider">With Push Token</p>
+          <p className="text-xl font-bold text-emerald-600 mt-1">{(stats.withPushToken || 0).toLocaleString()}</p>
         </Card>
         <Card className="p-3.5">
           <p className="text-[10px] text-text-muted uppercase tracking-wider">Estimated CSV Size</p>
@@ -431,8 +529,8 @@ export default function CsvExportPage() {
               Live CSV Preview ({previewRows.length} of {totalCount.toLocaleString()} rows shown)
             </h3>
           </div>
-          <span className="text-[10px] font-mono text-text-muted bg-white px-2 py-0.5 rounded border border-border-light">
-            Template: 7 Columns
+          <span className="text-[10px] font-mono font-semibold text-sendme bg-white px-2.5 py-0.5 rounded border border-border-light">
+            {schema === "termii_engage" ? "Format: Termii Engage (5 Columns)" : "Format: Classic Logistics (7 Columns)"}
           </span>
         </div>
 
@@ -445,6 +543,45 @@ export default function CsvExportPage() {
             <FileSpreadsheet size={32} className="mx-auto mb-2 text-text-muted/40" />
             <p className="text-sm font-semibold text-text-primary">No matching records found</p>
             <p className="text-xs text-text-muted mt-0.5">Try relaxing your filter criteria or search keyword.</p>
+          </div>
+        ) : schema === "termii_engage" ? (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs font-mono">
+              <thead>
+                <tr className="text-left text-[10px] text-text-muted font-semibold uppercase tracking-wider border-b border-border-light bg-surface-secondary/30">
+                  <th className="px-3.5 py-2.5 font-semibold">#</th>
+                  <th className="px-3.5 py-2.5 font-semibold text-sendme">Phone Number (PK)</th>
+                  <th className="px-3.5 py-2.5 font-semibold">Customer Name (PK)</th>
+                  <th className="px-3.5 py-2.5 font-semibold">Email (PK)</th>
+                  <th className="px-3.5 py-2.5 font-semibold">Device Tokens</th>
+                  <th className="px-3.5 py-2.5 font-semibold text-sendme">Data Source</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border-light font-sans text-xs">
+                {previewRows.map((row, idx) => (
+                  <tr key={idx} className="hover:bg-surface-secondary/40 transition-colors">
+                    <td className="px-3.5 py-2 text-text-muted text-[10px] font-mono">{idx + 1}</td>
+                    <td className="px-3.5 py-2 font-mono font-bold text-text-primary select-all">{row.phone}</td>
+                    <td className="px-3.5 py-2 font-medium text-text-primary">{row.fullName || "-"}</td>
+                    <td className="px-3.5 py-2 text-text-secondary select-all">{row.email || "-"}</td>
+                    <td className="px-3.5 py-2 font-mono text-[11px] text-text-muted truncate max-w-[200px]" title={row.deviceTokens || "None"}>
+                      {row.deviceTokens ? (
+                        <span className="text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded text-[10px] font-mono">
+                          {row.deviceTokens.length > 24 ? `${row.deviceTokens.slice(0, 24)}...` : row.deviceTokens}
+                        </span>
+                      ) : (
+                        <span className="text-text-muted/60 text-[10px]">-</span>
+                      )}
+                    </td>
+                    <td className="px-3.5 py-2">
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-sendme-50 text-sendme border border-sendme/20">
+                        {row.dataSource || "SendMe App"}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         ) : (
           <div className="overflow-x-auto">

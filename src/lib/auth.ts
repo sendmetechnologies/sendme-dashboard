@@ -8,7 +8,7 @@ export interface AdminSession {
   id: string;
   username: string;
   displayName: string;
-  role: "super_admin" | "admin";
+  role: "super_admin" | "admin" | "marketing";
   phone: string;
 }
 

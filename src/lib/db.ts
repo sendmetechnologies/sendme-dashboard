@@ -6,7 +6,7 @@ export interface AdminUser {
   username: string;
   email: string;
   display_name: string;
-  role: "super_admin" | "admin";
+  role: "super_admin" | "admin" | "marketing";
   phone: string;
   is_active: boolean;
   password_hash: string;

@@ -2,20 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { supabaseAdmin } from "@/lib/supabase";
 import { getCampaignRecipients, type TargetAudience, type CampaignRecipient } from "@/lib/email-campaigns";
-import { buildCampaignEmailHtml } from "@/lib/sendbyte";
+import { buildCampaignEmailHtml, formatMessageToHtml } from "@/lib/sendbyte";
 
 const TARGETS: TargetAudience[] = ["all", "marketers", "senders", "riders", "organizations", "individuals"];
-
-function messageToHtml(message: string): string {
-  const escaped = message
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-  return escaped
-    .split(/\n{2,}/)
-    .map((para) => `<p style="margin: 0 0 16px 0;">${para.replace(/\n/g, "<br/>")}</p>`)
-    .join("");
-}
 
 export async function GET() {
   try {
@@ -55,6 +44,13 @@ export async function POST(req: NextRequest) {
       targetAudience,
       subAudience = "all",
       emails,
+      bannerBadge,
+      bannerTitle,
+      bannerSubtitle,
+      bannerImage,
+      ctaText,
+      ctaUrl,
+      previewText,
     } = body;
 
     if (!name?.trim() || !message?.trim() || !senderName?.trim()) {
@@ -91,7 +87,17 @@ export async function POST(req: NextRequest) {
     }
 
     const subject = name.trim();
-    const bodyHtml = buildCampaignEmailHtml(senderName.trim(), messageToHtml(message.trim()));
+    const formattedContent = formatMessageToHtml(message.trim());
+    const bodyHtml = buildCampaignEmailHtml(senderName.trim(), formattedContent, {
+      subject,
+      bannerBadge: bannerBadge?.trim() || "SENDME DISPATCH",
+      bannerTitle: bannerTitle?.trim() || subject,
+      bannerSubtitle: bannerSubtitle?.trim(),
+      bannerImage: bannerImage?.trim(),
+      previewText: previewText?.trim(),
+      ctaText: ctaText?.trim(),
+      ctaUrl: ctaUrl?.trim(),
+    });
     const bodyText = message.trim();
 
     const { data: campaign, error: campaignError } = await supabaseAdmin

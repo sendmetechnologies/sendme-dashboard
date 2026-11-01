@@ -99,7 +99,11 @@ export default function OTPPage() {
       sessionStorage.removeItem("otp_admin_id")
       sessionStorage.removeItem("otp_display_name")
       sessionStorage.removeItem("otp_masked_email")
-      router.push("/dashboard")
+      if (data.admin?.role === "marketing") {
+        router.push("/marketing")
+      } else {
+        router.push("/dashboard")
+      }
     } catch {
       setError("Network error. Please try again.")
     } finally {

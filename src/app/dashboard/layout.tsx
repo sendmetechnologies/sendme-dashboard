@@ -17,6 +17,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       .then((res) => {
         if (res.status === 401) {
           router.push("/login")
+          return null
+        }
+        return res.json()
+      })
+      .then((data) => {
+        if (!data) return
+        if (data.admin?.role === "marketing") {
+          router.push("/marketing")
         } else {
           setChecking(false)
         }

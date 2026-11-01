@@ -1,13 +1,22 @@
 "use client"
 
-import { useState, useEffect, useCallback, Suspense } from "react"
+import { useState, useEffect, useCallback, Suspense, useRef } from "react"
 import { useSearchParams } from "next/navigation"
 import { Card } from "@/components/ui/card"
 import {
   Mail, Send, X, Loader2, Users, CheckCircle, AlertTriangle,
   ChevronRight, Megaphone, Eye, Ban, Clock, Layers,
-  CheckCircle2, Play, RotateCcw
+  CheckCircle2, Play, RotateCcw,
+  Bold, Italic, Heading1, Heading2, List, ListOrdered,
+  Sparkles, LayoutTemplate, Smartphone, Monitor, AlertCircle, Gift,
+  ExternalLink, ChevronDown, ChevronUp, Edit3
 } from "lucide-react"
+import {
+  buildCampaignEmailHtml,
+  formatMessageToHtml,
+  SENDME_BANNER_PARCEL_ILLUS,
+  SENDME_BANNER_EARNINGS_ILLUS
+} from "@/lib/sendbyte"
 
 interface Campaign {
   id: string
@@ -112,11 +121,223 @@ function EmailCampaignsContent() {
   const [resumingBatch, setResumingBatch] = useState(false)
 
   const [formName, setFormName] = useState("")
-  const [formSenderName, setFormSenderName] = useState("")
+  const [formSenderName, setFormSenderName] = useState("SendMe Operations")
   const [formMessage, setFormMessage] = useState("")
   const [formTarget, setFormTarget] = useState("all")
   const [formSub, setFormSub] = useState("all")
   const [formEmails, setFormEmails] = useState("")
+
+  // Modern Email Studio & Composer states
+  const [editorTab, setEditorTab] = useState<"compose" | "preview" | "templates">("compose")
+  const [previewDevice, setPreviewDevice] = useState<"desktop" | "mobile">("desktop")
+  const [bannerBadge, setBannerBadge] = useState("SENDME DISPATCH")
+  const [bannerTitle, setBannerTitle] = useState("")
+  const [bannerSubtitle, setBannerSubtitle] = useState("")
+  const [bannerImage, setBannerImage] = useState(SENDME_BANNER_PARCEL_ILLUS)
+  const [ctaText, setCtaText] = useState("")
+  const [ctaUrl, setCtaUrl] = useState("")
+  const [showBannerConfig, setShowBannerConfig] = useState(false)
+  const [aiFormattedNotice, setAiFormattedNotice] = useState(false)
+  const editorTextareaRef = useRef<HTMLTextAreaElement>(null)
+
+  const PRESET_TEMPLATES = [
+    {
+      id: "driver_incentive",
+      title: "Driver 100% Earnings Promo",
+      badgeText: "SPECIAL REWARD",
+      badgeColor: "bg-emerald-100 text-emerald-800",
+      desc: "Announce zero company commission and 100% fare retention for riders.",
+      subject: "Keep 100% of Your Delivery Earnings on SendMe",
+      badge: "SPECIAL REWARD",
+      subtitle: "Zero-commission guarantee across Abuja & Lagos",
+      image: SENDME_BANNER_EARNINGS_ILLUS,
+      ctaText: "Go Online & Accept Bids",
+      ctaUrl: "https://senndme.com",
+      target: "riders",
+      message: `Hi Partner,
+
+We are excited to roll out a major update for all active okada riders on SendMe.
+
+### 100% of Every Fare Goes to You
+Starting immediately, SendMe is operating with **zero company commission**. When a customer accepts your bid, every single naira belongs to you.
+
+:::reward
+**Zero Commission Guarantee:** No platform cuts. Senders pay your agreed bid directly into your wallet.
+:::
+
+### Rider Benefits
+- **Live Bidding Radar:** You set your own prices based on distance, traffic, and cargo.
+- **Instant Bank Cashouts:** Withdraw delivery earnings directly to any Nigerian bank.
+- **PIN Verification Protection:** Handover is only complete when the recipient provides the correct 4-digit code.
+
+:::warning
+**Important Notice:** Ensure your driver documents are fully verified to maintain priority dispatch status.
+:::
+
+[button: Go Online & Accept Bids -> https://senndme.com]`,
+    },
+    {
+      id: "order_delivered",
+      title: "Order Delivered / Handover Receipt",
+      badgeText: "DELIVERY RECEIPT",
+      badgeColor: "bg-blue-100 text-blue-800",
+      desc: "Delivery completed confirmation with pickup/dropoff box and 4-digit PIN confirmation.",
+      subject: "Delivered: Package Handover Confirmed (Order #SD-88219)",
+      badge: "DELIVERED",
+      subtitle: "Handover verified with PIN code.",
+      image: SENDME_BANNER_PARCEL_ILLUS,
+      ctaText: "View Trip Details",
+      ctaUrl: "https://senndme.com/track",
+      target: "senders",
+      message: `Hi Usman,
+
+Your package has been successfully delivered by rider **Musa Ibrahim**. Handover was confirmed with your secure 4-digit verification PIN.
+
+:::box
+**Delivery Summary:**
+- **Pickup Address:** Plot 14 Ahmadu Bello Way, Area 11, Garki, Abuja
+- **Dropoff Address:** 22 Aminu Kano Crescent, Wuse 2, Abuja
+- **Package:** Document Envelope & Electronics
+- **Delivered By:** Musa Ibrahim • ABJ-492-KW (Motorcycle)
+- **Total Paid:** **₦2,500**
+:::
+
+:::reward
+**🎉 2% Cashback Earned:** ₦50 has been credited to your SendMe Wallet!
+:::
+
+[button: View Delivery Summary & Receipt -> https://senndme.com/track]`,
+    },
+    {
+      id: "sender_cashback",
+      title: "Sender 2% Cashback Promo",
+      badgeText: "GROWTH PROMO",
+      badgeColor: "bg-purple-100 text-purple-800",
+      desc: "Incentivize repeat deliveries with wallet cashback on every trip.",
+      subject: "Get 2% Cashback on Every Completed Delivery with SendMe",
+      badge: "SENDER REWARD",
+      subtitle: "Earn cashback credited straight to your wallet on every trip.",
+      image: SENDME_BANNER_PARCEL_ILLUS,
+      ctaText: "Send a Package Now",
+      ctaUrl: "https://senndme.com",
+      target: "senders",
+      message: `Hello Valued Customer,
+
+Moving packages across town just got even more rewarding.
+
+### Introducing SendMe Delivery Cashback
+Every time your package is delivered and confirmed with your 4-digit PIN, you automatically receive **2% cashback** credited instantly into your SendMe Wallet.
+
+:::box
+**How It Works:**
+1. Create a delivery order and receive bids from nearby verified riders.
+2. Accept the best counter-offer and track your rider in real time.
+3. Hand over your 4-digit PIN upon delivery — your 2% cashback is credited instantly!
+:::
+
+- Use your wallet balance to pay for future deliveries
+- No minimum order limit
+- Real-time GPS tracking on every trip
+
+[button: Send a Package Now -> https://senndme.com]`,
+    },
+    {
+      id: "kyc_verification",
+      title: "Account KYC & Verification Notice",
+      badgeText: "SECURITY NOTICE",
+      badgeColor: "bg-amber-100 text-amber-800",
+      desc: "Remind riders or organizations to upload pending documents.",
+      subject: "Action Required: Complete Your Account Verification",
+      badge: "IMPORTANT NOTICE",
+      subtitle: "Submit your pending credentials to start taking deliveries.",
+      image: SENDME_BANNER_EARNINGS_ILLUS,
+      ctaText: "Upload Verification Documents",
+      ctaUrl: "https://senndme.com",
+      target: "riders",
+      message: `Hello Partner,
+
+We noticed that your SendMe account verification is incomplete. To start receiving orders and earning with zero commission, please update your documents.
+
+### Required Documents:
+- Clear photo of valid Government ID (NIN Slip, Driver's License, or Voter's Card)
+- Vehicle registration document
+- Clear passport photograph
+
+:::warning
+**Account Notice:** Unverified accounts cannot go online or accept bids. Complete verification to activate dispatch alerts.
+:::
+
+[button: Upload Verification Documents -> https://senndme.com]`,
+    },
+  ]
+
+  const insertFormatting = (prefix: string, suffix: string = "", placeholder: string = "") => {
+    if (!editorTextareaRef.current) return
+    const textarea = editorTextareaRef.current
+    const start = textarea.selectionStart
+    const end = textarea.selectionEnd
+    const selected = textarea.value.substring(start, end)
+    const replacement = selected ? `${prefix}${selected}${suffix}` : `${prefix}${placeholder}${suffix}`
+
+    const newVal = textarea.value.substring(0, start) + replacement + textarea.value.substring(end)
+    setFormMessage(newVal)
+
+    setTimeout(() => {
+      textarea.focus()
+      const newCursor = start + prefix.length + (selected ? selected.length : placeholder.length)
+      textarea.setSelectionRange(newCursor, newCursor)
+    }, 10)
+  }
+
+  const handleFormatAiText = () => {
+    if (!formMessage.trim()) return
+
+    let text = formMessage
+
+    // Extract subject if AI prefixed with "Subject: ..."
+    const subjectMatch = text.match(/^Subject:\s*([^\n]+)/im)
+    if (subjectMatch && subjectMatch[1]) {
+      setFormName(subjectMatch[1].trim())
+      text = text.replace(/^Subject:\s*[^\n]+\n*/im, "")
+    }
+
+    // Strip generic greetings / conversational wrappers like "Certainly! Here is your email:"
+    text = text.replace(/^(Certainly|Here is|Sure thing|Here's).*?:\s*\n+/i, "")
+    text = text.replace(/Best regards,[\s\S]*$/i, (match) => match.trim())
+
+    // Convert common AI patterns to SendMe formatting:
+    // Convert "> Note: ..." or "> [!NOTE]" into :::box
+    text = text.replace(/>\s*(?:\[!(?:NOTE|TIP)\]|Note:?)\s*([^\n]+(?:\n>[^\n]+)*)/gi, (_, content) => {
+      const cleanContent = content.replace(/^>\s*/gm, "")
+      return `:::box\n${cleanContent}\n:::`
+    })
+
+    // Convert "> Warning: ..." or "> [!WARN]" into :::warning
+    text = text.replace(/>\s*(?:\[!(?:WARN|ALERT|IMPORTANT)\]|Warning:?|Important:?)\s*([^\n]+(?:\n>[^\n]+)*)/gi, (_, content) => {
+      const cleanContent = content.replace(/^>\s*/gm, "")
+      return `:::warning\n${cleanContent}\n:::`
+    })
+
+    // Convert button prompts [CTA: Label -> url] or Button: Label (url)
+    text = text.replace(/(?:Button|CTA):\s*([^\n(]+)\s*\((https?:\/\/[^\s)]+)\)/gi, "[button: $1 -> $2]")
+
+    setFormMessage(text.trim())
+    setAiFormattedNotice(true)
+    setTimeout(() => setAiFormattedNotice(false), 4000)
+  }
+
+  const handleApplyTemplate = (tpl: typeof PRESET_TEMPLATES[0]) => {
+    setFormName(tpl.subject)
+    setBannerBadge(tpl.badge)
+    setBannerTitle(tpl.subject)
+    setBannerSubtitle(tpl.subtitle)
+    setBannerImage(tpl.image)
+    setCtaText(tpl.ctaText)
+    setCtaUrl(tpl.ctaUrl)
+    setFormMessage(tpl.message)
+    if (tpl.target) setFormTarget(tpl.target)
+    setEditorTab("compose")
+  }
 
   useEffect(() => {
     const target = searchParams.get("target")
@@ -254,6 +475,12 @@ function EmailCampaignsContent() {
           targetAudience: formTarget,
           subAudience: formSub,
           emails: formTarget === "individuals" ? formEmails : undefined,
+          bannerBadge,
+          bannerTitle: bannerTitle.trim() || formName.trim(),
+          bannerSubtitle: bannerSubtitle.trim(),
+          bannerImage,
+          ctaText: ctaText.trim(),
+          ctaUrl: ctaUrl.trim(),
         }),
       })
       const data = await res.json()
@@ -740,154 +967,614 @@ function EmailCampaignsContent() {
               </div>
             </div>
           ) : (
-            /* Create Form with Batch Architecture Preview */
-            <div className="bg-white rounded-2xl w-full max-w-2xl mx-4 shadow-xl max-h-[92vh] overflow-y-auto">
-              <div className="flex items-center justify-between px-5 py-4 border-b border-border-light">
-                <h2 className="text-base font-bold text-text-primary">Create Email Campaign</h2>
-                <button onClick={() => setShowCreate(false)} className="p-1 hover:bg-surface-secondary rounded-lg">
-                  <X size={18} className="text-text-muted" />
-                </button>
-              </div>
-              <div className="p-5 space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-[11px] font-medium text-text-secondary mb-1 block">Campaign Name / Subject</label>
-                    <input
-                      value={formName}
-                      onChange={(e) => setFormName(e.target.value)}
-                      placeholder="e.g. Verify your account to start earning"
-                      className="w-full border border-border-default rounded-lg px-3 py-2 text-[12px] focus:outline-none focus:ring-2 focus:ring-sendme/30 focus:border-sendme"
-                    />
+            /* Modern Email Studio: Rich Formatting, AI Parser, Live Preview & Templates */
+            <div className="bg-white rounded-2xl w-full max-w-4xl mx-4 shadow-2xl max-h-[92vh] flex flex-col overflow-hidden border border-border-default animate-in fade-in duration-200">
+              
+              {/* Studio Header & Navigation Tabs */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between px-5 py-3.5 border-b border-border-light bg-surface-secondary/40 gap-3 shrink-0">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-sendme text-white flex items-center justify-center shadow-2xs">
+                    <Mail size={16} />
                   </div>
                   <div>
-                    <label className="text-[11px] font-medium text-text-secondary mb-1 block">Sender Name</label>
-                    <input
-                      value={formSenderName}
-                      onChange={(e) => setFormSenderName(e.target.value)}
-                      placeholder="e.g. Kate"
-                      className="w-full border border-border-default rounded-lg px-3 py-2 text-[12px] focus:outline-none focus:ring-2 focus:ring-sendme/30 focus:border-sendme"
-                    />
-                    <p className="text-[9px] text-text-muted mt-1">Recipients will see &quot;{formSenderName || "Kate"} from SendMe&quot;</p>
+                    <h2 className="text-sm font-bold text-text-primary">SendMe Email Studio</h2>
+                    <p className="text-[10px] text-text-muted">Modern Header Layout &amp; AI-Powered Formatting</p>
                   </div>
                 </div>
 
-                <div>
-                  <label className="text-[11px] font-medium text-text-secondary mb-1 block">Message</label>
-                  <textarea
-                    value={formMessage}
-                    onChange={(e) => setFormMessage(e.target.value)}
-                    rows={6}
-                    placeholder="Write your campaign message..."
-                    className="w-full border border-border-default rounded-lg px-3 py-2 text-[12px] leading-relaxed focus:outline-none focus:ring-2 focus:ring-sendme/30 focus:border-sendme resize-none"
-                  />
-                  <p className="text-[9px] text-text-muted mt-1">Line breaks are preserved in the email.</p>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-[11px] font-medium text-text-secondary mb-1 block">Target Audience</label>
-                    <select
-                      value={formTarget}
-                      onChange={(e) => { setFormTarget(e.target.value); setFormSub("all"); setFormEmails("") }}
-                      className="w-full border border-border-default rounded-lg px-3 py-2 text-[12px] focus:outline-none focus:ring-2 focus:ring-sendme/30 focus:border-sendme bg-white"
+                <div className="flex items-center gap-2">
+                  {/* Mode Tabs */}
+                  <div className="flex items-center bg-surface-secondary p-1 rounded-xl border border-border-default/60">
+                    <button
+                      type="button"
+                      onClick={() => setEditorTab("compose")}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                        editorTab === "compose"
+                          ? "bg-white text-sendme shadow-2xs font-bold"
+                          : "text-text-secondary hover:text-text-primary"
+                      }`}
                     >
-                      {TARGET_OPTIONS.map((t) => (
-                        <option key={t.value} value={t.value}>{t.label}</option>
-                      ))}
-                    </select>
+                      <Edit3 size={13} />
+                      <span>Compose</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setEditorTab("preview")}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                        editorTab === "preview"
+                          ? "bg-white text-sendme shadow-2xs font-bold"
+                          : "text-text-secondary hover:text-text-primary"
+                      }`}
+                    >
+                      <Eye size={13} />
+                      <span>Live Preview</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setEditorTab("templates")}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                        editorTab === "templates"
+                          ? "bg-white text-sendme shadow-2xs font-bold"
+                          : "text-text-secondary hover:text-text-primary"
+                      }`}
+                    >
+                      <LayoutTemplate size={13} />
+                      <span>Templates</span>
+                    </button>
                   </div>
-                  {formTarget === "individuals" ? (
+
+                  <button
+                    onClick={() => setShowCreate(false)}
+                    className="p-1.5 hover:bg-surface-secondary rounded-lg text-text-muted transition-colors ml-1"
+                    title="Close"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Tab 1: Compose & Format */}
+              {editorTab === "compose" && (
+                <div className="p-5 space-y-4 overflow-y-auto flex-1">
+                  
+                  {/* Subject & Sender row */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
-                      <label className="text-[11px] font-medium text-text-secondary mb-1 block">Email Addresses</label>
+                      <label className="text-[11px] font-semibold text-text-secondary mb-1 block">
+                        Campaign Name / Email Subject <span className="text-danger">*</span>
+                      </label>
                       <input
-                        value={formEmails}
-                        onChange={(e) => setFormEmails(e.target.value)}
-                        placeholder="e.g. a@x.com, b@y.com"
-                        className="w-full border border-border-default rounded-lg px-3 py-2 text-[12px] focus:outline-none focus:ring-2 focus:ring-sendme/30 focus:border-sendme"
+                        value={formName}
+                        onChange={(e) => setFormName(e.target.value)}
+                        placeholder="e.g. Keep 100% of Your Delivery Earnings"
+                        className="w-full border border-border-default rounded-lg px-3 py-2 text-[12px] font-medium focus:outline-none focus:ring-2 focus:ring-sendme/30 focus:border-sendme bg-white shadow-2xs"
                       />
-                      <p className="text-[9px] text-text-muted mt-1">Separate multiple emails with commas.</p>
                     </div>
-                  ) : (
                     <div>
-                      <label className="text-[11px] font-medium text-text-secondary mb-1 block">Sub Audience</label>
-                      <select
-                        value={formSub}
-                        onChange={(e) => setFormSub(e.target.value)}
-                        className="w-full border border-border-default rounded-lg px-3 py-2 text-[12px] focus:outline-none focus:ring-2 focus:ring-sendme/30 focus:border-sendme bg-white"
+                      <label className="text-[11px] font-semibold text-text-secondary mb-1 block">
+                        Sender Display Name <span className="text-danger">*</span>
+                      </label>
+                      <input
+                        value={formSenderName}
+                        onChange={(e) => setFormSenderName(e.target.value)}
+                        placeholder="e.g. SendMe Operations"
+                        className="w-full border border-border-default rounded-lg px-3 py-2 text-[12px] font-medium focus:outline-none focus:ring-2 focus:ring-sendme/30 focus:border-sendme bg-white shadow-2xs"
+                      />
+                      <p className="text-[9.5px] text-text-muted mt-1">
+                        Recipients will see: &quot;{formSenderName || "SendMe Operations"} from SendMe&quot;
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Banner Layout Customization Drawer (matching fairly-used header banner) */}
+                  <div className="border border-border-default rounded-xl overflow-hidden bg-surface-secondary/30">
+                    <button
+                      type="button"
+                      onClick={() => setShowBannerConfig(!showBannerConfig)}
+                      className="w-full flex items-center justify-between px-4 py-2.5 text-xs font-semibold text-text-primary hover:bg-surface-secondary/70 transition-colors"
+                    >
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full bg-sendme"></div>
+                        <span>Header Banner Customization (Dark Modern Card)</span>
+                      </div>
+                      <div className="flex items-center gap-1.5 text-text-muted text-[11px]">
+                        <span>{showBannerConfig ? "Collapse" : "Customize Header"}</span>
+                        {showBannerConfig ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                      </div>
+                    </button>
+
+                    {showBannerConfig && (
+                      <div className="p-4 border-t border-border-light bg-white space-y-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                          <div>
+                            <label className="text-[10.5px] font-medium text-text-muted mb-1 block">Banner Pill Badge</label>
+                            <input
+                              value={bannerBadge}
+                              onChange={(e) => setBannerBadge(e.target.value)}
+                              placeholder="e.g. SENDME DISPATCH"
+                              className="w-full border border-border-default rounded-lg px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-sendme"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[10.5px] font-medium text-text-muted mb-1 block">Custom Banner Title (Optional)</label>
+                            <input
+                              value={bannerTitle}
+                              onChange={(e) => setBannerTitle(e.target.value)}
+                              placeholder="Defaults to Email Subject"
+                              className="w-full border border-border-default rounded-lg px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-sendme"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[10.5px] font-medium text-text-muted mb-1 block">Banner Subtitle (Optional)</label>
+                            <input
+                              value={bannerSubtitle}
+                              onChange={(e) => setBannerSubtitle(e.target.value)}
+                              placeholder="e.g. Official dispatch notice for all riders"
+                              className="w-full border border-border-default rounded-lg px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-sendme"
+                            />
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="text-[10.5px] font-medium text-text-muted mb-1.5 block">Header Illustration Image</label>
+                          <div className="flex items-center gap-3">
+                            <label
+                              onClick={() => setBannerImage(SENDME_BANNER_PARCEL_ILLUS)}
+                              className={`flex items-center gap-2.5 px-3 py-2 rounded-xl border cursor-pointer transition-all ${
+                                bannerImage === SENDME_BANNER_PARCEL_ILLUS
+                                  ? "border-sendme bg-emerald-50/50 ring-1 ring-sendme/30"
+                                  : "border-border-default hover:bg-surface-secondary"
+                              }`}
+                            >
+                              <img src={SENDME_BANNER_PARCEL_ILLUS} alt="Parcel" className="w-8 h-8 object-contain" />
+                              <div className="text-left">
+                                <p className="text-xs font-semibold text-text-primary">Delivery Parcel Box</p>
+                                <p className="text-[10px] text-text-muted">For senders, promos &amp; general</p>
+                              </div>
+                            </label>
+
+                            <label
+                              onClick={() => setBannerImage(SENDME_BANNER_EARNINGS_ILLUS)}
+                              className={`flex items-center gap-2.5 px-3 py-2 rounded-xl border cursor-pointer transition-all ${
+                                bannerImage === SENDME_BANNER_EARNINGS_ILLUS
+                                  ? "border-sendme bg-emerald-50/50 ring-1 ring-sendme/30"
+                                  : "border-border-default hover:bg-surface-secondary"
+                              }`}
+                            >
+                              <img src={SENDME_BANNER_EARNINGS_ILLUS} alt="Helmet" className="w-8 h-8 object-contain" />
+                              <div className="text-left">
+                                <p className="text-xs font-semibold text-text-primary">Rider Helmet &amp; Earnings</p>
+                                <p className="text-[10px] text-text-muted">For drivers, payouts &amp; incentives</p>
+                              </div>
+                            </label>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Rich Formatting Toolbar & Smart AI Paste */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[11px] font-semibold text-text-secondary block">
+                        Email Message Body &amp; Layout <span className="text-danger">*</span>
+                      </label>
+
+                      {/* AI Format notification */}
+                      {aiFormattedNotice && (
+                        <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-100 px-2.5 py-0.5 rounded-full flex items-center gap-1 animate-in fade-in">
+                          <Sparkles size={11} /> AI Text Cleaned &amp; Formatted into SendMe Layout!
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Toolbar */}
+                    <div className="flex flex-wrap items-center gap-1 p-1.5 bg-surface-secondary/70 border border-border-default rounded-t-xl text-xs">
+                      <button
+                        type="button"
+                        onClick={() => insertFormatting("**", "**", "bold text")}
+                        className="px-2 py-1 rounded bg-white hover:bg-border-light border border-border-light text-text-primary font-bold shadow-2xs flex items-center gap-1"
+                        title="Bold (**text**)"
                       >
-                        {subOptions.map((s) => {
-                          const count = audiences[formTarget]?.[s] ?? 0
-                          return (
-                            <option key={s} value={s}>
-                              {SUB_LABELS[s] || s} ({count.toLocaleString()})
-                            </option>
-                          )
-                        })}
+                        <Bold size={13} />
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => insertFormatting("*", "*", "italic text")}
+                        className="px-2 py-1 rounded bg-white hover:bg-border-light border border-border-light text-text-primary italic shadow-2xs flex items-center gap-1"
+                        title="Italic (*text*)"
+                      >
+                        <Italic size={13} />
+                      </button>
+
+                      <div className="h-4 w-px bg-border-default mx-0.5" />
+
+                      <button
+                        type="button"
+                        onClick={() => insertFormatting("### ", "", "Section Heading")}
+                        className="px-2 py-1 rounded bg-white hover:bg-border-light border border-border-light text-text-primary font-bold shadow-2xs flex items-center gap-0.5 text-[11px]"
+                        title="Section Heading (### )"
+                      >
+                        <Heading2 size={13} />
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => insertFormatting("- ", "", "List item")}
+                        className="px-2 py-1 rounded bg-white hover:bg-border-light border border-border-light text-text-primary shadow-2xs flex items-center gap-1"
+                        title="Bullet List (- item)"
+                      >
+                        <List size={13} />
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => insertFormatting("1. ", "", "Step one")}
+                        className="px-2 py-1 rounded bg-white hover:bg-border-light border border-border-light text-text-primary shadow-2xs flex items-center gap-1"
+                        title="Numbered Steps (1. step)"
+                      >
+                        <ListOrdered size={13} />
+                      </button>
+
+                      <div className="h-4 w-px bg-border-default mx-0.5" />
+
+                      <button
+                        type="button"
+                        onClick={() => insertFormatting(":::box\n", "\n:::", "**Important Note:** Add your highlight details here.")}
+                        className="px-2.5 py-1 rounded bg-emerald-50 hover:bg-emerald-100/80 border border-emerald-200 text-emerald-800 font-semibold shadow-2xs flex items-center gap-1 text-[11px]"
+                        title="Highlight Callout Box"
+                      >
+                        <Gift size={12} className="text-emerald-700" />
+                        <span>Box</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => insertFormatting(":::warning\n", "\n:::", "**Warning:** Action is required to keep your account active.")}
+                        className="px-2.5 py-1 rounded bg-amber-50 hover:bg-amber-100/80 border border-amber-200 text-amber-800 font-semibold shadow-2xs flex items-center gap-1 text-[11px]"
+                        title="Warning Box"
+                      >
+                        <AlertCircle size={12} className="text-amber-700" />
+                        <span>Warning</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => insertFormatting("[button: ", " -> https://senndme.com]", "Explore SendMe")}
+                        className="px-2 py-1 rounded bg-white hover:bg-border-light border border-border-light text-text-primary font-semibold shadow-2xs flex items-center gap-1 text-[11px]"
+                        title="Action Button"
+                      >
+                        <ExternalLink size={12} />
+                        <span>Button</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => insertFormatting("\n---\n")}
+                        className="px-2 py-1 rounded bg-white hover:bg-border-light border border-border-light text-text-secondary text-[10px] font-mono shadow-2xs"
+                        title="Divider Line"
+                      >
+                        ---
+                      </button>
+
+                      <div className="grow" />
+
+                      {/* Smart AI Paste & Format Assistant */}
+                      <button
+                        type="button"
+                        onClick={handleFormatAiText}
+                        className="px-3 py-1 rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-bold text-[11px] shadow-xs hover:from-emerald-700 hover:to-teal-700 transition-all flex items-center gap-1.5"
+                        title="Paste text from ChatGPT / Claude and click to automatically format into SendMe email structure"
+                      >
+                        <Sparkles size={12} />
+                        <span>Format AI Text</span>
+                      </button>
+                    </div>
+
+                    {/* Textarea */}
+                    <textarea
+                      ref={editorTextareaRef}
+                      value={formMessage}
+                      onChange={(e) => setFormMessage(e.target.value)}
+                      rows={8}
+                      placeholder="Hi Usman,&#10;&#10;### Special Announcement&#10;Write your email message here or paste copied text from an AI tool.&#10;&#10;:::box&#10;**Pro Tip:** Click 'Format AI Text' above to format raw AI output into clean cards and headers.&#10;:::&#10;&#10;[button: Claim Your Reward -> https://senndme.com]"
+                      className="w-full border border-border-default border-t-0 rounded-b-xl px-3.5 py-3 text-[12.5px] leading-relaxed focus:outline-none focus:ring-2 focus:ring-sendme/30 focus:border-sendme resize-y font-normal bg-white"
+                    />
+
+                    <div className="flex items-center justify-between text-[10px] text-text-muted px-1">
+                      <span>Supports Markdown: **bold**, *italic*, ### headings, lists, :::box, and [button: Label -&gt; URL]</span>
+                      <button
+                        type="button"
+                        onClick={() => setEditorTab("preview")}
+                        className="text-sendme hover:underline font-semibold flex items-center gap-1"
+                      >
+                        <Eye size={11} /> See live preview
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Primary CTA Button Config (Optional) */}
+                  <div className="p-3 bg-surface-secondary/50 rounded-xl border border-border-light space-y-2">
+                    <p className="text-[11px] font-semibold text-text-secondary flex items-center gap-1.5">
+                      <ExternalLink size={12} className="text-sendme" />
+                      <span>Footer Action Button (Optional)</span>
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      <input
+                        value={ctaText}
+                        onChange={(e) => setCtaText(e.target.value)}
+                        placeholder="Button Text (e.g. Go Online & Earn)"
+                        className="border border-border-default rounded-lg px-2.5 py-1.5 text-xs bg-white focus:ring-1 focus:ring-sendme"
+                      />
+                      <input
+                        value={ctaUrl}
+                        onChange={(e) => setCtaUrl(e.target.value)}
+                        placeholder="Destination URL (e.g. https://senndme.com)"
+                        className="border border-border-default rounded-lg px-2.5 py-1.5 text-xs bg-white focus:ring-1 focus:ring-sendme"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Target Audience row */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                    <div>
+                      <label className="text-[11px] font-semibold text-text-secondary mb-1 block">Target Audience</label>
+                      <select
+                        value={formTarget}
+                        onChange={(e) => { setFormTarget(e.target.value); setFormSub("all"); setFormEmails("") }}
+                        className="w-full border border-border-default rounded-lg px-3 py-2 text-[12px] focus:outline-none focus:ring-2 focus:ring-sendme/30 focus:border-sendme bg-white shadow-2xs"
+                      >
+                        {TARGET_OPTIONS.map((t) => (
+                          <option key={t.value} value={t.value}>{t.label}</option>
+                        ))}
                       </select>
+                    </div>
+                    {formTarget === "individuals" ? (
+                      <div>
+                        <label className="text-[11px] font-semibold text-text-secondary mb-1 block">Email Addresses</label>
+                        <input
+                          value={formEmails}
+                          onChange={(e) => setFormEmails(e.target.value)}
+                          placeholder="e.g. a@x.com, b@y.com"
+                          className="w-full border border-border-default rounded-lg px-3 py-2 text-[12px] focus:outline-none focus:ring-2 focus:ring-sendme/30 focus:border-sendme bg-white shadow-2xs"
+                        />
+                        <p className="text-[9px] text-text-muted mt-1">Separate multiple emails with commas.</p>
+                      </div>
+                    ) : (
+                      <div>
+                        <label className="text-[11px] font-semibold text-text-secondary mb-1 block">Sub Audience</label>
+                        <select
+                          value={formSub}
+                          onChange={(e) => setFormSub(e.target.value)}
+                          className="w-full border border-border-default rounded-lg px-3 py-2 text-[12px] focus:outline-none focus:ring-2 focus:ring-sendme/30 focus:border-sendme bg-white shadow-2xs"
+                        >
+                          {subOptions.map((s) => {
+                            const count = audiences[formTarget]?.[s] ?? 0
+                            return (
+                              <option key={s} value={s}>
+                                {SUB_LABELS[s] || s} ({count.toLocaleString()})
+                              </option>
+                            )
+                          })}
+                        </select>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Batch Architecture Preview (100 per batch) */}
+                  {(() => {
+                    const estCount = formTarget === "individuals"
+                      ? formEmails.split(",").map((e) => e.trim()).filter(Boolean).length
+                      : (audiences[formTarget]?.[formSub] ?? 0)
+                    const estBatches = Math.max(1, Math.ceil(estCount / 100))
+
+                    return (
+                      <div className="bg-emerald-50/70 border border-sendme/20 rounded-xl p-3.5 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1.5">
+                            <Layers size={14} className="text-sendme" />
+                            <span className="text-xs font-bold text-sendme-dark">Batch Architecture (100 / batch)</span>
+                          </div>
+                          <span className="text-xs font-bold text-text-primary">
+                            {estCount.toLocaleString()} Recipients · {estBatches} {estBatches === 1 ? "Batch" : "Batches"}
+                          </span>
+                        </div>
+
+                        <div className="flex flex-wrap gap-1.5 pt-1">
+                          {Array.from({ length: estBatches }).map((_, idx) => {
+                            const count = Math.min(100, Math.max(0, estCount - idx * 100))
+                            return (
+                              <span
+                                key={idx}
+                                className="inline-flex items-center gap-1 text-[11px] font-semibold bg-white border border-sendme/30 text-sendme px-2.5 py-1 rounded-md shadow-2xs font-mono"
+                              >
+                                Batch {idx + 1}: {count} {count === 1 ? "email" : "emails"}
+                              </span>
+                            )
+                          })}
+                        </div>
+                        <p className="text-[10px] text-text-muted leading-relaxed">
+                          Recipients are dispatched sequentially in batches of 100 via SendByte Africa to avoid server timeouts.
+                        </p>
+                      </div>
+                    )
+                  })()}
+
+                  {error && (
+                    <div className="bg-danger-light border border-danger/20 rounded-lg p-3">
+                      <p className="text-danger text-xs font-medium text-center">{error}</p>
                     </div>
                   )}
                 </div>
+              )}
 
-                {/* Batch Architecture Preview (100 per batch) */}
-                {(() => {
-                  const estCount = formTarget === "individuals"
-                    ? formEmails.split(",").map((e) => e.trim()).filter(Boolean).length
-                    : (audiences[formTarget]?.[formSub] ?? 0)
-                  const estBatches = Math.max(1, Math.ceil(estCount / 100))
-
-                  return (
-                    <div className="bg-emerald-50/70 border border-sendme/20 rounded-xl p-3.5 space-y-2">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-1.5">
-                          <Layers size={14} className="text-sendme" />
-                          <span className="text-xs font-bold text-sendme-dark">Batch Architecture (100 / batch)</span>
-                        </div>
-                        <span className="text-xs font-bold text-text-primary">
-                          {estCount.toLocaleString()} Recipients · {estBatches} {estBatches === 1 ? "Batch" : "Batches"}
-                        </span>
+              {/* Tab 2: Live Interactive Email Preview */}
+              {editorTab === "preview" && (
+                <div className="flex-1 flex flex-col bg-surface-secondary/40 overflow-hidden">
+                  
+                  {/* Viewport Control Bar */}
+                  <div className="flex items-center justify-between px-5 py-2.5 bg-white border-b border-border-light text-xs shrink-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-text-muted text-[11px]">Viewport Device:</span>
+                      <div className="flex items-center bg-surface-secondary p-0.5 rounded-lg border border-border-light">
+                        <button
+                          type="button"
+                          onClick={() => setPreviewDevice("desktop")}
+                          className={`flex items-center gap-1 px-2.5 py-1 rounded text-xs font-semibold ${
+                            previewDevice === "desktop" ? "bg-white text-sendme shadow-2xs" : "text-text-muted"
+                          }`}
+                        >
+                          <Monitor size={12} />
+                          <span>Desktop (580px)</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPreviewDevice("mobile")}
+                          className={`flex items-center gap-1 px-2.5 py-1 rounded text-xs font-semibold ${
+                            previewDevice === "mobile" ? "bg-white text-sendme shadow-2xs" : "text-text-muted"
+                          }`}
+                        >
+                          <Smartphone size={12} />
+                          <span>Mobile (375px)</span>
+                        </button>
                       </div>
-
-                      <div className="flex flex-wrap gap-1.5 pt-1">
-                        {Array.from({ length: estBatches }).map((_, idx) => {
-                          const count = Math.min(100, Math.max(0, estCount - idx * 100))
-                          return (
-                            <span
-                              key={idx}
-                              className="inline-flex items-center gap-1 text-[11px] font-semibold bg-white border border-sendme/30 text-sendme px-2.5 py-1 rounded-md shadow-2xs font-mono"
-                            >
-                              Batch {idx + 1}: {count} {count === 1 ? "email" : "emails"}
-                            </span>
-                          )
-                        })}
-                      </div>
-                      <p className="text-[10px] text-text-muted leading-relaxed">
-                        Total user emails are automatically split into sequential batches of 100 (e.g. 230 emails = 3 batches: 100, 100, 30) to eliminate serverless timeouts and ensure 100% deliverability.
-                      </p>
                     </div>
-                  )
-                })()}
 
-                {error && (
-                  <div className="bg-danger-light border border-danger/20 rounded-lg p-3">
-                    <p className="text-danger text-xs font-medium text-center">{error}</p>
+                    <div className="text-[11px] text-text-muted flex items-center gap-2">
+                      <span>Live SendMe Email Banner Shell</span>
+                      <button
+                        type="button"
+                        onClick={() => setEditorTab("compose")}
+                        className="text-sendme hover:underline font-semibold"
+                      >
+                        Edit Content &rarr;
+                      </button>
+                    </div>
                   </div>
-                )}
-              </div>
-              <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-border-light">
-                <button
-                  onClick={() => setShowCreate(false)}
-                  className="px-4 py-2 text-[11px] font-medium text-text-muted border border-border-default rounded-lg hover:bg-surface-secondary"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleCreate}
-                  disabled={sending || !formName.trim() || !formSenderName.trim() || !formMessage.trim() || (formTarget === "individuals" && !formEmails.trim())}
-                  className="flex items-center gap-1.5 px-4 py-2 bg-sendme text-white rounded-lg text-[11px] font-medium hover:bg-sendme/90 disabled:opacity-50 disabled:cursor-not-allowed shadow-xs"
-                >
-                  {sending ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
-                  {sending ? "Preparing Batches..." : "Launch Campaign"}
-                </button>
+
+                  {/* Rendered sandboxed frame */}
+                  <div className="flex-1 overflow-y-auto p-4 flex items-center justify-center">
+                    <div
+                      className={`w-full transition-all duration-300 bg-white rounded-2xl shadow-xl overflow-hidden border border-border-default ${
+                        previewDevice === "mobile" ? "max-w-[390px] h-[640px]" : "max-w-[620px] h-[620px]"
+                      }`}
+                    >
+                      {(() => {
+                        const previewHtml = buildCampaignEmailHtml(
+                          formSenderName || "SendMe Operations",
+                          formatMessageToHtml(formMessage || "Hi Usman,\n\nWelcome to SendMe Delivery! Start typing in the Compose tab to see live preview updates.\n\n:::box\n**100% Earnings:** Zero commission deductions for riders.\n:::\n\n[button: Explore SendMe -> https://senndme.com]"),
+                          {
+                            subject: formName || "Official SendMe Announcement",
+                            bannerBadge: bannerBadge || "SENDME DISPATCH",
+                            bannerTitle: bannerTitle.trim() || formName || "Official SendMe Announcement",
+                            bannerSubtitle: bannerSubtitle.trim() || undefined,
+                            bannerImage,
+                            ctaText: ctaText.trim() || undefined,
+                            ctaUrl: ctaUrl.trim() || undefined,
+                          }
+                        )
+
+                        return (
+                          <iframe
+                            title="SendMe Email Preview"
+                            srcDoc={previewHtml}
+                            className="w-full h-full border-0"
+                            sandbox="allow-same-origin"
+                          />
+                        )
+                      })()}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Tab 3: Ready-to-Send Campaign Templates */}
+              {editorTab === "templates" && (
+                <div className="p-5 space-y-4 overflow-y-auto flex-1 bg-surface-secondary/20">
+                  <div>
+                    <h3 className="text-sm font-bold text-text-primary">SendMe Pre-Built Email Templates</h3>
+                    <p className="text-[11px] text-text-muted">
+                      Select any optimized template below. It will automatically populate your email subject, modern banner, boxes, and action button.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                    {PRESET_TEMPLATES.map((tpl) => (
+                      <div
+                        key={tpl.id}
+                        className="bg-white p-4 rounded-xl border border-border-default hover:border-sendme transition-all shadow-2xs hover:shadow-sm flex flex-col justify-between space-y-3"
+                      >
+                        <div className="space-y-1.5">
+                          <div className="flex items-center justify-between">
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${tpl.badgeColor}`}>
+                              {tpl.badgeText}
+                            </span>
+                            <span className="text-[10px] font-medium text-text-muted capitalize">
+                              Target: {tpl.target}
+                            </span>
+                          </div>
+                          <h4 className="text-xs font-bold text-text-primary">{tpl.title}</h4>
+                          <p className="text-[11px] text-text-muted leading-relaxed">{tpl.desc}</p>
+                          <div className="p-2 bg-surface-secondary rounded-lg text-[10.5px] font-mono text-text-secondary truncate">
+                            Subject: {tpl.subject}
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => handleApplyTemplate(tpl)}
+                          className="w-full py-2 bg-sendme-50 text-sendme hover:bg-sendme hover:text-white transition-colors text-xs font-bold rounded-lg flex items-center justify-center gap-1.5 border border-sendme/20"
+                        >
+                          <Edit3 size={13} />
+                          <span>Use This Template</span>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Modal Footer */}
+              <div className="flex items-center justify-between px-5 py-3.5 border-t border-border-light bg-surface-secondary/30 shrink-0">
+                <div className="flex items-center gap-2">
+                  {editorTab !== "preview" ? (
+                    <button
+                      type="button"
+                      onClick={() => setEditorTab("preview")}
+                      className="px-3 py-1.5 text-[11px] font-semibold text-text-secondary hover:text-text-primary border border-border-default rounded-lg bg-white flex items-center gap-1"
+                    >
+                      <Eye size={12} /> Preview Email
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setEditorTab("compose")}
+                      className="px-3 py-1.5 text-[11px] font-semibold text-text-secondary hover:text-text-primary border border-border-default rounded-lg bg-white flex items-center gap-1"
+                    >
+                      <Edit3 size={12} /> Return to Compose
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setShowCreate(false)}
+                    className="px-4 py-2 text-[11px] font-medium text-text-muted border border-border-default rounded-lg hover:bg-surface-secondary"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleCreate}
+                    disabled={sending || !formName.trim() || !formSenderName.trim() || !formMessage.trim() || (formTarget === "individuals" && !formEmails.trim())}
+                    className="flex items-center gap-1.5 px-4 py-2 bg-sendme text-white rounded-lg text-[11px] font-medium hover:bg-sendme/90 disabled:opacity-50 disabled:cursor-not-allowed shadow-xs font-bold"
+                  >
+                    {sending ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
+                    {sending ? "Preparing Batches..." : "Launch Campaign"}
+                  </button>
+                </div>
               </div>
             </div>
           )}

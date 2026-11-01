@@ -14,7 +14,438 @@ interface SendByteResponse {
 const API_BASE = "https://api.sendbyte.africa/v1";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://lglmkxczxeorxhzwcdjv.supabase.co";
-const LOGO_URL = `${SUPABASE_URL}/storage/v1/object/public/order-photos/branding/sendme-icon.png`;
+export const SENDME_ICON_URL = `${SUPABASE_URL}/storage/v1/object/public/order-photos/branding/sendme-icon.png`;
+export const SENDME_BANNER_PARCEL_ILLUS = `${SUPABASE_URL}/storage/v1/object/public/banners/parcel_15_percent.png`;
+export const SENDME_BANNER_EARNINGS_ILLUS = `${SUPABASE_URL}/storage/v1/object/public/banners/driver_helmet_earnings.png`;
+const LOGO_URL = SENDME_ICON_URL;
+
+export interface ModernEmailShellOptions {
+  bannerBadge?: string;
+  bannerTitle: string;
+  bannerSubtitle?: string;
+  bannerImage?: string;
+  bodyHtml: string;
+  previewText?: string;
+  senderName?: string;
+  ctaText?: string;
+  ctaUrl?: string;
+}
+
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+/**
+ * Intelligent Markdown & AI Message to Email-Safe HTML Formatter.
+ * Handles AI output from ChatGPT / Claude:
+ * - Cleans headers (#, ##, ###) into bold styled headers
+ * - Highlights (> [!NOTE], :::box, > Note:) into SendMe highlight cards
+ * - Warnings (> [!WARN], :::warning) into warning alert cards
+ * - Buttons ([button: Label -> URL]) into branded primary pill buttons
+ * - Ordered & Unordered lists into clean tables/bullets
+ * - Key-value metadata rows
+ * - Bold (**text**), italics (*text*), links ([label](url))
+ */
+export function formatMessageToHtml(rawText: string): string {
+  if (!rawText || !rawText.trim()) return "";
+
+  // Strip leading AI intro artifacts like "Certainly! Here is your email draft:"
+  let cleaned = rawText
+    .replace(/^(Certainly|Here is|Sure|Here's).*?:\s*\n+/i, "")
+    .replace(/^Subject:\s*[^\n]+\n+/i, "")
+    .trim();
+
+  // Normalize newlines
+  cleaned = cleaned.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+
+  const lines = cleaned.split("\n");
+  const htmlParts: string[] = [];
+
+  let inBox = false;
+  let boxType: "note" | "warning" | "reward" = "note";
+  let boxBuffer: string[] = [];
+
+  let inList: "ul" | "ol" | null = null;
+  let listIndex = 1;
+
+  const flushList = () => {
+    inList = null;
+    listIndex = 1;
+  };
+
+  const flushBox = () => {
+    if (!inBox) return;
+    const boxContent = boxBuffer.join("<br/>");
+    boxBuffer = [];
+    inBox = false;
+
+    if (boxType === "warning") {
+      htmlParts.push(`
+        <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #FFFBEB; border: 1px solid #FED7AA; border-left: 4px solid #F59E0B; border-radius: 10px; margin: 16px 0;">
+          <tr>
+            <td style="padding: 14px 16px; font-size: 13.5px; line-height: 1.55; color: #92400E;">
+              ${boxContent}
+            </td>
+          </tr>
+        </table>
+      `);
+    } else if (boxType === "reward") {
+      htmlParts.push(`
+        <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #F0FDF4; border: 1px solid #BBF7D0; border-left: 4px solid #158A5E; border-radius: 10px; margin: 16px 0;">
+          <tr>
+            <td style="padding: 14px 16px; font-size: 13.5px; line-height: 1.55; color: #166534;">
+              ${boxContent}
+            </td>
+          </tr>
+        </table>
+      `);
+    } else {
+      htmlParts.push(`
+        <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #FFFFFF; border: 1px solid #E5E7EB; border-left: 4px solid #158A5E; border-radius: 10px; margin: 16px 0;">
+          <tr>
+            <td style="padding: 14px 16px; font-size: 13.5px; line-height: 1.55; color: #374151;">
+              ${boxContent}
+            </td>
+          </tr>
+        </table>
+      `);
+    }
+  };
+
+  const parseInline = (text: string): string => {
+    let t = text;
+    // Bold: **text**
+    t = t.replace(/\*\*([^*]+)\*\*/g, '<strong style="color: #111827; font-weight: 700;">$1</strong>');
+    // Italic: *text* (excluding already formatted bold)
+    t = t.replace(/(?<!\*)\*([^*]+)\*(?!\*)/g, '<em>$1</em>');
+    // Link: [text](url)
+    t = t.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" style="color: #158A5E; font-weight: 600; text-decoration: underline;">$1</a>');
+    // Code/Pill: `code`
+    t = t.replace(/`([^`]+)`/g, '<code style="background-color: #F3F4F6; color: #111827; padding: 2px 6px; border-radius: 4px; font-size: 12px; font-family: monospace;">$1</code>');
+    return t;
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const rawLine = lines[i];
+    const trimmed = rawLine.trim();
+
+    // Box block delimiters: :::box, :::warning, :::reward, :::
+    if (trimmed.startsWith(":::box") || trimmed.startsWith(":::note")) {
+      flushList();
+      flushBox();
+      inBox = true;
+      boxType = "note";
+      continue;
+    }
+    if (trimmed.startsWith(":::warning") || trimmed.startsWith(":::alert")) {
+      flushList();
+      flushBox();
+      inBox = true;
+      boxType = "warning";
+      continue;
+    }
+    if (trimmed.startsWith(":::reward") || trimmed.startsWith(":::success")) {
+      flushList();
+      flushBox();
+      inBox = true;
+      boxType = "reward";
+      continue;
+    }
+    if (trimmed === ":::") {
+      flushBox();
+      continue;
+    }
+
+    // Markdown blockquotes: > [!NOTE] or > Note: or generic > text
+    if (trimmed.startsWith(">")) {
+      flushList();
+      let blockText = trimmed.replace(/^>\s*/, "");
+      if (blockText.startsWith("[!NOTE]") || blockText.startsWith("[!TIP]")) {
+        blockText = blockText.replace(/^\[!(NOTE|TIP)\]\s*/, "");
+        boxType = "note";
+      } else if (blockText.startsWith("[!WARN]") || blockText.startsWith("[!CAUTION]") || blockText.startsWith("[!IMPORTANT]")) {
+        blockText = blockText.replace(/^\[!(WARN|CAUTION|IMPORTANT)\]\s*/, "");
+        boxType = "warning";
+      }
+      if (!inBox) {
+        inBox = true;
+      }
+      boxBuffer.push(parseInline(blockText));
+      continue;
+    } else if (inBox && trimmed === "") {
+      // Empty line after box closes it
+      flushBox();
+      continue;
+    }
+
+    if (inBox) {
+      boxBuffer.push(parseInline(trimmed));
+      continue;
+    }
+
+    // Button shortcode: [button: Label -> URL] or [BUTTON: Label -> URL] or [CTA: Label -> URL]
+    const buttonMatch = trimmed.match(/^\[(?:button|BUTTON|cta|CTA):\s*(.+?)\s*->\s*(https?:\/\/[^\s\]]+)\]$/i);
+    if (buttonMatch) {
+      flushList();
+      const label = buttonMatch[1].trim();
+      const url = buttonMatch[2].trim();
+      htmlParts.push(`
+        <table border="0" cellpadding="0" cellspacing="0" width="100%" style="margin: 22px 0 24px 0;">
+          <tr>
+            <td align="center">
+              <a href="${escapeHtml(url)}" style="display: inline-block; background-color: #158A5E; color: #FFFFFF; font-size: 14px; font-weight: 700; text-decoration: none; padding: 13px 32px; border-radius: 8px; letter-spacing: 0.2px; mso-padding-alt: 0;">
+                ${escapeHtml(label)} &rarr;
+              </a>
+            </td>
+          </tr>
+        </table>
+      `);
+      continue;
+    }
+
+    // Horizontal divider: --- or ***
+    if (/^(\-{3,}|\*{3,})$/.test(trimmed)) {
+      flushList();
+      htmlParts.push(`<div style="border-top: 1px solid #E5E7EB; margin: 20px 0;"></div>`);
+      continue;
+    }
+
+    // Headings
+    if (trimmed.startsWith("### ")) {
+      flushList();
+      const title = parseInline(trimmed.replace(/^###\s+/, ""));
+      htmlParts.push(`<div style="font-size: 15px; font-weight: 700; color: #111827; margin: 18px 0 8px 0; letter-spacing: -0.2px;">${title}</div>`);
+      continue;
+    }
+    if (trimmed.startsWith("## ")) {
+      flushList();
+      const title = parseInline(trimmed.replace(/^##\s+/, ""));
+      htmlParts.push(`<div style="font-size: 17px; font-weight: 700; color: #111827; margin: 22px 0 10px 0; letter-spacing: -0.3px;">${title}</div>`);
+      continue;
+    }
+    if (trimmed.startsWith("# ")) {
+      flushList();
+      const title = parseInline(trimmed.replace(/^#\s+/, ""));
+      htmlParts.push(`<div style="font-size: 20px; font-weight: 800; color: #111827; margin: 24px 0 12px 0; letter-spacing: -0.4px;">${title}</div>`);
+      continue;
+    }
+
+    // Bullet points: - item, * item, • item
+    if (/^[-*•]\s+/.test(trimmed)) {
+      inList = "ul";
+      const itemText = parseInline(trimmed.replace(/^[-*•]\s+/, ""));
+      htmlParts.push(`
+        <table border="0" cellpadding="0" cellspacing="0" width="100%" style="margin-bottom: 7px;">
+          <tr>
+            <td width="20" style="vertical-align: top; color: #158A5E; font-size: 16px; line-height: 20px; font-weight: 800;">&bull;</td>
+            <td style="font-size: 13.5px; line-height: 1.55; color: #4B5563; vertical-align: top;">${itemText}</td>
+          </tr>
+        </table>
+      `);
+      continue;
+    }
+
+    // Numbered list: 1. item
+    const numMatch = trimmed.match(/^(\d+)\.\s+(.+)$/);
+    if (numMatch) {
+      inList = "ol";
+      const num = numMatch[1];
+      const itemText = parseInline(numMatch[2]);
+      htmlParts.push(`
+        <table border="0" cellpadding="0" cellspacing="0" width="100%" style="margin-bottom: 9px;">
+          <tr>
+            <td width="28" style="vertical-align: top;">
+              <div style="width: 22px; height: 22px; border-radius: 11px; background-color: #111827; color: #FFFFFF; font-size: 11px; font-weight: 700; line-height: 22px; text-align: center;">${num}</div>
+            </td>
+            <td style="vertical-align: top; padding-left: 8px; font-size: 13.5px; line-height: 1.55; color: #374151;">${itemText}</td>
+          </tr>
+        </table>
+      `);
+      continue;
+    }
+
+    // Blank line
+    if (!trimmed) {
+      flushList();
+      continue;
+    }
+
+    // Standard paragraph
+    flushList();
+    htmlParts.push(`<p style="font-size: 14px; line-height: 1.6; color: #4B5563; margin: 0 0 14px 0;">${parseInline(trimmed)}</p>`);
+  }
+
+  flushList();
+  flushBox();
+
+  return htmlParts.join("");
+}
+
+/**
+ * Modern SendMe Responsive Email Shell.
+ * Matches fairly-used email layout and in-app sender/rider banner:
+ * - 580px max-width card with clean subtle border
+ * - Top brand navigation with DISPATCH & DELIVERY pill and SendMe logo
+ * - Smooth Header Banner (Navy #111827 or Green, rounded 14px card, text left, illustration right)
+ * - Structured body with card styling, callouts, and clean typography
+ * - High-contrast CTA pill button
+ * - Clean company footer with support & copyright
+ */
+export function buildModernEmailShell(options: ModernEmailShellOptions): string {
+  const {
+    bannerBadge,
+    bannerTitle,
+    bannerSubtitle,
+    bannerImage = SENDME_BANNER_PARCEL_ILLUS,
+    bodyHtml,
+    previewText,
+    senderName,
+    ctaText,
+    ctaUrl,
+  } = options;
+
+  const safeSenderBadge = senderName
+    ? `<div style="display: inline-block; background-color: #ECFDF5; border: 1px solid #D1FAE5; color: #158A5E; font-size: 12px; font-weight: 600; padding: 4px 12px; border-radius: 999px; margin-bottom: 14px;">Message from ${escapeHtml(senderName)}</div>`
+    : "";
+
+  const ctaButtonHtml = ctaText && ctaUrl
+    ? `
+      <table border="0" cellpadding="0" cellspacing="0" width="100%" style="margin: 24px 0 10px 0;">
+        <tr>
+          <td align="center">
+            <a href="${escapeHtml(ctaUrl)}" style="display: inline-block; background-color: #158A5E; color: #FFFFFF; font-size: 14px; font-weight: 700; text-decoration: none; padding: 13px 32px; border-radius: 8px; letter-spacing: 0.2px;">
+              ${escapeHtml(ctaText)} &rarr;
+            </a>
+          </td>
+        </tr>
+      </table>
+    `
+    : "";
+
+  return `<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <title>${escapeHtml(bannerTitle)}</title>
+  <style type="text/css">
+    body, table, td, a { -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
+    table, td { mso-table-lspace: 0pt; mso-table-rspace: 0pt; }
+    img { -ms-interpolation-mode: bicubic; border: 0; outline: none; text-decoration: none; }
+    body { margin: 0; padding: 0; width: 100% !important; height: 100% !important; background-color: #F7F7F8; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #111827; }
+    @media only screen and (max-width: 540px) {
+      .outer-wrap { padding: 10px 0 !important; }
+      .main-card { border-radius: 0 !important; border-left: none !important; border-right: none !important; }
+      .body-cell { padding: 18px 16px 26px 16px !important; }
+      .header-wrap { padding: 14px 14px 6px 14px !important; }
+      .banner-text-cell { padding: 18px 10px 18px 16px !important; }
+      .banner-img-cell { width: 85px !important; padding: 10px 12px 10px 0 !important; }
+      .banner-img { width: 78px !important; height: 78px !important; }
+      .banner-title { font-size: 15px !important; line-height: 20px !important; }
+      .banner-sub { font-size: 11px !important; line-height: 15px !important; }
+      .nav-cell { padding: 14px 16px 10px 16px !important; }
+    }
+  </style>
+</head>
+<body style="margin: 0; padding: 0; background-color: #F7F7F8;">
+
+  ${previewText ? `
+  <div style="display: none; font-size: 1px; color: #F7F7F8; line-height: 1px; max-height: 0px; max-width: 0px; opacity: 0; overflow: hidden;">
+    ${escapeHtml(previewText)}
+  </div>` : ""}
+
+  <table border="0" cellpadding="0" cellspacing="0" width="100%" class="outer-wrap" style="background-color: #F7F7F8; padding: 24px 12px;">
+    <tr>
+      <td align="center">
+
+        <!-- Main Card (Max 580px) -->
+        <table border="0" cellpadding="0" cellspacing="0" width="100%" class="main-card" style="max-width: 580px; background-color: #FFFFFF; border-radius: 16px; border: 1px solid #E5E7EB; overflow: hidden; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.04);">
+
+          <!-- TOP NAVIGATION / BRANDING -->
+          <tr>
+            <td class="nav-cell" style="padding: 18px 24px 14px 24px; border-bottom: 1px solid #F3F4F6;">
+              <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                <tr>
+                  <td style="line-height: 1; vertical-align: middle;">
+                    <div style="font-size: 9px; font-weight: 800; color: #158A5E; letter-spacing: 0.8px; line-height: 9px; padding-bottom: 3px; text-transform: uppercase;">DISPATCH &amp; DELIVERY</div>
+                    <div style="font-size: 21px; font-weight: 900; letter-spacing: -0.5px; color: #111827; line-height: 22px;">
+                      SEND<span style="color: #158A5E;">ME</span>
+                    </div>
+                  </td>
+                  <td align="right" style="vertical-align: middle;">
+                    <img src="${LOGO_URL}" alt="SendMe" width="30" height="30" style="display: block; width: 30px; height: 30px; border-radius: 6px;" />
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- HEADER BANNER: SendMe Dashboard Banner Style -->
+          <tr>
+            <td class="header-wrap" style="padding: 16px 20px 8px 20px;">
+              <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #111827; border-radius: 14px; border: 1px solid #1F2937; overflow: hidden;">
+                <tr>
+                  <!-- Left Text Column -->
+                  <td class="banner-text-cell" style="padding: 22px 14px 22px 20px; vertical-align: middle;">
+                    ${bannerBadge ? `<div style="display: inline-block; background-color: rgba(21, 138, 94, 0.22); border: 1px solid rgba(21, 138, 94, 0.45); color: #34D399; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; padding: 2.5px 8px; border-radius: 999px; margin-bottom: 8px;">${escapeHtml(bannerBadge)}</div>` : ""}
+                    <div class="banner-title" style="font-size: 17px; font-weight: 700; line-height: 22px; color: #FFFFFF; letter-spacing: -0.3px; margin: 0 0 5px 0;">
+                      ${escapeHtml(bannerTitle)}
+                    </div>
+                    ${bannerSubtitle ? `
+                    <div class="banner-sub" style="font-size: 12px; font-weight: 400; line-height: 16px; color: #9CA3AF; margin: 0;">
+                      ${escapeHtml(bannerSubtitle)}
+                    </div>` : ""}
+                  </td>
+
+                  <!-- Right Illustration Column -->
+                  <td width="108" align="center" class="banner-img-cell" style="padding: 12px 16px 12px 0; vertical-align: middle;">
+                    <img src="${bannerImage}" alt="SendMe" width="92" height="92" class="banner-img" style="display: block; width: 92px; height: 92px; max-width: 92px; object-fit: contain; border: 0;" />
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- BODY SECTION -->
+          <tr>
+            <td class="body-cell" style="padding: 18px 22px 28px 22px;">
+              ${safeSenderBadge}
+              ${bodyHtml}
+              ${ctaButtonHtml}
+            </td>
+          </tr>
+
+          <!-- FOOTER -->
+          <tr>
+            <td style="background-color: #F9FAFB; padding: 22px 24px; text-align: center; border-top: 1px solid #E5E7EB;">
+              <div style="font-size: 12px; font-weight: 800; color: #111827; margin-bottom: 4px; letter-spacing: 0.5px;">
+                SENDME TECHNOLOGIES
+              </div>
+              <div style="font-size: 11.5px; line-height: 1.6; color: #6B7280; margin-bottom: 8px;">
+                Nigeria's #1 On-Demand Delivery &amp; Real-Time Bidding Network.<br>
+                Questions or support? Reach us at <a href="mailto:support@senndme.com" style="color: #158A5E; text-decoration: none; font-weight: 600;">support@senndme.com</a>
+              </div>
+              <div style="font-size: 11px; color: #9CA3AF;">
+                &copy; ${new Date().getFullYear()} SendMe Technologies Ltd. &bull; Abuja &amp; Lagos, Nigeria
+              </div>
+            </td>
+          </tr>
+
+        </table>
+
+      </td>
+    </tr>
+  </table>
+
+</body>
+</html>`;
+}
 
 export async function sendEmail({
   to,
@@ -64,50 +495,14 @@ export async function sendEmail({
   }
 }
 
-export function buildEmailTemplate(title: string, body: string): string {
-  return `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <style>
-    body { margin: 0; padding: 0; background: #F1F5F9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #0F172A; }
-    .wrapper { width: 100%; background: #F1F5F9; padding: 32px 16px; }
-    .container { max-width: 600px; margin: 0 auto; background: #FFFFFF; border-radius: 20px; overflow: hidden; box-shadow: 0 10px 40px rgba(15, 23, 42, 0.08); }
-    .header { padding: 28px 24px 20px; text-align: center; border-bottom: 1px solid #EEF2F6; }
-    .logo { height: 56px; width: auto; display: block; margin: 0 auto; border: 0; border-radius: 14px; }
-    .accent { height: 4px; background: linear-gradient(90deg, #158A5E, #22C55E); }
-    .content { padding: 32px 28px; line-height: 1.65; color: #334155; }
-    .title { font-size: 20px; font-weight: 700; color: #0F172A; margin: 0 0 16px; }
-    .content p { margin: 0 0 16px; }
-    .footer { padding: 24px 28px; background: #F8FAFC; text-align: center; border-top: 1px solid #EEF2F6; }
-    .footer .brand { font-weight: 700; color: #158A5E; margin: 0; font-size: 13px; }
-    .footer .muted { color: #94A3B8; font-size: 12px; margin: 6px 0 0; }
-    .badge { display: inline-block; padding: 6px 16px; border-radius: 999px; font-size: 13px; font-weight: 600; }
-    .badge-success { background: #E8F7EF; color: #158A5E; }
-    .badge-error { background: #FFEBEE; color: #C62828; }
-  </style>
-</head>
-<body>
-  <div class="wrapper">
-    <div class="container">
-      <div class="header">
-        <img class="logo" src="${LOGO_URL}" alt="SendMe" />
-      </div>
-      <div class="accent"></div>
-      <div class="content">
-        <h2 class="title">${title}</h2>
-        ${body}
-      </div>
-      <div class="footer">
-        <p class="brand">SendMe</p>
-        <p class="muted">&copy; ${new Date().getFullYear()} SendMe Delivery. All rights reserved.</p>
-      </div>
-    </div>
-  </div>
-</body>
-</html>`;
+export function buildEmailTemplate(title: string, body: string, badge = "SENDME ACCOUNT"): string {
+  return buildModernEmailShell({
+    bannerBadge: badge,
+    bannerTitle: title,
+    bannerSubtitle: "Account & notification update from SendMe Operations",
+    bannerImage: SENDME_BANNER_PARCEL_ILLUS,
+    bodyHtml: body,
+  });
 }
 
 export function buildReviewNotificationEmail(
@@ -410,49 +805,190 @@ export function getCampaignFromAddress(senderName: string): string {
   return `${senderName} <${email}>`;
 }
 
-export function buildCampaignEmailHtml(senderName: string, messageHtml: string): string {
-  const safeSender = senderName
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-  return `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <style>
-    body { margin: 0; padding: 0; background: #F1F5F9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #0F172A; }
-    .wrapper { width: 100%; background: #F1F5F9; padding: 32px 16px; }
-    .container { max-width: 600px; margin: 0 auto; background: #FFFFFF; border-radius: 20px; overflow: hidden; box-shadow: 0 10px 40px rgba(15, 23, 42, 0.08); }
-    .header { padding: 28px 24px 20px; text-align: center; border-bottom: 1px solid #EEF2F6; }
-    .logo { height: 56px; width: auto; display: block; margin: 0 auto; border: 0; border-radius: 14px; }
-    .accent { height: 4px; background: linear-gradient(90deg, #158A5E, #22C55E); }
-    .content { padding: 32px 28px; line-height: 1.65; color: #334155; }
-    .from { display: inline-block; background: #E8F7EF; border: 1px solid #D1F0DD; color: #158A5E; border-radius: 999px; padding: 6px 14px; font-size: 13px; font-weight: 600; margin-bottom: 20px; }
-    .content p { margin: 0 0 16px; }
-    .footer { padding: 24px 28px; background: #F8FAFC; text-align: center; border-top: 1px solid #EEF2F6; }
-    .footer .brand { font-weight: 700; color: #158A5E; margin: 0; font-size: 13px; }
-    .footer .muted { color: #94A3B8; font-size: 12px; margin: 6px 0 0; }
-  </style>
-</head>
-<body>
-  <div class="wrapper">
-    <div class="container">
-      <div class="header">
-        <img class="logo" src="${LOGO_URL}" alt="SendMe" />
-      </div>
-      <div class="accent"></div>
-      <div class="content">
-        <div class="from">${safeSender} from SendMe</div>
-        ${messageHtml}
-      </div>
-      <div class="footer">
-        <p class="brand">SendMe</p>
-        <p class="muted">&copy; ${new Date().getFullYear()} SendMe Delivery. All rights reserved.</p>
-      </div>
+export interface CampaignEmailOptions {
+  subject?: string;
+  bannerBadge?: string;
+  bannerTitle?: string;
+  bannerSubtitle?: string;
+  bannerImage?: string;
+  previewText?: string;
+  ctaText?: string;
+  ctaUrl?: string;
+}
+
+export function buildCampaignEmailHtml(
+  senderName: string,
+  messageHtml: string,
+  options?: CampaignEmailOptions
+): string {
+  const safeSender = senderName.trim();
+  const bannerTitle = options?.bannerTitle || options?.subject || "Update from SendMe Dispatch";
+  const bannerSubtitle = options?.bannerSubtitle || `Official dispatch update from ${safeSender} • SendMe Technologies`;
+  const bannerBadge = options?.bannerBadge || "SENDME DISPATCH";
+  const bannerImage = options?.bannerImage || SENDME_BANNER_PARCEL_ILLUS;
+
+  return buildModernEmailShell({
+    bannerBadge,
+    bannerTitle,
+    bannerSubtitle,
+    bannerImage,
+    bodyHtml: messageHtml,
+    previewText: options?.previewText,
+    senderName: safeSender,
+    ctaText: options?.ctaText,
+    ctaUrl: options?.ctaUrl,
+  });
+}
+
+export interface OrderDeliveredEmailData {
+  orderId: string;
+  customerName?: string;
+  riderName?: string;
+  vehiclePlate?: string;
+  pickupAddress: string;
+  dropoffAddress: string;
+  packageDescription?: string;
+  amount: number;
+  cashbackEarned?: number;
+  deliveredAt?: string;
+  trackingUrl?: string;
+}
+
+export function buildOrderDeliveredEmail(data: OrderDeliveredEmailData): { subject: string; html: string; text: string } {
+  const customer = data.customerName || "Valued Customer";
+  const formattedAmount = `₦${(data.amount || 0).toLocaleString()}`;
+  const deliveredDate = data.deliveredAt || new Date().toLocaleString("en-NG", { dateStyle: "medium", timeStyle: "short" });
+  const trackUrl = data.trackingUrl || `https://senndme.com/track?id=${encodeURIComponent(data.orderId)}`;
+
+  const bodyHtml = `
+    <div style="font-size: 16px; font-weight: 700; color: #111827; margin: 4px 0 6px 0;">
+      Hi ${escapeHtml(customer)},
     </div>
-  </div>
-</body>
-</html>`;
+    <p style="font-size: 14px; line-height: 1.6; color: #4B5563; margin: 0 0 18px 0;">
+      Your package has been successfully delivered by rider <strong>${escapeHtml(data.riderName || "your assigned rider")}</strong>. Handover was confirmed with your secure 4-digit verification PIN.
+    </p>
+
+    <!-- DELIVERY STATUS BADGE -->
+    <div style="margin-bottom: 20px; text-align: left;">
+      <span style="display: inline-block; background-color: #ECFDF5; border: 1px solid #A7F3D0; color: #065F46; font-size: 12px; font-weight: 700; padding: 4px 12px; border-radius: 999px;">
+        ✓ Delivery Completed
+      </span>
+    </div>
+
+    <!-- ORDER DETAILS CARD -->
+    <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 12px; margin-bottom: 18px;">
+      <tr>
+        <td style="padding: 16px 18px;">
+          
+          <table border="0" cellpadding="0" cellspacing="0" width="100%" style="margin-bottom: 12px;">
+            <tr>
+              <td style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #6B7280; letter-spacing: 0.5px;">ORDER REFERENCE</td>
+              <td align="right" style="font-size: 12.5px; font-weight: 700; color: #111827; font-family: monospace;">#${escapeHtml(data.orderId.slice(0, 10))}</td>
+            </tr>
+          </table>
+
+          <div style="border-top: 1px solid #E5E7EB; margin-bottom: 12px;"></div>
+
+          <!-- Pickup -->
+          <table border="0" cellpadding="0" cellspacing="0" width="100%" style="margin-bottom: 10px;">
+            <tr>
+              <td width="22" style="vertical-align: top; padding-top: 2px;">
+                <div style="width: 10px; height: 10px; border-radius: 5px; background-color: #158A5E;"></div>
+              </td>
+              <td style="vertical-align: top;">
+                <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #6B7280;">PICKUP ADDRESS</div>
+                <div style="font-size: 13px; font-weight: 600; color: #111827; margin-top: 2px;">${escapeHtml(data.pickupAddress)}</div>
+              </td>
+            </tr>
+          </table>
+
+          <!-- Dropoff -->
+          <table border="0" cellpadding="0" cellspacing="0" width="100%" style="margin-bottom: 12px;">
+            <tr>
+              <td width="22" style="vertical-align: top; padding-top: 2px;">
+                <div style="width: 10px; height: 10px; border-radius: 5px; background-color: #111827;"></div>
+              </td>
+              <td style="vertical-align: top;">
+                <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #6B7280;">DROPOFF ADDRESS</div>
+                <div style="font-size: 13px; font-weight: 600; color: #111827; margin-top: 2px;">${escapeHtml(data.dropoffAddress)}</div>
+              </td>
+            </tr>
+          </table>
+
+          ${data.packageDescription ? `
+          <div style="border-top: 1px solid #E5E7EB; margin-bottom: 12px;"></div>
+          <table border="0" cellpadding="0" cellspacing="0" width="100%" style="margin-bottom: 8px;">
+            <tr>
+              <td style="font-size: 12px; color: #6B7280;">Package:</td>
+              <td align="right" style="font-size: 12.5px; font-weight: 600; color: #111827;">${escapeHtml(data.packageDescription)}</td>
+            </tr>
+          </table>` : ""}
+
+          ${data.riderName ? `
+          <table border="0" cellpadding="0" cellspacing="0" width="100%" style="margin-bottom: 8px;">
+            <tr>
+              <td style="font-size: 12px; color: #6B7280;">Delivered By:</td>
+              <td align="right" style="font-size: 12.5px; font-weight: 600; color: #111827;">
+                ${escapeHtml(data.riderName)}${data.vehiclePlate ? ` &bull; ${escapeHtml(data.vehiclePlate)}` : ""}
+              </td>
+            </tr>
+          </table>` : ""}
+
+          <div style="border-top: 1px solid #E5E7EB; margin: 10px 0 12px 0;"></div>
+
+          <!-- Total Fare -->
+          <table border="0" cellpadding="0" cellspacing="0" width="100%">
+            <tr>
+              <td style="font-size: 13.5px; font-weight: 700; color: #111827;">Total Paid</td>
+              <td align="right" style="font-size: 17px; font-weight: 800; color: #158A5E;">${formattedAmount}</td>
+            </tr>
+          </table>
+
+        </td>
+      </tr>
+    </table>
+
+    ${data.cashbackEarned && data.cashbackEarned > 0 ? `
+    <!-- CASHBACK REWARD CARD -->
+    <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #F0FDF4; border: 1px solid #BBF7D0; border-left: 4px solid #158A5E; border-radius: 10px; margin-bottom: 20px;">
+      <tr>
+        <td style="padding: 12px 16px;">
+          <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #158A5E; letter-spacing: 0.5px;">
+            🎉 CASHBACK EARNED
+          </div>
+          <div style="font-size: 14.5px; font-weight: 700; color: #111827; margin-top: 2px;">
+            ₦${data.cashbackEarned.toLocaleString()} credited to your SendMe Wallet!
+          </div>
+        </td>
+      </tr>
+    </table>` : ""}
+
+    <!-- ACTION BUTTON -->
+    <table border="0" cellpadding="0" cellspacing="0" width="100%">
+      <tr>
+        <td align="center" style="padding-top: 4px; padding-bottom: 8px;">
+          <a href="${escapeHtml(trackUrl)}" style="display: inline-block; background-color: #158A5E; color: #FFFFFF; font-size: 14px; font-weight: 700; text-decoration: none; padding: 13px 32px; border-radius: 8px; letter-spacing: 0.2px;">
+            View Delivery Receipt &amp; Trip Details &rarr;
+          </a>
+        </td>
+      </tr>
+    </table>
+  `;
+
+  const html = buildModernEmailShell({
+    bannerBadge: "DELIVERED",
+    bannerTitle: "Package Delivered Successfully",
+    bannerSubtitle: `Handover verified with PIN code on ${deliveredDate}.`,
+    bannerImage: SENDME_BANNER_PARCEL_ILLUS,
+    bodyHtml,
+    previewText: `Your package to ${data.dropoffAddress} has been delivered successfully. Total fare: ${formattedAmount}.`,
+  });
+
+  const text = `Hi ${customer},\n\nYour package has been successfully delivered by rider ${data.riderName || "your assigned rider"}.\n\nOrder: #${data.orderId}\nPickup: ${data.pickupAddress}\nDropoff: ${data.dropoffAddress}\nTotal Paid: ${formattedAmount}\n\nView details: ${trackUrl}\n\nThank you for choosing SendMe.`;
+
+  return {
+    subject: `Delivered: Package Handover Confirmed (Order #${data.orderId.slice(0, 8)})`,
+    html,
+    text,
+  };
 }

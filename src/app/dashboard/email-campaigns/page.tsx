@@ -1077,26 +1077,17 @@ We noticed that your SendMe account verification is incomplete. To start receivi
                     >
                       <div className="flex items-center gap-2">
                         <div className="w-2 h-2 rounded-full bg-sendme"></div>
-                        <span>Header Banner Customization (Dark Modern Card)</span>
+                        <span>Header Banner (SendMe Green #158A5E Card)</span>
                       </div>
                       <div className="flex items-center gap-1.5 text-text-muted text-[11px]">
-                        <span>{showBannerConfig ? "Collapse" : "Customize Header"}</span>
+                        <span>{showBannerConfig ? "Collapse" : "Customize Header Text & Image"}</span>
                         {showBannerConfig ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                       </div>
                     </button>
 
                     {showBannerConfig && (
                       <div className="p-4 border-t border-border-light bg-white space-y-3">
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                          <div>
-                            <label className="text-[10.5px] font-medium text-text-muted mb-1 block">Banner Pill Badge</label>
-                            <input
-                              value={bannerBadge}
-                              onChange={(e) => setBannerBadge(e.target.value)}
-                              placeholder="e.g. SENDME DISPATCH"
-                              className="w-full border border-border-default rounded-lg px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-sendme"
-                            />
-                          </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           <div>
                             <label className="text-[10.5px] font-medium text-text-muted mb-1 block">Custom Banner Title (Optional)</label>
                             <input

@@ -400,20 +400,13 @@ export function buildModernEmailShell(options: ModernEmailShellOptions): string 
               <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #158A5E; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 12px rgba(21, 138, 94, 0.18);">
                 <tr>
                   <!-- Left Text Column -->
-                  <td class="banner-text-cell" style="padding: 22px 14px 22px 20px; vertical-align: middle;">
-                    ${bannerBadge ? `<div style="display: inline-block; background-color: rgba(255, 255, 255, 0.22); color: #FFFFFF; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; padding: 3px 9px; border-radius: 999px; margin-bottom: 8px;">${escapeHtml(bannerBadge)}</div>` : ""}
-                    <div class="banner-title" style="font-size: 17px; font-weight: 700; line-height: 22px; color: #FFFFFF; letter-spacing: -0.3px; margin: 0 0 5px 0;">
+                  <td class="banner-text-cell" style="padding: 24px 16px 24px 22px; vertical-align: middle;">
+                    <div class="banner-title" style="font-size: 18px; font-weight: 800; line-height: 24px; color: #FFFFFF; letter-spacing: -0.3px; margin: 0 0 6px 0;">
                       ${escapeHtml(bannerTitle)}
                     </div>
                     ${bannerSubtitle ? `
-                    <div class="banner-sub" style="font-size: 12px; font-weight: 400; line-height: 16px; color: rgba(255, 255, 255, 0.92); margin: 0 0 10px 0;">
+                    <div class="banner-sub" style="font-size: 13px; font-weight: 400; line-height: 18px; color: rgba(255, 255, 255, 0.92); margin: 0;">
                       ${escapeHtml(bannerSubtitle)}
-                    </div>` : ""}
-                    ${ctaText ? `
-                    <div style="margin-top: 6px;">
-                      <a href="${escapeHtml(ctaUrl || 'https://senndme.com')}" style="display: inline-block; background-color: #FFFFFF; color: #158A5E; font-size: 11px; font-weight: 700; text-decoration: none; padding: 6px 14px; border-radius: 999px; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);">
-                        ${escapeHtml(ctaText)} &rarr;
-                      </a>
                     </div>` : ""}
                   </td>
 
